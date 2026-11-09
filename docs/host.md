@@ -361,6 +361,52 @@ keine Ausreißer; Spitzen nur bei Ladebildschirmen. Vorher lief das Warten
 auf den Monitor gegen TS2s eigenen Takt. Mehr als 60 Bilder pro Sekunde
 brauchen die Entkopplung von Takt und Bild (Roadmap).
 
+## 120 Hz nativ: Befund (Forschungsstand)
+
+TS2 rechnet in ganzen 1/60-s-Takten, und die Logik hängt daran.
+
+**Wie TS2 taktet**
+- **Begrenzer** `0x14107CC64`: wartet eine Periode (`0x142EE39D0`) und
+  zählt die Takte des Bildes (`0x14259CBE8`, 1–3).
+- **Zeitfortschreibung** `0x141222A30`: macht daraus die Bildzeiten
+  `0x14259CBD8` (int), `0x14259CBDC` (int, Pause 0), `0x14259CBE0`
+  (float), `0x14259CBE4` (float, Pause 0) und zählt die Spielzeit
+  (`0x142F9A22C`, ohne Pause `0x142F9A230`).
+- **Datensatz pro Spieler und Bild** (`0x1411454EC`): Lockstep, für
+  Netzwerkspiel ausgelegt. Gebaut von `0x1411446A8`, zurückübertragen von
+  `0x14114435C`. Er enthält Spielzeit, Pad-Daten und die Takte als Bytes
+  (+0x28, +0x29); daraus werden die Bildzeiten neu gesetzt.
+- **Bild ohne ganzen Takt:** Dann nimmt `0x1411454EC` einen eigenen Zweig
+  (Bildzeit 0): Die Logik läuft in diesem Bild nicht.
+
+**Wer die Bildzeiten liest**
+- Float: 658 Stellen in 308 Funktionen.
+- Integer: 231 Stellen in 130 Funktionen (Zähler, Schussabstände, Timer,
+  Zufall pro Takt).
+- Davon teilen 7 Stellen ungesichert durch die Integer-Takte.
+
+**Was `ts2.exe` mit `TS2_TAKT=120` macht** (`timing.cpp`)
+- Der Begrenzer taktet mit 1/120 s.
+- Die Zeitfortschreibung bekommt 60-Hz-Takte; die Spielzeit läuft
+  gemessen genau 60 Takte/s.
+- Die Float-Bildzeiten werden nach der Zeitfortschreibung und nach dem
+  Datensatz-Übertrag auf halbe Takte gesetzt.
+- Die 7 Teilungen liefern bei 0 Takten „kein Ereignis“.
+- Ergebnis: 8,33 ms pro Bild, stabil.
+
+**Grenze**
+- **Integer-Takte im Wechsel 1/0:** Die Logik läuft nur in jedem zweiten
+  Bild und das mit halber Bildzeit, also halbes Spieltempo (gemessen 0,22
+  statt 0,52 Einheiten pro 10 Bilder).
+- **Ein Takt pro Bild:** Dann liefen alle Integer-Zähler doppelt so
+  schnell (Schussabstände, KI, Timer).
+
+Echte 120 Hz ohne Zwischenbilder heißen deshalb: die Integer-Takt-Logik
+der 130 Funktionen auf halbe Takte umstellen. Das gehört zu „Dekompilieren
+durch Ersetzen“ (Roadmap Schritt 4). Bis dahin bleibt der Takt bei 60 Hz;
+der Weg ist nur über die Umgebungsvariable erreichbar. Proben:
+`TS2_TAKTPROBE=1` (Spielzeit je Sekunde), `TS2_RENNPROBE=1` (Strecke).
+
 ## Was fehlt (in dieser Reihenfolge)
 
 1. **Bildrate**: Takt und Bild entkoppeln (Tick bei fester Rate, Render frei),

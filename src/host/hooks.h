@@ -11,6 +11,13 @@ namespace host {
 
 // Lenkt den Aufruf an `call_va` auf `fn` um und liefert das bisherige Ziel,
 // oder nullptr, wenn dort kein Aufruf von `expected_target` steht.
+// Auch ein Sprung (E9 rel32, Endaufruf) geht.
 void* hook_call(const Ts2Image& img, uint64_t call_va, uint64_t expected_target, const void* fn);
+
+// Ersetzt den Befehl an `va` (genau `expected`, n ≥ 5 Byte) durch einen
+// Aufruf eines Code-Stücks `stub_code` (wird in die Stub-Seite kopiert, endet
+// mit ret) und füllt den Rest mit nop.
+bool patch_with_call(const Ts2Image& img, uint64_t va, const uint8_t* expected, size_t n, const uint8_t* stub_code,
+                     size_t stub_n);
 
 }  // namespace host

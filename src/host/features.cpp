@@ -45,6 +45,11 @@ Settings load_settings(const std::filesystem::path& ini) {
     s.height = int(GetPrivateProfileIntW(L"grafik", L"hoehe", 1080, p.c_str()));
     s.fullscreen = GetPrivateProfileIntW(L"grafik", L"vollbild", 0, p.c_str()) != 0;
     s.vsync = GetPrivateProfileIntW(L"grafik", L"bildsync", 0, p.c_str()) != 0;
+    // 120 Hz ist Forschungsstand (docs/host.md, "120 Hz"): nur über TS2_TAKT=120
+    {
+        wchar_t v[8] = {};
+        s.tick_rate = GetEnvironmentVariableW(L"TS2_TAKT", v, 8) > 0 && _wtoi(v) == 120 ? 120 : 60;
+    }
     s.weapon_switch_percent = int(GetPrivateProfileIntW(L"waffen", L"wechseltempo", 100, p.c_str()));
     s.rof_percent = int(GetPrivateProfileIntW(L"waffen", L"feuerrate", 100, p.c_str()));
     if (s.rof_percent < 10 || s.rof_percent > 1000) s.rof_percent = 100;

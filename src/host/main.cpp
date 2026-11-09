@@ -30,6 +30,7 @@
 #include "input.h"
 #include "menu.h"
 #include "menumouse.h"
+#include "timing.h"
 #include "audio.h"
 #include "hf2.h"
 #include "log.h"
@@ -350,6 +351,7 @@ int wmain(int argc, wchar_t** argv) {
     timeBeginPeriod(1);
     const Settings settings = load_settings(self_dir() / L"ts2.ini");
     features_install(g_img, settings);
+    timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
     menumouse_install(g_img, GetPrivateProfileIntW(L"maus", L"menue", 1, (self_dir() / L"ts2.ini").c_str()) != 0);
 
@@ -435,6 +437,7 @@ int wmain(int argc, wchar_t** argv) {
             log("Takt %d ist abgestürzt\n", t);
             return 4;
         }
+        timing_frame();
         if (!call_render(obj, &devh, &ctxh, rtv, back)) {
             log("Bild %d ist abgestürzt\n", t);
             return 5;
