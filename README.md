@@ -4,37 +4,41 @@ Arbeitsrepository für einen eigenständigen PC-Port von **TimeSplitters 2**,
 aufgebaut auf dem nativen x64-Port, den Dambuster Studios 2016 in
 *Homefront: The Revolution* versteckt hat (`Homefront2_Release.exe`).
 
+**Stand:** `ts2.exe` startet TS2 ohne Homefront, CryEngine oder Steam;
+Menüs und Level sind mit Tastatur/Maus oder Pad spielbar. Ton und Musik
+fehlen noch ([docs/host.md](docs/host.md)).
+
 Ziel: Dekompilat und Funktionsbestimmung dieses Ports, daraus ein PC-Port mit
 den Funktionen, die der Xbox-Recompile-Fork
 ([split2-recomp_ff](https://github.com/frankyfife/split2-recomp_ff)) dem Spiel
 gegeben hat (Sprung, Rennen, Mauszielen, Freecam, Waffenhandling, Kamera/FOV),
 dazu 5.1-Ton, native hohe Bildrate (≥ 120 fps), HDR und ein Launcher im
-Retro-Futurismus-Stil.
-
-Der Stand und die Reihenfolge stehen in [docs/roadmap.md](docs/roadmap.md).
+Retro-Futurismus-Stil. Reihenfolge: [docs/roadmap.md](docs/roadmap.md).
 
 ## Rechtliches
 
 Dieses Repository enthält **keine** Daten oder Code des Spiels. Man braucht
-eine eigene Kopie von *Homefront: The Revolution* (Steam, App 223100). Nie
-committen: `game/`, `reference/`, `re/ghidra_project/`, `re/out/` (alles in
-`.gitignore`). Dekompilierter Code des Spiels gehört nicht in committete
-Dateien; Adressen, Namen, Strukturbeschreibungen und eigener Code schon.
-Der RSA-Schlüssel für die Paks wird zur Laufzeit aus der eigenen EXE gelesen.
+eine eigene Kopie von *Homefront: The Revolution* (Steam, App 223100); daraus
+richtet `ts2.exe` einmalig `game/` ein. Nie committen: `game/`, `reference/`,
+`re/ghidra_project/`, `re/out/` (alles in `.gitignore`). Dekompilierter Code
+des Spiels gehört nicht in committete Dateien; Adressen, Namen,
+Strukturbeschreibungen und eigener Code schon. Schlüssel und Code werden zur
+Laufzeit aus der eigenen EXE gelesen.
 
 ## Aufbau
 
 ```text
-CMakeLists.txt         Werkzeuge (und später der Port), Abhängigkeiten per FetchContent
+CMakeLists.txt         Build, Abhängigkeiten per FetchContent (zlib, Brotli)
 scripts/build.cmd      Build mit den VS 2022 Build Tools (Ninja, Release)
+src/host/              ts2.exe: lädt game/ts2.bin, ersetzt Fremdes, eigenes D3D11
 tools/hfpak/           hfpak: entschlüsselt/entpackt die CryPaks von Homefront
-tools/re/              Python-Helfer für die EXE (Disassembler, Xrefs, Strings)
+tools/re/              Python-Helfer für die EXE (Disassembler, Xrefs, Manifest)
 re/ghidra_scripts/     Ghidra-Skripte (Headless-Export von Funktionen/Strings)
 docs/                  Befunde, Formate, Roadmap
-game/ts2/              entpackte TS2-Daten (aus lsao_cached.pak + core_patch.pak)   (ignoriert)
-reference/homefront/   minimale Kopie von Homefront zum Vergleich/Analysieren     (ignoriert)
-re/ghidra_project/     Ghidra-Projekt der EXE                                     (ignoriert)
-re/out/                Ghidra-Exporte (functions.tsv, string_refs.tsv)            (ignoriert)
+game/                  ts2.bin + ts2/ (aus der eigenen Installation)        (ignoriert)
+reference/homefront/   Teilkopie von Homefront nur für die Analyse          (ignoriert)
+re/ghidra_project/     Ghidra-Projekt der EXE                               (ignoriert)
+re/out/                Ghidra-Exporte                                       (ignoriert)
 ```
 
 ## Bauen
@@ -46,24 +50,27 @@ Ninja, Git. Python 3 mit `pefile`, `capstone`, `numpy` für `tools/re`.
 scripts\build.cmd
 ```
 
-Ergebnis: `build\tools\hfpak\hfpak.exe`.
+Ergebnis in `build\bin\`: `ts2.exe`, `hfpak.exe`.
 
-## Spieldaten übernehmen
+## Einrichten und Spielen
 
 ```bat
-set HF=G:\SteamLibrary\steamapps\common\Homefront_The_Revolution
-build\tools\hfpak\hfpak.exe extract --exe "%HF%\Bin64\Homefront2_Release.exe" "%HF%\gamehf2\lsao_cached.pak" game
-build\tools\hfpak\hfpak.exe extract --exe "%HF%\Bin64\Homefront2_Release.exe" "%HF%\gamehf2\core_patch.pak" game ts2/
+build\bin\ts2.exe --einrichten "G:\SteamLibrary\steamapps\common\Homefront_The_Revolution"
+build\bin\ts2.exe
 ```
 
-Die zweite Zeile legt die drei TS2-Shader aus dem Homefront-Patch über die
-Originale (CryPak-Schichtung: der Patch gewinnt). Jede Datei wird gegen ihre
-CRC32 geprüft. Format: [docs/formate/crypak.md](docs/formate/crypak.md).
+Das Einrichten liest die eigene Homefront-Installation einmal und legt in
+`game/` ab:
 
-Für die Analyse und spätere Vergleichsläufe liegt unter `reference/homefront/`
-die Teilmenge von Homefront, die TS2 braucht (`Bin64`, `engine`, die Paks, die
-der TS2-Redux-Ripper behält; etwa 2,5 GB). Die Steam-Installation bleibt
-unverändert.
+- `ts2.bin` (5,9 MB): nur der TS2-Teil der EXE und die Daten, die er anfasst;
+  was genau, legt `src/host/ts2_manifest.inc` fest.
+- `ts2/` (1,7 GB): die TS2-Daten aus `lsao_cached.pak` und `core_patch.pak`,
+  mit hfpak entpackt, jede Datei gegen ihre CRC32 geprüft
+  ([docs/formate/crypak.md](docs/formate/crypak.md)).
+
+Danach braucht es Homefront nicht mehr. Einstellungen stehen in `ts2.ini`
+neben der EXE (Auflösung, Waffenwechsel-Tempo, Sprung), das Protokoll in
+`ts2.log`.
 
 ## Quellen
 
@@ -72,5 +79,5 @@ unverändert.
 - [TS2Redux](https://github.com/HFTSRedux/TS2Redux): Mod für den Homefront-Port
   (Fehlerbehebungen, Freischaltungen; Pak-Formate im Wiki)
 - [OpenRadical/symbol_maps](https://github.com/OpenRadical/symbol_maps): Symbolkarte
-  der GameCube-Fassung von TS2 (Funktionsnamen)
+  der GameCube-Fassung von TS2
 - [OpenRadical/tspak](https://github.com/OpenRadical/tspak): P4CK/P8CK-Paks von TS2

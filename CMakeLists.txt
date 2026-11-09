@@ -30,4 +30,8 @@ set(BROTLI_BUNDLED_MODE ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(brotli)
 
+# Alle Programme und DLLs nach build/bin
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 add_subdirectory(tools/hfpak)
+add_subdirectory(src/host)

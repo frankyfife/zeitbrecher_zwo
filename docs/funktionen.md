@@ -71,6 +71,16 @@ eigenständige EXE.
 
 | VA | Größe | Was | Woher |
 | --- | --- | --- | --- |
+| 0x14107C71C | | Start: initialisiert ~40 Subsysteme (vtable +0x08) | Aufrufstruktur |
+| 0x14107CA94 | | Ende (vtable +0x10, danach `delete`) | Aufrufstruktur |
+| 0x14107CF44 | | ein Logik-Takt (aus Tick); Zustand `0x142EE3DF0` | Aufrufstruktur |
+| 0x14107CFB4 | | ein Bild zeichnen (aus Render) → `0x14107CC64` | Aufrufstruktur |
+| 0x14112D4A0 | | Hand-Zustandsautomat der Waffen (Xbox `FUN_000B64C0`); einziger Leser von 20/7 bei `0x1421DA4B0` | Konstante |
+| 0x1411C2B38 | | setzt den aktuellen Spieler aus der Spielertabelle | Schreibzugriff |
+| 0x1411D9748 | | Bewegungsmodus 0, Gehen (Xbox `FUN_00145300`) | Dispatcher |
+| 0x1411DA36C | 958 | Bewegungsmodus 2, Fallen (Xbox `FUN_00145DA0`): Schwerkraft 0,01/Takt, Grenze −0,6, Fallschaden ab 15 | Konstanten |
+| 0x1411DAF8C | | Bewegungs-Dispatcher über Spieler +0x164 (Modi 0–4, 6–8) | Aufruf von 0x1411DA36C |
+| 0x1411DD4A0 | 2 757 | Blickcode (Xbox `FUN_00148EB0`): Gier +0x154, Nick +0x158, Zielmodus-Bit 1 von +0xC | Konstanten, Offsets |
 | 0x14106CF4C | 14 382 | lädt die TS2-Paks (`host0:data/*.pak`) | Strings |
 | 0x1412252AC … 0x1412256F8 | | `ce_file.cpp` (Dateien über CryPak) | `__FILE__` |
 | 0x1412259F8 … 0x141225F20 | | `ce_music.cpp` | `__FILE__` |
@@ -82,6 +92,34 @@ eigenständige EXE.
 | 0x14122C2B0 | 138 | Fabrik des Laufzeitobjekts | einziger Aufruf von außen |
 | 0x14122C400 | 14 | `host0:textures/misc/blank.raw` | Strings |
 | 0x14122C700 | 371 | Textur laden (`host0:textures/%04d.%s`) | Strings |
+
+## Daten
+
+| VA | Was |
+| --- | --- |
+| `0x142F5EAD8` | Zeiger auf die Spielertabelle, je Spieler 0x12A0 Byte; Spieler 1 ist der erste Eintrag |
+| `0x143F27F58` | Anzahl der Spieler (int32) |
+| `0x143F1A388` | Zeiger auf den Spieler, der gerade bewegt wird (Xbox `0x497340`) |
+| `0x14259CBE4` | Bildzeit in Takten (float, Xbox `0x348CEC`); Schwerkraft und Blick werden damit multipliziert |
+| `0x1421DA4B0` | Tempo des Waffenwechsels, 20/7 je Sekunde (.rdata) |
+
+Spieler (Offsets im PC-Port; Xbox jeweils 0xC weniger, bis auf +0xC):
+
+| Offset | Feld |
+| --- | --- |
+| +0x00C | Flags (Bit 1 Zielmodus) |
+| +0x148, +0x14C | zwei Floats, die der Dispatcher jeden Takt mit 0,9 dämpft (Xbox +0x13C/+0x140) |
+| +0x154 | Gier in Grad |
+| +0x158 | Nick in Grad |
+| +0x164 | Bewegungsmodus (0 Gehen, 2 Fallen, …) |
+| +0x1C8 | Zeiger; dessen +0x140 ist der Charakter |
+
+Charakter: +0x19CC Vertikalgeschwindigkeit (Xbox +0x1338), +0x1A20 Höhe zu
+Beginn des Falls für den Fallschaden (Xbox +0x1388).
+
+Die Verschiebung um 0xC ab etwa +0x100 kommt vermutlich von Zeigern im
+vorderen Teil der Struktur (8 statt 4 Byte); sie gilt nicht für jedes Feld
+und muss je Feld bestätigt werden.
 
 ## Nächste Schritte
 
