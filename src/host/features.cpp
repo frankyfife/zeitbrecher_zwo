@@ -48,6 +48,8 @@ Settings load_settings(const std::filesystem::path& ini) {
     s.run_percent = std::clamp(int(GetPrivateProfileIntW(L"bewegung", L"renntempo", 160, p.c_str())), 100, 300);
     s.run_toggle = GetPrivateProfileIntW(L"bewegung", L"rennen_umschalten", 0, p.c_str()) != 0;
     s.fov_percent = std::clamp(int(GetPrivateProfileIntW(L"grafik", L"sichtfeld", 100, p.c_str())), 70, 150);
+    s.freecam = GetPrivateProfileIntW(L"kamera", L"freecam", 1, p.c_str()) != 0;
+    s.freecam_key = int(GetPrivateProfileIntW(L"kamera", L"freecam_taste", 0x75, p.c_str()));
     return s;
 }
 
@@ -90,6 +92,18 @@ float g_fov_scale = 1.0f;
 void camera_setup_fov(float near_z, float far_z, float aspect, float fov_deg) {
     g_camera_setup(near_z, far_z, aspect, std::min(fov_deg * g_fov_scale, 170.0f));
 }
+
+// Freie Kamera (Xbox-Fork: ts2_freecam): Taste (F6) löst die Kamera vom
+// Spieler und fliegt sie; dieselbe Taste bringt sie zurück. Das Spiel läuft
+// weiter, der Spieler steht. Kameramodus 8 baut die Sicht aus Position und
+// Blickpunkt (Globale); beide schreibt features_tick je Takt. Den Raum, aus
+// dem das Level gezeichnet wird, nimmt Modus 8 sonst vom Spieler; ein Stück
+// an 0x1410828EE nimmt stattdessen g_fc_room, solange er nicht 0 ist
+// (Raumsuche 0x1411BFA08 an der Kamera-Position, wie die Flugkamera Modus 6).
+//   WASD bewegen, Maus blickt, Leertaste/C steigen/sinken, Umschalt schneller
+using FindRoomFn = int32_t (*)(const float* pos, float one, float arg);
+int32_t g_fc_room = 0;
+bool g_fc_ready = false;
 const Ts2Image* g_img = nullptr;
 float g_run_factor = 1.0f;
 bool g_running = false;
@@ -172,6 +186,17 @@ void features_install(const Ts2Image& img, const Settings& s) {
         g_camera_setup = reinterpret_cast<CameraSetupFn>(a ? a : b);
         log("Sichtfeld: %d %% (%s)\n", s.fov_percent, a && b ? "beide Aufrufe" : "FEHLER: Aufruf nicht gefunden");
     }
+    if (s.freecam) {
+        // mov rcx,&g_fc_room; mov ecx,[rcx]; test ecx,ecx; jnz ret; mov ecx,[r12+0xD78]; ret
+        static const uint8_t expected[] = {0x41, 0x8B, 0x8C, 0x24, 0x78, 0x0D, 0x00, 0x00};
+        uint8_t stub[2 + 8 + 2 + 2 + 2 + 8 + 1] = {0x48, 0xB9};
+        const uint64_t room_addr = reinterpret_cast<uint64_t>(&g_fc_room);
+        std::memcpy(stub + 2, &room_addr, 8);
+        const uint8_t rest[] = {0x8B, 0x09, 0x85, 0xC9, 0x75, 0x08, 0x41, 0x8B, 0x8C, 0x24, 0x78, 0x0D, 0x00, 0x00, 0xC3};
+        std::memcpy(stub + 10, rest, sizeof rest);
+        g_fc_ready = patch_with_call(img, hf2::kCamMode8Room, expected, sizeof expected, stub, sizeof stub);
+        log("Freie Kamera: Taste %d%s\n", s.freecam_key, g_fc_ready ? "" : " (FEHLER: Stelle 0x1410828EE unerwartet, aus)");
+    }
     // Render-Auflösung: die festen 1920/1080 im Aufruf des DX11-Setups ersetzen.
     auto* w = img.va<uint32_t>(hf2::kResWidthImm);
     auto* h = img.va<uint32_t>(hf2::kResHeightImm);
@@ -214,6 +239,68 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
             log("[spieler] Bewegungsmodus %d -> %d%s", last_mode, m, c ? "" : "\n");
             if (c) log(", Vertikalgeschwindigkeit %.3f\n", *reinterpret_cast<float*>(c + hf2::kCharVerticalSpeed));
             last_mode = m;
+        }
+    }
+    // Freie Kamera (oben bei g_fc_room beschrieben)
+    if (g_fc_ready) {
+        static bool on = false, was_key = false, was_bit = false;
+        static int32_t saved_mode = 0;
+        static float pos[3] = {}, yaw = 0, pitch = 0;
+        const bool fg = GetForegroundWindow() == HWND(window);
+        const bool key = fg && (GetAsyncKeyState(s.freecam_key) & 0x8000) != 0;
+        const bool bit = (input_host_bits() & kHostFreecam) != 0;
+        const bool toggle = (key && !was_key) || (bit && !was_bit);
+        was_key = key;
+        was_bit = bit;
+        uint8_t* cam = *img.va<uint8_t*>(hf2::kCamera);
+        uint8_t* p1 = player1(img);
+        auto* mode = img.va<int32_t>(hf2::kCameraMode);
+        auto stop = [&](const char* why) {
+            if (*mode == 8) *mode = saved_mode;
+            on = false;
+            g_fc_room = 0;
+            input_set_freecam(false);
+            log("Freie Kamera aus (%s)\n", why);
+        };
+        if (toggle && !on && cam && p1) {
+            const float* cp = reinterpret_cast<const float*>(cam + hf2::kCamPos);
+            const float* cd = reinterpret_cast<const float*>(cam + hf2::kCamDir);
+            std::memcpy(pos, cp, sizeof pos);
+            yaw = std::atan2(cd[0], cd[2]);
+            pitch = std::atan2(cd[1], std::sqrt(cd[0] * cd[0] + cd[2] * cd[2]));
+            saved_mode = *mode;
+            // was Modus 8 nach [Kamera+0x208]+0x30/+0x34 legt: wie jetzt
+            if (uint8_t* proj = *reinterpret_cast<uint8_t**>(cam + hf2::kCamProj))
+                std::memcpy(img.va<uint8_t>(hf2::kFreecamExtra), proj + 0x30, 8);
+            on = true;
+            input_set_freecam(true);
+            log("Freie Kamera an bei %.2f %.2f %.2f (Kameramodus %d)\n", pos[0], pos[1], pos[2], saved_mode);
+        } else if (toggle && on) {
+            stop("Taste");
+        } else if (on && (!cam || !p1)) {
+            stop("Level zu Ende");
+        }
+        if (on) {
+            const FreecamInput in = input_freecam();
+            const float dt = 1.0f / float(s.tick_rate);
+            constexpr float kRadPerCount = 0.0025f;
+            yaw -= in.look_x * kRadPerCount;
+            pitch = std::clamp(pitch - in.look_y * kRadPerCount, -1.5f, 1.5f);
+            // rechtshändig wie im Fork: Blick +z, rechts ist -x
+            const float c = std::cos(pitch);
+            const float f[3] = {std::sin(yaw) * c, std::sin(pitch), std::cos(yaw) * c};
+            const float r[3] = {-std::cos(yaw), 0.0f, std::sin(yaw)};
+            const float speed = 6.0f * (in.fast ? 4.0f : 1.0f);
+            for (int k = 0; k < 3; ++k) pos[k] += (f[k] * in.move_y + r[k] * in.move_x) * speed * dt;
+            pos[1] += in.up * speed * dt;
+            *mode = 8;
+            float* gp = img.va<float>(hf2::kFreecamPos);
+            float* gt = img.va<float>(hf2::kFreecamTarget);
+            for (int k = 0; k < 3; ++k) gp[k] = pos[k], gt[k] = pos[k] + f[k];
+            // Raum an der Kamera-Position; keiner gefunden: den alten behalten
+            const auto find_room = reinterpret_cast<FindRoomFn>(img.va<uint8_t>(hf2::kFindRoom));
+            const int32_t room = find_room(pos, 1.0f, *reinterpret_cast<float*>(p1 + hf2::kPlayerRoomArg));
+            if (room) g_fc_room = room;
         }
     }
     // Nickgrenze (Xbox-Fork: ts2_pitch_limit). Die Globale 0x143F1A390 (Xbox

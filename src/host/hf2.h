@@ -57,6 +57,19 @@ constexpr uint64_t kPitchLimit = 0x143F1A390;       // float, Nickgrenze in Grad
 constexpr uint64_t kCameraSetup = 0x14107EE0C;
 constexpr uint64_t kCameraSetupCallInit = 0x141080C85;
 constexpr uint64_t kCameraSetupCallFrame = 0x14108208A;
+// Kamera-Globale (Xbox 0x4B2CA0): Zeiger, Modus; Modus 8 baut die Sicht aus
+// Position und Blickpunkt (Fall 0x1410828DB der Kamera-Aktualisierung
+// 0x141081F28), den Raum nimmt er vom aktuellen Spieler (0x1410828EE,
+// mov ecx,[r12+0xD78]). Raumsuche wie in Modus 6: 0x1411BFA08(pos, 1.0,
+// Spieler 1 +0xF4), 0 = keiner.
+constexpr uint64_t kCamera = 0x143F3A870;
+constexpr uint64_t kCameraMode = 0x143F3A888;
+constexpr uint64_t kFreecamPos = 0x143F3A8A0;     // float[3]
+constexpr uint64_t kFreecamTarget = 0x143F3A8AC;  // float[3]
+constexpr uint64_t kFreecamExtra = 0x143F3A8B8;   // 2 Werte -> [Kamera+0x208]+0x30/+0x34
+constexpr uint64_t kCamMode8Room = 0x1410828EE;
+constexpr uint64_t kFindRoom = 0x1411BFA08;
+constexpr uint32_t kCamPos = 0x2A0, kCamDir = 0x310, kCamProj = 0x208, kPlayerRoomArg = 0xF4;
 constexpr uint64_t kWalk = 0x1411D9748;             // Bewegungsmodus 0, Gehen
 constexpr uint64_t kWalkCall = 0x1411DBE73;         // sein einziger Aufruf (im Dispatcher 0x1411DAF8C)
 constexpr uint32_t kPlayerFallSpeedX = 0xDF8;       // Quergeschwindigkeit im Fall, je Takt

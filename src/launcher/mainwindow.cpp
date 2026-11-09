@@ -377,6 +377,11 @@ QWidget* MainWindow::page_controls() {
     f->addRow(QString(), check(QStringLiteral("Oben und unten vertauschen"), "maus", "umkehren"));
     f->addRow(QStringLiteral("Nickgrenze"), spin("maus", "nickgrenze", 40, 89, QStringLiteral("°")));
     f->addRow(QString(), check(QStringLiteral("Menüs mit der Maus"), "maus", "menue"));
+    f->addRow(heading(QStringLiteral("Freie Kamera")));
+    f->addRow(hint(QStringLiteral("Taste löst die Kamera vom Spieler: WASD, Maus, Leertaste/C steigen/sinken, "
+                                  "Umschalt schneller. Dieselbe Taste bringt sie zurück.")));
+    f->addRow(QString(), check(QStringLiteral("Freie Kamera"), "kamera", "freecam"));
+    f->addRow(QStringLiteral("Taste"), single_key("kamera", "freecam_taste"));
     v->addWidget(p1);
 
     auto* p2 = panel();

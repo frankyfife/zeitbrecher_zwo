@@ -29,6 +29,18 @@ void input_script(const wchar_t* spec);
 constexpr uint32_t kHostJump = 0x80000000u, kHostForward = 0x40000000u, kHostRun = 0x20000000u,
                    kHostMouseRight = 0x10000000u;  // nur Testskripte: Maus 20 Zählschritte je Takt nach rechts
 uint32_t input_host_bits();
+// Testskripte: Flanke schaltet die freie Kamera um (erreicht TS2 nicht)
+constexpr uint32_t kHostFreecam = 0x08000000u;
+// Freie Kamera: solange an, bekommt TS2 keine Bewegung, keinen Blick und von
+// den Tasten nur Start (Pause); das hier sammelt sie für die Kamera.
+struct FreecamInput {
+    float move_x = 0, move_y = 0;  // -1..1: rechts, vorwärts
+    float look_x = 0, look_y = 0;  // Maus-Zählschritte (Pad: umgerechnet), y nach unten positiv
+    float up = 0;                  // +1 steigen (Leertaste), -1 sinken (C)
+    bool fast = false;             // Umschalttaste / linke Schultertaste
+};
+void input_set_freecam(bool on);
+FreecamInput input_freecam();
 // true, solange Tastatur+Maus das Gerät ist (Mausmodus, Port 6)
 bool input_uses_mouse();
 // nach Größen- oder Lageänderung des Fensters: Mausbereich anpassen

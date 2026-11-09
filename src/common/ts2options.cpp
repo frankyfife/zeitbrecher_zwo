@@ -92,6 +92,8 @@ const std::vector<IniOption>& ini_options() {
              "Spieltexte: pc (englisch, wie im PC-Port), de, fr, it, es, en (britisch);\n"
              "die Texte kommen aus dem eigenen Xbox-Image (Launcher oder tools/re/xbox_text.py)"},
             {"sprache", "xbox_image", "", "Pfad des eigenen Xbox-Images (nur fuer den Launcher)"},
+            {"kamera", "freecam", "1", "Freie Kamera: Taste loest die Kamera vom Spieler (WASD, Maus, Leertaste/C, Umschalt schneller)"},
+            {"kamera", "freecam_taste", "117", "virtueller Tastencode, 117 = F6"},
             {"grafik", "breite", "1920", "Render-Aufloesung"},
             {"grafik", "hoehe", "1080", ""},
             {"grafik", "takt", "60", "Bildtakt: 60 oder 120 (120: Spieler und Kamera nativ, Gegner in 60er-Schritten)"},

@@ -83,7 +83,10 @@ Funktionen von außen erreicht. Daraus:
    (löscht das Ziel vor jedem Bild auf Alpha 0 bzw. 1) vergleichen; ändert
    sich das Glas, ist das die Ursache und die Lösung ein festes Löschen.
    Im Glass-Smash-Start ändern beide kein Pixel.
-6. Freecam: Grundlage gefunden, Umsetzung offen. PC-Gegenstück zu Xbox
+6. Freecam: erledigt (`[kamera] freecam`, Taste F6; WASD, Maus,
+   Leertaste/C, Umschalt), geprüft im Glass-Smash-Start (über die Mauer
+   geflogen, Level bleibt gezeichnet; zurück steht der Spieler unverändert).
+   Offen: von Hand im Spiel, 120 Hz. Grundlagen: PC-Gegenstück zu Xbox
    `0x4B2CA0`: Globale ab `0x143F3A870` (Kamera-Zeiger), Modus
    `0x143F3A888`. Die Kamera-Aktualisierung `0x141081F28` verteilt nach Modus
    (2…9); Modus 8 (`0x1410828DB`) setzt die Kamera-Position (+0x2A0) aus

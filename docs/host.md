@@ -376,6 +376,20 @@ geprüft.
   zusammen, das Zielfernrohr zoomt im Verhältnis des Spiels. Geprüft:
   Glass-Smash-Start bei 100 und 130 %, breiteres Bild ohne fehlende Teile
   am Rand.
+- **Freie Kamera** (`ts2_freecam`): `[kamera] freecam=1`, Taste
+  `freecam_taste` (F6) löst die Kamera vom Spieler und bringt sie zurück.
+  WASD bewegen, Maus blickt, Leertaste/C steigen/sinken, Umschalt viermal
+  schneller (Pad: linker Stick, rechter Stick, Steuerkreuz, linke
+  Schultertaste). Der Spieler bekommt solange keine Eingabe außer Pause.
+  Kameramodus 8 (`0x143F3A888`) baut die Sicht aus Position `0x143F3A8A0`
+  und Blickpunkt `0x143F3A8AC`, die `features_tick` je Takt schreibt. Den
+  Raum, aus dem das Level gezeichnet wird, nimmt Modus 8 vom Spieler
+  (`0x1410828EE`); ein Stück dort nimmt stattdessen den Raum an der
+  Kamera-Position (Raumsuche `0x1411BFA08` wie die Flugkamera Modus 6),
+  sonst verschwände das Level, sobald die Kamera den Raum verlässt.
+  Skript-Bit `0x08000000` schaltet um (Tests). Geprüft: im Glass-Smash-Start
+  über die Mauer geflogen, Level vollständig; danach steht der Spieler wie
+  vorher.
 - **Zurückkippen beim Gehen:** Der Fork hält dafür +0x150 fest. Gemessen
   (`TS2_BLICKPROBE`): Der PC-Port kippt mit der Maus nicht zurück (Nick
   bleibt 30°, Zustand 1), also nichts zu tun.

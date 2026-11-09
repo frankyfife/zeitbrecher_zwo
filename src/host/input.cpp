@@ -91,8 +91,11 @@ bool g_captured = false;
 uint32_t g_frame = 0;
 
 // Bits nur für Testskripte (nicht an TS2): Sprung, vorwärts gehen
-constexpr uint32_t kScriptForward = kHostForward, kHostBits = kHostJump | kHostForward | kHostRun | kHostMouseRight;
+constexpr uint32_t kScriptForward = kHostForward,
+                   kHostBits = kHostJump | kHostForward | kHostRun | kHostMouseRight | kHostFreecam;
 uint32_t g_host_bits = 0;
+bool g_freecam = false;
+FreecamInput g_fc;
 
 struct Scripted {
     uint32_t from, count, bits;
@@ -271,6 +274,12 @@ void input_frame() {
         if (b & XINPUT_GAMEPAD_DPAD_RIGHT) bits |= kRight;
         capture(false);
         if (g_mode != 0) call(kSetMode, 0), g_mode = 0;
+        if (g_freecam) {
+            g_fc = {lx, ly, rx * 30.0f, -ry * 30.0f,
+                    float((b & XINPUT_GAMEPAD_DPAD_UP) != 0) - float((b & XINPUT_GAMEPAD_DPAD_DOWN) != 0),
+                    (b & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0};
+            lx = ly = rx = ry = 0;
+        }
         call(kSetLeftX, lx);
         call(kSetLeftY, ly);
         call(kLookX, rx);
@@ -294,9 +303,15 @@ void input_frame() {
         g_wheel = 0;
         capture(f && !menu_active);
         if (g_mode != 1) call(kSetMode, 1), g_mode = 1;
+        const float s = g_mouse_sens;
+        if (g_freecam) {
+            g_fc = {lx, ly, g_mdx * s, g_mdy * s * (g_mouse_invert ? -1.0f : 1.0f),
+                    float(f && down(VK_SPACE)) - float(f && down('C')), f && down(VK_SHIFT)};
+            lx = ly = 0;
+            g_mdx = g_mdy = 0;
+        }
         call(kSetLeftX, lx);
         call(kSetLeftY, ly);
-        const float s = g_mouse_sens;
         call(kLookX, g_mdx * s);
         call(kLookY, -(g_mdy * s) * (g_mouse_invert ? -1.0f : 1.0f));
     }
@@ -306,13 +321,28 @@ void input_frame() {
     for (auto& sc : g_script)
         if (g_frame >= sc.from && g_frame < sc.from + sc.count) scripted |= sc.bits;
     g_host_bits = (scripted & kHostBits) | pad_host;
-    if (g_host_bits & kScriptForward) call(kSetLeftY, 1.0f);
-    if ((g_host_bits & kHostMouseRight) && g_mode == 1) call(kLookX, 20.0f * g_mouse_sens);
-    bits |= scripted & ~kHostBits;
+    if (g_freecam) {
+        // Skript: vorwärts und nach rechts drehen bewegen die Kamera
+        if (g_host_bits & kScriptForward) g_fc.move_y = 1.0f;
+        if (g_host_bits & kHostMouseRight) g_fc.look_x += 20.0f * g_mouse_sens;
+        g_host_bits &= kHostFreecam;  // kein Sprung, kein Rennen für den Spieler
+        bits &= kStart;               // Pause bleibt erreichbar
+    } else {
+        if (g_host_bits & kScriptForward) call(kSetLeftY, 1.0f);
+        if ((g_host_bits & kHostMouseRight) && g_mode == 1) call(kLookX, 20.0f * g_mouse_sens);
+        bits |= scripted & ~kHostBits;
+    }
     call(kSetButtons, int32_t(bits));
 }
 
 uint32_t input_host_bits() { return g_host_bits; }
+
+void input_set_freecam(bool on) {
+    g_freecam = on;
+    g_fc = {};
+}
+
+FreecamInput input_freecam() { return g_fc; }
 
 void input_reclip() {
     if (!g_captured) return;

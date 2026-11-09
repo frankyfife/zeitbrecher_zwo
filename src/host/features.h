@@ -23,6 +23,8 @@ struct Settings {
     bool run_toggle = false;          // Taste schaltet um statt gehalten zu werden
     float pitch_limit = 85.0f;        // Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)
     int fov_percent = 100;            // Sichtfeld in Prozent des Spiels (70–150)
+    bool freecam = true;              // freie Kamera (Xbox-Fork: ts2_freecam)
+    int freecam_key = 0x75;           // virtueller Tastencode (F6)
 };
 
 // Liest ts2.ini (neben ts2.exe); fehlt sie, wird sie mit Vorgaben angelegt.
