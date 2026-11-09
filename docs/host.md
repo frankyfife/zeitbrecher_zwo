@@ -401,6 +401,22 @@ TS2 rechnet in ganzen 1/60-s-Takten, und die Logik hängt daran.
 - **Ein Takt pro Bild:** Dann liefen alle Integer-Zähler doppelt so
   schnell (Schussabstände, KI, Timer).
 
+Weitere Befunde (`tools/re/ticks.py` ordnet alle 306 Stellen in 193
+Funktionen ein):
+
+- **Objektzeit:** `0x1411FE70C` aktualisiert die Spielobjekte (Liste
+  `0x143F120A0`). Jedes bekommt Takte = Objektuhr (`0x143F2F7A4`) − sein
+  Zeitstempel (+0x1C), höchstens 5, und setzt daraus die Integer- und
+  Float-Bildzeit pro Objekt neu. Typen mit Flag 0x800 (Tabelle
+  `0x14257F424`) bekommen die globalen Takte. Die Spielwelt lebt also in
+  ganzen Takten mit Zeitstempeln pro Objekt; Planungen „Uhr + N Takte“
+  hängen daran.
+- **Abfragen:** 132 Stellen fragen „Takte ≠ 0?“, aber oft als Wächter einer
+  Schleife pro Takt (z. B. Dämpfung im Bewegungs-Dispatcher `0x1411DBEED`:
+  `do x += x·k while (++i < Takte)`). Pauschal auf die Float-Bildzeit
+  umlenken wäre falsch; jede Stelle braucht ihre gebrochene Form
+  (x·(1+k)^t).
+
 Echte 120 Hz ohne Zwischenbilder heißen deshalb: die Integer-Takt-Logik
 der 130 Funktionen auf halbe Takte umstellen. Das gehört zu „Dekompilieren
 durch Ersetzen“ (Roadmap Schritt 4). Bis dahin bleibt der Takt bei 60 Hz;
