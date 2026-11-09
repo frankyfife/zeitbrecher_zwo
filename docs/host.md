@@ -257,6 +257,22 @@ eigene dabei im Stereomodus.
 `ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
 `ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
 
+## Bildanpassung (`src/host/postfx.cpp`)
+
+`[grafik] gamma`, `kontrast`, `helligkeit` und `saettigung` passen das Bild
+als letzten Schritt vor der Ausgabe an.
+
+- **Alle Werte neutral (Vorgabe):** Der Schritt entfällt, TS2 zeichnet wie
+  bisher direkt in den Bildpuffer.
+- **Sonst:** TS2 zeichnet in eine eigene Textur gleicher Größe, die auch als
+  Quelle seiner Bildschirmkopien dient. Ein Vollbild-Dreieck schreibt sie
+  angepasst in den Bildpuffer. Alle Zustände, die dieser Schritt anfasst,
+  werden danach wiederhergestellt.
+- **Geprüft** (Siberia, 60 Hz): Der Schritt mit praktisch neutralen Werten
+  ergibt ein pixelgleiches Bild (größte Abweichung 0). Kontrast 1,2 /
+  Gamma 1,1 erhöht die Helligkeitsstreuung von 29 auf 35.
+- Der Schritt ist die Grundlage für eine HDR-Ausgabe.
+
 ## Fenster und Vollbild
 
 - **DPI:** `ts2.exe` ist DPI-bewusst (pro Monitor, v2) und arbeitet in

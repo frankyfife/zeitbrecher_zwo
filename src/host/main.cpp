@@ -34,6 +34,7 @@
 #include "menumouse.h"
 #include "ts2options.h"
 #include "timing.h"
+#include "postfx.h"
 #include "audio.h"
 #include "hf2.h"
 #include "log.h"
@@ -481,6 +482,25 @@ int wmain(int argc, wchar_t** argv) {
     ID3D11RenderTargetView* rtv = nullptr;
     gfx.swap->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back));
     gfx.dev->CreateRenderTargetView(back, nullptr, &rtv);
+    // Bildanpassung ([grafik] gamma, kontrast, helligkeit, saettigung): TS2
+    // zeichnet dann in eine eigene Textur, postfx_apply schreibt sie angepasst
+    // in den Bildpuffer. Neutral zeichnet TS2 wie bisher direkt hinein.
+    ID3D11RenderTargetView* scene_rtv = rtv;
+    ID3D11Texture2D* scene_tex = back;
+    {
+        const std::wstring ini = (self_dir() / L"ts2.ini").wstring();
+        auto getf = [&](const wchar_t* key, const wchar_t* def) {
+            wchar_t buf[32];
+            GetPrivateProfileStringW(L"grafik", key, def, buf, 32, ini.c_str());
+            return float(_wtof(buf));
+        };
+        PostFxSettings pf;
+        pf.gamma = getf(L"gamma", L"1.0");
+        pf.contrast = getf(L"kontrast", L"1.0");
+        pf.brightness = getf(L"helligkeit", L"0.0");
+        pf.saturation = getf(L"saettigung", L"1.0");
+        postfx_init(gfx.dev, back, pf, &scene_rtv, &scene_tex);
+    }
 
     // Bildzeiten protokollieren (alle 600 Bilder): Mittel, Spanne, Ausreißer
     LARGE_INTEGER qf, q0;
@@ -521,10 +541,11 @@ int wmain(int argc, wchar_t** argv) {
             return 4;
         }
         timing_frame();
-        if (!call_render(obj, &devh, &ctxh, rtv, back)) {
+        if (!call_render(obj, &devh, &ctxh, scene_rtv, scene_tex)) {
             log("Bild %d ist abgestürzt\n", t);
             return 5;
         }
+        postfx_apply(gfx.ctx, rtv);
         if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, back, shot);
         // TS2_BILDPAAR=1: auch das vorletzte Bild (<bild>.vorher.bmp), um zu
         // prüfen, ob sich das Bild in jedem Takt ändert

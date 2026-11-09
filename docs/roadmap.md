@@ -51,6 +51,10 @@ Funktionen von außen erreicht. Daraus:
    Klasse für Klasse. Stufe 1 (Spieler und Kamera, `[grafik] takt=120`)
    ist erledigt.
 2. Belichtung und Kontrast: Das Bild wirkt flau bzw. falsch belichtet.
+   Vorhanden: Bildanpassung `[grafik] gamma/kontrast/helligkeit/saettigung`
+   (eigener letzter Schritt, neutral aus). Ursache noch offen; Spuren: der
+   ungesetzte Sampler in Slot 1 (siehe Grafikfehler) und die Gamma-Kodierung
+   der Swapchain.
    Erster Verdacht: Die Swapchain ist `R8G8B8A8_UNORM` ohne sRGB, also eine
    mögliche Gamma-Abweichung zu dem, was TS2 schreibt. Außerdem fehlt
    womöglich eine Nachbearbeitung (Gamma, Tonemapping), die Homefront nach
