@@ -38,7 +38,7 @@ Funktionen von außen erreicht. Daraus:
 | Eingabe | Tastatur+Maus (Raw Input, Belegung wie im Xbox-Fork), Pad (XInput), Maus im Menü |
 | Menü-Sperre der Homefront-Fassung ("Story/Quit") | erledigt: Arcade, Challenge, alle Story-Level, Options (`ts2.ini` [freischalten]) |
 | Ton (5.1), Musik | erledigt: XAudio2; eigener 5.1-Mixer auf TS2s Stimmen (gegen das Original geprüft), Ogg mit stb_vorbis |
-| Bildrate ≥ 120, HDR | 60 Hz sauber getaktet; 120 Hz Stufe 1 (Spieler und Kamera nativ, Welt in 60-Hz-Takten, `[grafik] takt=120`); HDR offen |
+| Bildrate ≥ 120, Belichtung, HDR | 60 Hz sauber getaktet; 120 Hz Stufe 1 (Spieler und Kamera nativ, Welt in 60-Hz-Takten, `[grafik] takt=120`); Belichtung/Kontrast fehlerhaft; HDR offen |
 | TS2-Funktionen benennen/dekompilieren | laufend (≈ 4 500 ohne Namen) |
 | Lokalisierung (Texte, ggf. Sprache) aus dem eigenen Xbox-Image, z. B. die PAL-Fassung (En/Fr/De/Es/It); Sprachwahl im Launcher | offen |
 | Launcher | offen |
@@ -47,9 +47,18 @@ Funktionen von außen erreicht. Daraus:
 
 1. 120 fps nativ, Stufe 2: Gegner und Objekte (Objektuhr `0x143F2F7A4`,
    Zeitstempel +0x1C) und die Dämpfungen pro Takt auf halbe Takte. Stufe 1
-   (Spieler und Kamera, `[grafik] takt=120`) ist erledigt. Danach HDR.
-2. Freecam, Sichtfeld.
-3. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
-4. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
+   (Spieler und Kamera, `[grafik] takt=120`) ist erledigt.
+2. Belichtung und Kontrast: Das Bild wirkt flau bzw. falsch belichtet.
+   Erster Verdacht: Die Swapchain ist `R8G8B8A8_UNORM` ohne sRGB, also eine
+   mögliche Gamma-Abweichung zu dem, was TS2 schreibt. Außerdem fehlt
+   womöglich eine Nachbearbeitung (Gamma, Tonemapping), die Homefront nach
+   TS2s Render-Aufruf angewandt hat. Zuerst messen: Bild gegen die
+   Homefront-Fassung und die Xbox-Fassung vergleichen.
+3. HDR-Ausgabe (noch nicht drin): Swapchain mit HDR10 oder scRGB, TS2s
+   Bild in einen erweiterten Bereich abbilden (Spitzlichter, Weißpunkt
+   einstellbar), als Option im Launcher.
+4. Freecam, Sichtfeld.
+5. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
+6. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
    lesen; TS2 hat eine Texttabelle je Sprache (`0x1424E2430`, Sprache
    `0x142EE39C0`), im PC-Port ist nur Englisch belegt. Auswahl im Launcher.
