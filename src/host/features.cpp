@@ -15,30 +15,6 @@
 namespace host {
 
 Settings load_settings(const std::filesystem::path& ini) {
-    if (!std::filesystem::exists(ini)) {
-        std::ofstream f(ini);
-        f << "; Einstellungen für ts2.exe\n"
-             "[waffen]\n"
-             "; Tempo des Waffenwechsels in Prozent (100 = wie das Spiel; gilt auch für die KI)\n"
-             "wechseltempo=100\n"
-             "; Feuerrate in Prozent (200 = doppelt so oft; gilt auch für die KI);\n"
-             "; einzelne Waffen: feuerrate_<zeile>=Prozent (Zeile 0–45 der Waffentabelle)\n"
-             "feuerrate=100\n\n"
-             "[bewegung]\n"
-             "; Springen aus dem Stand (erste Fassung)\n"
-             "springen=1\n"
-             "; virtueller Tastencode, 32 = Leertaste\n"
-             "sprungtaste=32\n"
-             "; Sprunghöhe in Spieleinheiten\n"
-             "sprunghoehe=1.2\n"
-             "; Rennen, solange die Taste gehalten wird (160 = 1,6-fach)\n"
-             "rennen=1\n"
-             "; 160 = linke Umschalttaste\n"
-             "renntaste=160\n"
-             "renntempo=160\n"
-             "; 1: die Taste schaltet Rennen ein und aus\n"
-             "rennen_umschalten=0\n";
-    }
     Settings s;
     const std::wstring p = ini.wstring();
     s.width = int(GetPrivateProfileIntW(L"grafik", L"breite", 1920, p.c_str()));

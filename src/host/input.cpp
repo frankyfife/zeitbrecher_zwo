@@ -158,14 +158,6 @@ void input_init(HWND wnd, void* obj, const std::filesystem::path& ini) {
         sec.push_back(L'\0');
         WritePrivateProfileSectionW(L"tasten", sec.data(), p.c_str());
         log("ts2.ini: [tasten] auf die neue Belegung umgestellt\n");
-    } else if (!have_keys) {
-        std::wofstream f(ini, std::ios::app);
-        f << L"\n[tasten]\n; virtuelle Tastencodes (dezimal), bis zu drei je Aktion mit Komma;\n"
-             L"; 1/2/4 = linke/rechte/mittlere Maustaste. Mausrad: Waffe wechseln.\n";
-        f << L"belegung=" << kBindingVersion << L"\n";
-        f << L"vorwaerts=" << g_fwd << L"\nrueckwaerts=" << g_back << L"\nlinks=" << g_left << L"\nrechts=" << g_right << L"\n";
-        for (auto& k : g_keys) f << k.name << L"=" << vk_list(k.vk) << L"\n";
-        f << L"\n[maus]\nempfindlichkeit=1.0\numkehren=0\n; Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)\nnickgrenze=85\n; Menues mit der Maus (Zeiger, Linksklick OK, Rechtsklick zurueck)\nmenue=1\n";
     }
     g_fwd = int(GetPrivateProfileIntW(L"tasten", L"vorwaerts", g_fwd, p.c_str()));
     g_back = int(GetPrivateProfileIntW(L"tasten", L"rueckwaerts", g_back, p.c_str()));
@@ -317,6 +309,21 @@ void input_frame() {
 }
 
 uint32_t input_host_bits() { return g_host_bits; }
+
+void input_default_keys(std::vector<std::pair<std::string, std::string>>* out) {
+    auto narrow = [](const std::wstring& w) {  // Schlüssel und Zahlen sind ASCII
+        std::string n;
+        for (wchar_t c : w) n.push_back(static_cast<char>(c));
+        return n;
+    };
+    out->push_back({"vorwaerts", std::to_string(g_fwd)});
+    out->push_back({"rueckwaerts", std::to_string(g_back)});
+    out->push_back({"links", std::to_string(g_left)});
+    out->push_back({"rechts", std::to_string(g_right)});
+    for (auto& k : g_keys) out->push_back({narrow(k.name), narrow(vk_list(k.vk))});
+}
+
+std::string input_binding_version() { return std::to_string(kBindingVersion); }
 bool input_uses_mouse() { return g_mode == 1; }
 
 }  // namespace host

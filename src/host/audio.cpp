@@ -17,17 +17,6 @@ namespace host {
 
 AudioConfig load_audio_config(const std::filesystem::path& ini) {
     const std::wstring p = ini.wstring();
-    if (GetPrivateProfileIntW(L"ton", L"an", -1, p.c_str()) == UINT(-1)) {
-        std::ofstream f(ini, std::ios::app);
-        f << "\n[ton]\n"
-             "an=1\n"
-             "; Lautstaerken (1.0 = wie das Spiel)\n"
-             "gesamt=1.0\n"
-             "musik=1.0\n"
-             "effekte=1.0\n"
-             "; 5.1 ausgeben, wenn das Geraet es kann\n"
-             "surround=1\n";
-    }
     auto getf = [&](const wchar_t* key, float def) {
         wchar_t buf[32], d[32];
         swprintf_s(d, L"%g", def);

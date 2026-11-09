@@ -12,21 +12,6 @@ namespace host {
 
 UnlockConfig load_unlock_config(const std::filesystem::path& ini) {
     const std::wstring p = ini.wstring();
-    if (GetPrivateProfileIntW(L"freischalten", L"arcade", -1, p.c_str()) == UINT(-1)) {
-        std::ofstream f(ini, std::ios::app);
-        f << "\n[freischalten]\n"
-             "; wie die Konsolen-Codes der Homefront-Fassung (1 = an)\n"
-             "story=1\n"
-             "arcade=1\n"
-             "challenge=1\n"
-             "; alle Cheats/Extras im Optionsmenue\n"
-             "cheats=0\n"
-             "unverwundbar=0\n"
-             "; jede Freischalt-Bedingung gilt als erfuellt (Figuren, Level, Extras)\n"
-             "alles=0\n"
-             "; Hauptmenue mit \"Options\" (in der Homefront-Fassung gestrichen)\n"
-             "optionen=1\n";
-    }
     auto get = [&](const wchar_t* key, bool def) {
         return GetPrivateProfileIntW(L"freischalten", key, def ? 1 : 0, p.c_str()) != 0;
     };

@@ -26,7 +26,7 @@ Danach wird Homefront nicht mehr gebraucht. `game/` gehört nie ins Repo.
 
 `ts2.exe [--spiel <game>] [--takte N [--bild datei.bmp]]`: `--takte` hält
 nach N Takten an (Tests), `--bild` speichert den letzten Bildpuffer.
-Einstellungen in `ts2.ini` neben der EXE (wird beim ersten Start angelegt):
+Einstellungen in `ts2.ini` neben der EXE. Alle Optionen stehen mit Vorgabe und Kommentar in `src/host/inifile.cpp`; beim Start trägt `ts2.exe` fehlende Schlüssel und Abschnitte nach (vorhandene Werte und Kommentare bleiben):
 Render-Auflösung, Vollbild, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen, Ton. Protokoll:
 `ts2.log` neben der EXE.
 
