@@ -361,7 +361,52 @@ keine Ausreißer; Spitzen nur bei Ladebildschirmen. Vorher lief das Warten
 auf den Monitor gegen TS2s eigenen Takt. Mehr als 60 Bilder pro Sekunde
 brauchen die Entkopplung von Takt und Bild (Roadmap).
 
-## 120 Hz nativ: Befund (Forschungsstand)
+## 120 Hz nativ, Stufe 1: Spieler und Kamera
+
+Einschalten mit `[grafik] takt=120` (oder `TS2_TAKT=120`); Vorgabe bleibt
+60.
+
+**Was `timing.cpp` macht**
+- Der Begrenzer taktet mit 1/120 s.
+- Die Zeitfortschreibung bekommt weiter 60-Hz-Takte. Spielzeit und Uhren
+  laufen gemessen mit 60 Takten/s.
+- Die Integer-Takte wechseln 1/0: Zähler, Schussabstände und KI laufen im
+  60-Hz-Raster mit richtigem Tempo.
+- Die Spieler-Aktualisierung (`0x14114C990`, Aufrufe `0x1411C6C93` und
+  `0x1411C6D99`) bekommt in jedem Bild die halbe Float-Bildzeit. Vorher hat
+  die Objektschleife `0x1411FE70C` sie auf ganze Takte zurückgesetzt; so
+  lief der Gehcode nur jedes zweite Bild.
+- Bewegung, Blick, Sprung und Kamera laufen damit in jedem der 120 Bilder.
+- Die übrige Welt (Objekte mit Zeitstempeln) rechnet weiter in 60-Hz-Takten.
+
+**Gemessen** (Siberia, Skript)
+
+| | 60 Hz | 120 Hz |
+| --- | --- | --- |
+| Gehcode-Aufrufe | jedes Bild, Bildzeit 1,0 | jedes Bild, Bildzeit 0,5 |
+| Gehen je 10 Bilder | 1,042 | 0,521 (gleiches Tempo pro Sekunde) |
+| Rennen je 10 Bilder | 1,667 | 0,833 |
+| Sprung: Flugzeit | ≈ 0,47 s | ≈ 0,50 s (gleich innerhalb der Probenauflösung) |
+| Sprung: Scheitel | 1,12 | 1,16 (feinere Schritte, näher am exakten 1,2) |
+| Bildzeit | 16,67 ms | 8,33 ms |
+
+- **Kamera:** Zwei aufeinanderfolgende Bilder unterscheiden sich im Lauf in
+  über 600 000 Pixeln, sowohl in Bildern mit als auch ohne Takt; im Stand
+  nur in rund 1 500 (Schnee). Die Kamera bewegt sich also in jedem Bild.
+- **Schuss und Waffenwechsel:** Der Schusscode (`0x1411276E0`) und der
+  Waffenwechsel (`0x14112D3FC`) laufen nur bei `Takte ≥ 1`, also
+  unverändert im 60-Hz-Raster.
+- **Menümaus:** Klicks greifen in Bildern mit und ohne Takt.
+
+**Offen**
+- Von Hand prüfen: Waffenschwanken, Kopfwippen und andere Effekte, die pro
+  Aufruf statt pro Takt rechnen könnten.
+- Gegner und Objekte (Stufe 2: Objektuhr).
+- Dämpfungen pro Takt im Dispatcher (`0x1411DBEED`, `0x1411DC352`) laufen
+  noch im 60-Hz-Raster.
+- Proben: `TS2_GEHPROBE=1`, `TS2_BILDPAAR=1`.
+
+## 120 Hz nativ: Befund
 
 TS2 rechnet in ganzen 1/60-s-Takten, und die Logik hängt daran.
 
@@ -420,7 +465,7 @@ Funktionen ein):
 Echte 120 Hz ohne Zwischenbilder heißen deshalb: die Integer-Takt-Logik
 der 130 Funktionen auf halbe Takte umstellen. Das gehört zu „Dekompilieren
 durch Ersetzen“ (Roadmap Schritt 4). Bis dahin bleibt der Takt bei 60 Hz;
-der Weg ist nur über die Umgebungsvariable erreichbar. Proben:
+Stufe 1 (oben) gibt Spieler und Kamera die halben Takte. Proben:
 `TS2_TAKTPROBE=1` (Spielzeit je Sekunde), `TS2_RENNPROBE=1` (Strecke).
 
 ## Was fehlt (in dieser Reihenfolge)

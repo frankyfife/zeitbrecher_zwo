@@ -45,10 +45,13 @@ Settings load_settings(const std::filesystem::path& ini) {
     s.height = int(GetPrivateProfileIntW(L"grafik", L"hoehe", 1080, p.c_str()));
     s.fullscreen = GetPrivateProfileIntW(L"grafik", L"vollbild", 0, p.c_str()) != 0;
     s.vsync = GetPrivateProfileIntW(L"grafik", L"bildsync", 0, p.c_str()) != 0;
-    // 120 Hz ist Forschungsstand (docs/host.md, "120 Hz"): nur über TS2_TAKT=120
+    // 120 Hz: Spieler und Kamera nativ, die übrige Welt rechnet in 60-Hz-Takten
+    // (docs/host.md, "120 Hz"); [grafik] takt=120 oder TS2_TAKT=120
     {
         wchar_t v[8] = {};
-        s.tick_rate = GetEnvironmentVariableW(L"TS2_TAKT", v, 8) > 0 && _wtoi(v) == 120 ? 120 : 60;
+        const int env = GetEnvironmentVariableW(L"TS2_TAKT", v, 8) > 0 ? _wtoi(v) : 0;
+        const int ini_rate = int(GetPrivateProfileIntW(L"grafik", L"takt", 60, p.c_str()));
+        s.tick_rate = (env ? env : ini_rate) == 120 ? 120 : 60;
     }
     s.weapon_switch_percent = int(GetPrivateProfileIntW(L"waffen", L"wechseltempo", 100, p.c_str()));
     s.rof_percent = int(GetPrivateProfileIntW(L"waffen", L"feuerrate", 100, p.c_str()));
@@ -100,6 +103,7 @@ WalkFn g_walk = nullptr;
 const Ts2Image* g_img = nullptr;
 float g_run_factor = 1.0f;
 bool g_running = false;
+int g_frame_no = 0;  // Bilder seit dem Start (Proben)
 
 void run_walk(void* ctx, float* a, float step1, float* b, float* c, float step2) {
     uint8_t* now = *g_img->va<uint8_t*>(hf2::kPlayerNow);
@@ -114,6 +118,17 @@ void run_walk(void* ctx, float* a, float step1, float* b, float* c, float step2)
         }
         step1 *= g_run_factor;
         step2 *= g_run_factor;
+    }
+    // TS2_GEHPROBE=1: Bild, Bildzeit und Schritte der ersten 40 Gehaufrufe von Spieler 1 mit Schritt
+    static const bool probe = [] {
+        wchar_t v[4] = {};
+        return GetEnvironmentVariableW(L"TS2_GEHPROBE", v, 4) > 0;
+    }();
+    static int logged = 0;
+    if (probe && now && now == player1(*g_img) && (step1 != 0.0f || step2 != 0.0f) && logged < 40) {
+        ++logged;
+        log("[gehen] Bild %d: Bildzeit %.2f, Takte %d, Schritte %.4f %.4f\n", g_frame_no,
+            *g_img->va<float>(hf2::kFrameTicks), *g_img->va<int32_t>(0x14259CBDC), step1, step2);
     }
     g_walk(ctx, a, step1, b, c, step2);
     if (cap) *cap = cap_was;
@@ -191,6 +206,7 @@ void features_install(const Ts2Image& img, const Settings& s) {
 // die Kollision landet den Spieler wieder in Modus 0. v0 = sqrt(2 g h).
 // Die Laufgeschwindigkeit des Augenblicks wird mitgenommen (wie im Xbox-Fork).
 void features_tick(const Ts2Image& img, const Settings& s, void* window) {
+    ++g_frame_no;
     // Bewegungsmodus von Spieler 1 bei jedem Wechsel protokollieren (Prüfung des Sprungs)
     static int32_t last_mode = -1;
     if (uint8_t* p1 = player1(img)) {

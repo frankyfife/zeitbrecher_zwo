@@ -38,16 +38,16 @@ Funktionen von außen erreicht. Daraus:
 | Eingabe | Tastatur+Maus (Raw Input, Belegung wie im Xbox-Fork), Pad (XInput), Maus im Menü |
 | Menü-Sperre der Homefront-Fassung ("Story/Quit") | erledigt: Arcade, Challenge, alle Story-Level, Options (`ts2.ini` [freischalten]) |
 | Ton (5.1), Musik | erledigt: XAudio2; eigener 5.1-Mixer auf TS2s Stimmen (gegen das Original geprüft), Ogg mit stb_vorbis |
-| Bildrate ≥ 120, HDR | 60 Hz sauber getaktet; 120 Hz nativ untersucht: TS2s Logik zählt ganze 60-Hz-Takte (130 Funktionen), siehe [host.md](host.md) "120 Hz nativ"; HDR offen |
+| Bildrate ≥ 120, HDR | 60 Hz sauber getaktet; 120 Hz Stufe 1 (Spieler und Kamera nativ, Welt in 60-Hz-Takten, `[grafik] takt=120`); HDR offen |
 | TS2-Funktionen benennen/dekompilieren | laufend (≈ 4 500 ohne Namen) |
 | Lokalisierung (Texte, ggf. Sprache) aus dem eigenen Xbox-Image, z. B. die PAL-Fassung (En/Fr/De/Es/It); Sprachwahl im Launcher | offen |
 | Launcher | offen |
 
 ## Nächste Schritte, konkret
 
-1. 120 fps nativ: die Integer-Takt-Logik (130 Funktionen, `0x14259CBDC`)
-   Schritt für Schritt auf halbe Takte umstellen; Forschungsstand
-   `TS2_TAKT=120` (Tempo noch halb). Danach HDR.
+1. 120 fps nativ, Stufe 2: Gegner und Objekte (Objektuhr `0x143F2F7A4`,
+   Zeitstempel +0x1C) und die Dämpfungen pro Takt auf halbe Takte. Stufe 1
+   (Spieler und Kamera, `[grafik] takt=120`) ist erledigt. Danach HDR.
 2. Freecam, Sichtfeld.
 3. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
 4. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image

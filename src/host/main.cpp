@@ -443,6 +443,10 @@ int wmain(int argc, wchar_t** argv) {
             return 5;
         }
         if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, back, shot);
+        // TS2_BILDPAAR=1: auch das vorletzte Bild (<bild>.vorher.bmp), um zu
+        // prüfen, ob sich das Bild in jedem Takt ändert
+        if (t + 2 == ticks && !shot.empty() && GetEnvironmentVariableW(L"TS2_BILDPAAR", nullptr, 0) > 0)
+            save_bmp(gfx, back, fs::path(shot).replace_extension(L".vorher.bmp"));
         // TS2 hält seine 60 Takte selbst ein (Sleep, dann Warteschleife,
         // 0x14107CC64); ein zusätzliches Warten auf den Monitor liefe gegen
         // diesen Takt. Ohne bildsync zeigt das Flip-Modell jedes Bild ab dem

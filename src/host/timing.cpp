@@ -56,6 +56,20 @@ int apply_record_hook(void* record, int player, int flag) {
     return r;
 }
 
+// Spieler-Aktualisierung (0x14114C990, aus der Spielerschleife 0x1411C6C3C):
+// vorher hat die Objektschleife 0x1411FE70C die Float-Bildzeit auf die
+// ganzen Takte zurückgesetzt (0 oder 1). Für Spieler und Kamera gelten bei
+// 120 Hz halbe Takte in jedem Bild.
+using PlayerFn = void (*)();
+PlayerFn g_player_update = nullptr;
+void player_update_hook() {
+    float* t = va<float>(kTicksFRun);
+    const float was = *t;
+    *t = g_paused ? 0.0f : float(g_n120) * 0.5f;
+    g_player_update();
+    *t = was;
+}
+
 void time_hook() {
     int32_t* raw = va<int32_t>(kRawTicks);
     const int n120 = *raw;
@@ -90,6 +104,11 @@ void timing_install(const Ts2Image& img, int hz) {
     g_apply = reinterpret_cast<ApplyFn>(
         hook_call(img, kApplyRecordCall, kApplyRecord, reinterpret_cast<const void*>(&apply_record_hook)));
     if (!g_apply) return;
+    for (uint64_t site : {0x1411C6C93ull, 0x1411C6D99ull}) {
+        auto* f = reinterpret_cast<PlayerFn>(
+            hook_call(img, site, 0x14114C990, reinterpret_cast<const void*>(&player_update_hook)));
+        if (f) g_player_update = f;
+    }
     // Teilungen: bei 0 Takten Quotient 0x7FFFFFFF ("kein Ereignis in diesem Bild")
     const uint64_t divisor = reinterpret_cast<uint64_t>(img.va(kTicksIntRun));
     int patched = 0;
@@ -121,7 +140,7 @@ void timing_install(const Ts2Image& img, int hz) {
         patched += patch_with_call(img, site, expected, 6, stub, sizeof stub);
     }
     g_on = true;
-    log("Bildtakt 120 Hz (Forschungsstand, Spieltempo noch halb): Periode %llu QPC-Einheiten, %d/7 Teilungen abgesichert\n",
+    log("Bildtakt 120 Hz (Spieler und Kamera nativ, Welt in 60-Hz-Takten): Periode %llu QPC-Einheiten, %d/7 Teilungen abgesichert\n",
         static_cast<unsigned long long>(g_period), patched);
 }
 

@@ -9,7 +9,7 @@ namespace host {
 struct Settings {
     int width = 1920, height = 1080;  // Render-Auflösung (TS2 intern: 1920x1080)
     bool fullscreen = false;
-    int tick_rate = 60;               // Bildtakt: 60; 120 nur als Forschungsstand (TS2_TAKT=120)
+    int tick_rate = 60;               // Bildtakt 60 oder 120 ([grafik] takt; Spieler/Kamera nativ)
     bool vsync = false;               // auf den Bildwechsel warten (TS2 taktet selbst)
     int weapon_switch_percent = 100;  // 100 = wie das Spiel
     int rof_percent = 100;            // Feuerrate aller Waffen (10–1000)
