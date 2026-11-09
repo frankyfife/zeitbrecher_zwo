@@ -91,8 +91,10 @@ Funktionen von außen erreicht. Daraus:
    `0x143F3A8AC` minus Position, dazu `0x143F3A8B8/8BC` nach
    `[Kamera+0x208]+0x30/+0x34`, und den Raum (+0x2B8) aus dem aktuellen
    Spieler (`*0x143F1A388` +0xD78). Wie im Fork muss der Raum für die freie
-   Position nachgeschlagen werden (Xbox `FUN_00120320`, PC-Gegenstück noch
-   suchen), sonst verschwindet das Level. Modus 0 setzt `0x14107D6D4`
+   Position nachgeschlagen werden, sonst verschwindet das Level: PC
+   `0x1411BFA08(&Kamera+0x2A0, 1.0f, Feld +0xF4)` (Xbox `FUN_00120320(pos,
+   1.0, player+0xE8)`), so in Modus 6 (`0x14107F8F0`, Flugkamera); liefert
+   0, wenn kein Raum gefunden wird (dann den alten behalten). Modus 0 setzt `0x14107D6D4`
    (Kamera-Anlage). Sichtfeld erledigt (`[grafik] sichtfeld`,
    Kamera-Einrichtung `0x14107EE0C`).
 7. Arcade und Challenge: per Skript geprüft (Arcade-Custom-Match `l_42_AR` mit
