@@ -433,6 +433,25 @@ QWidget* MainWindow::page_controls() {
     return scroll_page(content);
 }
 
+// Waffen in der Hand des Spielers, nach ihrer Zeile in der Waffentabelle
+// (0x14250C2A8), Namen nach ihren Modelldateien wie im Xbox-Fork
+// (split2-recomp_ff, launcher); die Zeilen stimmen mit dem PC-Port überein
+// (gleiche Schussabstände je Paar, z. B. Flammenwerfer/Feuerlöscher 1 Takt).
+namespace {
+const struct {
+    int row;
+    const char* name;
+} kWeapons[] = {
+    {0, "Schallgedämpfte Pistole"}, {1, "Schallgedämpfte Luger"}, {2, "Luger"}, {3, "Magnum"},
+    {4, "Sturm-Schrotflinte"}, {5, "Minigun"}, {6, "Scharfschützengewehr"}, {7, "Repetiergewehr"},
+    {8, "Flammenwerfer"}, {9, "Feuerlöscher"}, {10, "AK-47"}, {11, "Elektrowaffe"},
+    {12, "Sci-Fi-Pistole"}, {13, "Raketenwerfer"}, {14, "Lenkraketenwerfer"}, {15, "Laser"},
+    {16, "Plasma-MG"}, {17, "Granatwerfer"}, {19, "Annäherungsmine"}, {20, "Fernzündermine"},
+    {21, "Zeitzündermine"}, {22, "TNT"}, {23, "Tommy Gun"}, {24, "Uzi"},
+    {25, "Doppelläufige Flinte"}, {26, "Ziegelstein"}, {36, "Armbrust"}, {37, "Pulverfass"},
+};
+}  // namespace
+
 QWidget* MainWindow::page_weapons() {
     auto* content = new QWidget;
     auto* v = new QVBoxLayout(content);
@@ -446,13 +465,20 @@ QWidget* MainWindow::page_weapons() {
     auto* p2 = panel();
     auto* g = new QGridLayout(p2);
     g->addWidget(heading(QStringLiteral("Feuerrate einzelner Waffen")), 0, 0, 1, 6);
-    g->addWidget(hint(QStringLiteral("Zeile der Waffentabelle; 0 = wie oben. Namen folgen.")), 1, 0, 1, 6);
+    g->addWidget(hint(QStringLiteral("0 = wie oben. Zuerst die Waffen des Spielers, dann die übrigen Zeilen der "
+                                     "Waffentabelle (KI, Geschütze).")), 1, 0, 1, 6);
     static std::vector<std::string> keys;  // Schlüssel müssen leben, solange das Fenster lebt
     keys.clear();
     keys.reserve(46);
     for (int w = 0; w < 46; ++w) keys.push_back("feuerrate_" + std::to_string(w));
-    for (int w = 0; w < 46; ++w) {
-        g->addWidget(new QLabel(QStringLiteral("Waffe %1").arg(w)), 2 + w / 3, (w % 3) * 2);
+    std::vector<std::pair<int, QString>> order;
+    std::vector<bool> named(46, false);
+    for (const auto& e : kWeapons) order.emplace_back(e.row, QString::fromUtf8(e.name)), named[e.row] = true;
+    for (int w = 0; w < 46; ++w)
+        if (!named[w]) order.emplace_back(w, QStringLiteral("Zeile %1").arg(w));
+    for (int i = 0; i < int(order.size()); ++i) {
+        const int w = order[i].first;
+        g->addWidget(new QLabel(order[i].second), 2 + i / 3, (i % 3) * 2);
         auto* s = new QSpinBox;
         s->setRange(0, 1000);
         s->setSuffix(QStringLiteral(" %"));
@@ -463,7 +489,7 @@ QWidget* MainWindow::page_weapons() {
             if (val == 0) ini_.set("waffen", key, QString());  // leer: wie oben
             else ini_.set_int("waffen", key, val);
         });
-        g->addWidget(s, 2 + w / 3, (w % 3) * 2 + 1);
+        g->addWidget(s, 2 + i / 3, (i % 3) * 2 + 1);
     }
     v->addWidget(p2);
     v->addStretch();
