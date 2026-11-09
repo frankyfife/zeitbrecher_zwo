@@ -11,6 +11,10 @@ int main(int argc, char** argv) {
     app.setStyleSheet(theme::stylesheet());
     MainWindow w;
     w.resize(1200, 780);
+    // --seite N: mit Reiter N öffnen (0 Spiel … 5 Über; für Tests)
+    const QStringList args = app.arguments();
+    const int i = int(args.indexOf(QStringLiteral("--seite")));
+    if (i >= 0 && i + 1 < args.size()) w.show_page(args[i + 1].toInt());
     w.show();
     return app.exec();
 }

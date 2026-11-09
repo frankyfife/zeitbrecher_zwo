@@ -23,6 +23,7 @@ class MainWindow : public QWidget {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+    void show_page(int i);
 
 protected:
     void paintEvent(QPaintEvent* e) override;
@@ -51,6 +52,7 @@ private:
     QDir game_;      // game/ mit ts2.bin und ts2/
     Ini ini_;
     QStackedWidget* pages_ = nullptr;
+    class QButtonGroup* nav_ = nullptr;
     QLabel* status_ = nullptr;
     QLabel* game_status_ = nullptr;
     QLineEdit* homefront_ = nullptr;

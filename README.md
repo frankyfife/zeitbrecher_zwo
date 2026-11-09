@@ -51,7 +51,9 @@ Ninja, Git. Python 3 mit `pefile`, `capstone`, `numpy` für `tools/re`.
 scripts\build.cmd
 ```
 
-Ergebnis in `build\bin\`: `ts2.exe`, `hfpak.exe`.
+Ergebnis in `build\bin\`: `ts2.exe`, `hfpak.exe` und, wenn Qt 6 gefunden wird
+(`C:\Qt\6.*\msvc2022_64`, `CMAKE_PREFIX_PATH` oder `QT6_DIR`), der Launcher
+`ts2launcher.exe` samt Qt-DLLs.
 
 ## Einrichten und Spielen
 

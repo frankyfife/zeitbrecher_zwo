@@ -89,6 +89,7 @@ MainWindow::MainWindow(QWidget* parent)
     nav->setSpacing(4);
     pages_ = new QStackedWidget;
     auto* group = new QButtonGroup(this);
+    nav_ = group;
     const struct {
         QString name;
         QWidget* (MainWindow::*make)();
@@ -125,6 +126,12 @@ MainWindow::MainWindow(QWidget* parent)
     bottom->addWidget(play_btn_);
     root->addLayout(bottom);
     refresh_status();
+}
+
+void MainWindow::show_page(int i) {
+    if (i < 0 || i >= pages_->count()) return;
+    nav_->button(i)->setChecked(true);
+    pages_->setCurrentIndex(i);
 }
 
 void MainWindow::paintEvent(QPaintEvent*) {
