@@ -42,3 +42,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_subdirectory(tools/hfpak)
 add_subdirectory(src/common)
 add_subdirectory(src/host)
+
+# Launcher (Qt 6), nur wenn Qt gefunden wird: CMAKE_PREFIX_PATH, QT6_DIR
+# oder eine Standardinstallation unter C:/Qt/6.*/msvc2022_64
+option(TS2_LAUNCHER "Launcher bauen (Qt 6)" ON)
+if(TS2_LAUNCHER)
+  file(GLOB _qt_roots "C:/Qt/6.*/msvc2022_64")
+  list(APPEND CMAKE_PREFIX_PATH ${_qt_roots} $ENV{QT6_DIR})
+  find_package(Qt6 QUIET COMPONENTS Widgets)
+  if(Qt6_FOUND)
+    add_subdirectory(src/launcher)
+  else()
+    message(STATUS "Qt 6 nicht gefunden: Launcher wird nicht gebaut")
+  endif()
+endif()

@@ -41,7 +41,7 @@ Funktionen von außen erreicht. Daraus:
 | Bildrate ≥ 120, Belichtung, HDR | 60 Hz sauber getaktet; 120 Hz Stufe 1 (Spieler und Kamera nativ, Welt in 60-Hz-Takten, `[grafik] takt=120`); Belichtung/Kontrast fehlerhaft; HDR offen |
 | TS2-Funktionen benennen/dekompilieren | laufend (≈ 4 500 ohne Namen) |
 | Lokalisierung (Texte, ggf. Sprache) aus dem eigenen Xbox-Image, z. B. die PAL-Fassung (En/Fr/De/Es/It); Sprachwahl im Launcher | offen |
-| Launcher | begonnen (Qt 6, `src/launcher`: ini-Zugriff, Tastenfeld; noch nicht im Build) |
+| Launcher | erste Fassung (Qt 6, `ts2launcher.exe`): alle Optionen, Tastenerfassung, Einrichten, Spielen; offen: Waffennamen, Feinschliff |
 
 ## Nächste Schritte, konkret
 
