@@ -83,8 +83,18 @@ Funktionen von außen erreicht. Daraus:
    (löscht das Ziel vor jedem Bild auf Alpha 0 bzw. 1) vergleichen; ändert
    sich das Glas, ist das die Ursache und die Lösung ein festes Löschen.
    Im Glass-Smash-Start ändern beide kein Pixel.
-6. Freecam (Xbox: Kameramodus 8, im PC-Code suchen). Sichtfeld erledigt
-   (`[grafik] sichtfeld`, Kamera-Einrichtung `0x14107EE0C`).
+6. Freecam: Grundlage gefunden, Umsetzung offen. PC-Gegenstück zu Xbox
+   `0x4B2CA0`: Globale ab `0x143F3A870` (Kamera-Zeiger), Modus
+   `0x143F3A888`. Die Kamera-Aktualisierung `0x141081F28` verteilt nach Modus
+   (2…9); Modus 8 (`0x1410828DB`) setzt die Kamera-Position (+0x2A0) aus
+   `0x143F3A8A0` (x, y, z), die Blickrichtung (+0x310) aus Blickpunkt
+   `0x143F3A8AC` minus Position, dazu `0x143F3A8B8/8BC` nach
+   `[Kamera+0x208]+0x30/+0x34`, und den Raum (+0x2B8) aus dem aktuellen
+   Spieler (`*0x143F1A388` +0xD78). Wie im Fork muss der Raum für die freie
+   Position nachgeschlagen werden (Xbox `FUN_00120320`, PC-Gegenstück noch
+   suchen), sonst verschwindet das Level. Modus 0 setzt `0x14107D6D4`
+   (Kamera-Anlage). Sichtfeld erledigt (`[grafik] sichtfeld`,
+   Kamera-Einrichtung `0x14107EE0C`).
 7. Arcade und Challenge: per Skript geprüft (Arcade-Custom-Match `l_42_AR` mit
    Bots, Challenge „Glass Smash“ mit richtiger Uhr bei 60 und 120 Hz); offen
    nur ganze Durchgänge von Hand.
