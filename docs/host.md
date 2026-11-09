@@ -257,6 +257,88 @@ eigene dabei im Stereomodus.
 `ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
 `ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
 
+## Aus dem Xbox-Fork übernommen (Steuerung, Waffen, Menü)
+
+Grundlage sind die Commits von frankyfife in
+[split2-recomp_ff](https://github.com/frankyfife/split2-recomp_ff). Die
+Logik ist übertragen, die Adressen sind im PC-Code neu bestimmt und
+geprüft.
+
+**Sprung** (`ts2_jump`, Leertaste / rechte Schultertaste)
+- Der Sprung betritt Bewegungsmodus 2 mit Aufwärtsgeschwindigkeit, dazu
+  wie der Gehcode beim Übergang ins Fallen: Quergeschwindigkeit
+  (+0xDF8/+0xE00), Bit 0x800000 in +0x10, Fallhöhe.
+- Geprüft im Stand und im Lauf, Landung in Modus 0.
+
+**Rennen** (`ts2_run_walk`, Shift / linke Schultertaste; `[bewegung]`
+`rennen`, `renntaste`, `renntempo`, `rennen_umschalten`)
+- Der einzige Aufruf des Gehcodes (`0x1411DBE73` → `0x1411D9748`) geht über
+  einen Umweg (`hooks.cpp`).
+- Beide Schritt-Argumente und die Höchstgeschwindigkeit der Haltung
+  (Spieler +0xCC + 4·Haltung, Haltung +0x168; Xbox +0xC0/+0x15C) werden für
+  den Aufruf multipliziert.
+- Gemessen (`TS2_RENNPROBE=1`): 1,042 → 1,667 Einheiten je 10 Takte, also
+  1,6-fach wie im Fork.
+
+**Feuerrate** (`ts2_rof`; `[waffen] feuerrate`, `feuerrate_<zeile>`)
+- Waffentabelle `0x14250C2A8`: 46 Zeilen à 0x240, Aufbau wie auf der Xbox,
+  Werte der USA-Fassung (17 von 17 Stichproben).
+- Die Schussabstände (+0x58 + Modus·0xB0 + 0x10/0x14) werden durch das
+  Tempo geteilt, nie unter einen Takt.
+- Geprüft: Zeile 0 wird bei 200 % von 30/32 zu 15/16 Takten, wie im Fork.
+
+**Waffenwechsel-Tempo** (`ts2_switch`; `[waffen] wechseltempo`)
+- 20/7 bei `0x1421DA4B0`, einziger Leser `0x14112D4A0`.
+
+**Mauszielen**
+- **Nickgrenze** (`ts2_pitch_limit`): `0x143F1A390` (Xbox 0x497344) steht
+  im Mausmodus auf `[maus] nickgrenze` (85) statt 40, fürs Pad wieder auf
+  dem Spielwert.
+- **Zurückkippen beim Gehen:** Der Fork hält dafür +0x150 fest. Gemessen
+  (`TS2_BLICKPROBE`): Der PC-Port kippt mit der Maus nicht zurück (Nick
+  bleibt 30°, Zustand 1), also nichts zu tun.
+- **Zielen ohne Taste:** Das war im Fork ein Ausgleich für Stick-Zielen.
+  Der PC-Port nimmt die Maus von Haus aus (Port 6); nicht übernommen,
+  solange kein Problem belegt ist.
+
+**Menümaus** (`ts2_menu_mouse`; `[maus] menue`; `menumouse.cpp`)
+- Jede Liste ist ein Menü, das `0x1410DFE4C(menu)` je Takt aktualisiert
+  (Xbox `FUN_000F1D30`); sein einziger Aufruf `0x1410E05AB` geht über einen
+  Umweg.
+- PC-Aufbau, gemessen; gegenüber dem Xbox-Panel wegen der 8-Byte-Zeiger
+  verschoben:
+
+  | Feld | Offset |
+  | --- | --- |
+  | Seite (beschäftigt: Seite +0x10 & 2) | +0x08 |
+  | sichtbar und bereit | +0x14 & 6 |
+  | Lage | +0x3C/+0x40 |
+  | Größe | +0x4C/+0x50 |
+  | Rumpf | +0x2C/+0x30 |
+  | Scroll | +0x5C |
+  | Einträge | +0x3A0 |
+  | Zeilen | +0x3A8 |
+  | gewählte Zeile | +0x3B0 |
+  | Eintrag: nächster | +8 |
+  | Eintrag: Zeilenanfang | +0x28 |
+  | Eintrag: Flags (8 nicht wählbar, 0x10 gewählt, 0x100 Rumpf) | +0x44 |
+  | Eintrag: Rechteck | +0x9C/+0xA0/+0xA4/+0xA8 |
+
+  Koordinaten im 1920×1080-Raum der Oberfläche.
+- **Bedienung:** Der Windows-Zeiger ist im Menü frei. Über einer Zeile
+  drückt `ts2.exe` Hoch/Runter, bis TS2 sie gewählt hat; Linksklick = OK,
+  Rechtsklick = Zurück. Ein Menü ohne gewählte Zeile (Briefing) nimmt einen
+  Klick als OK.
+- **Pausenmenü:** Einträge ohne Höhe, Lage als Float +0x98; am Bild
+  gemessen y = 571 − 593·v (±6 px).
+- **Geprüft per Skript** (`--menuemaus takt:x,y[,l|r];…`):
+  - Hauptmenü → Challenge, zweites Set, Rechtsklick zurück;
+  - Arcade → Arcade Custom → Tempo;
+  - Pausenmenü: Quit/Continue wählen, Continue anklicken.
+- **Spur:** `TS2_MENUSPUR=1`.
+- **Offen:** Raster mit Spalten (falls es sie gibt; in den geprüften Menüs
+  keine), Schieberegler, ein eigener Zeiger.
+
 ## Bildtakt
 
 TS2 hält seine 60 Takte selbst ein (`0x14107CC64`). Es schläft mit

@@ -90,6 +90,8 @@ constexpr uint64_t kMenuLayout = 0x1410DEEBC;       // void (menu*)
 constexpr uint64_t kMenuSelect = 0x1410DE0AC;       // void (menu*, int)
 constexpr uint64_t kMenuFinish = 0x1410DD97C;       // void (menu*)
 constexpr uint64_t kPageShow = 0x1410B3CCC;         // void (page*, int)
+constexpr uint64_t kMenuUpdate = 0x1410DFE4C;      // Menü je Takt aktualisieren (Xbox FUN_000F1D30)
+constexpr uint64_t kMenuUpdateCall = 0x1410E05AB;  // sein einziger Aufruf (Schleife über die Menüs einer Seite)
 constexpr uint64_t kSetNextPage = 0x1410B4948;      // void (page-Beschreibung*)
 constexpr uint64_t kGotoStory = 0x1410C817C, kGotoArcade = 0x1410C8194,
                    kGotoChallenge = 0x1410C81A0, kQuit = 0x1410C0D80;

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "log.h"
+#include "menumouse.h"
 
 #pragma comment(lib, "xinput.lib")
 
@@ -164,7 +165,7 @@ void input_init(HWND wnd, void* obj, const std::filesystem::path& ini) {
         f << L"belegung=" << kBindingVersion << L"\n";
         f << L"vorwaerts=" << g_fwd << L"\nrueckwaerts=" << g_back << L"\nlinks=" << g_left << L"\nrechts=" << g_right << L"\n";
         for (auto& k : g_keys) f << k.name << L"=" << vk_list(k.vk) << L"\n";
-        f << L"\n[maus]\nempfindlichkeit=1.0\numkehren=0\n; Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)\nnickgrenze=85\n";
+        f << L"\n[maus]\nempfindlichkeit=1.0\numkehren=0\n; Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)\nnickgrenze=85\n; Menues mit der Maus (Zeiger, Linksklick OK, Rechtsklick zurueck)\nmenue=1\n";
     }
     g_fwd = int(GetPrivateProfileIntW(L"tasten", L"vorwaerts", g_fwd, p.c_str()));
     g_back = int(GetPrivateProfileIntW(L"tasten", L"rueckwaerts", g_back, p.c_str()));
@@ -279,10 +280,15 @@ void input_frame() {
         call(kLookX, rx);
         call(kLookY, ry);
     } else {
+        // Menümaus: Zeiger und Klicks im Menü (menumouse.cpp); Maustasten
+        // gehen dann nicht als Feuern/Zielen an TS2
+        bool menu_active = false;
+        bits |= menumouse_frame(g_wnd, f, &menu_active);
         if (f) {
             for (auto& k : g_keys)
                 for (int vk : k.vk)
-                    if (down(vk)) bits |= k.bit;
+                    if (down(vk) && !(menu_active && vk >= VK_LBUTTON && vk <= VK_XBUTTON2 && vk != VK_CANCEL))
+                        bits |= k.bit;
             lx = float(down(g_right)) - float(down(g_left));
             ly = float(down(g_fwd)) - float(down(g_back));
             if (bits || lx || ly) g_use_pad = false;
@@ -290,7 +296,7 @@ void input_frame() {
         if (g_wheel > 0) bits |= kPrevWeapon;
         if (g_wheel < 0) bits |= kNextWeapon;
         g_wheel = 0;
-        capture(f);
+        capture(f && !menu_active);
         if (g_mode != 1) call(kSetMode, 1), g_mode = 1;
         call(kSetLeftX, lx);
         call(kSetLeftY, ly);

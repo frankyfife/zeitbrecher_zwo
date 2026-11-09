@@ -29,6 +29,7 @@
 #include "features.h"
 #include "input.h"
 #include "menu.h"
+#include "menumouse.h"
 #include "audio.h"
 #include "hf2.h"
 #include "log.h"
@@ -316,7 +317,7 @@ bool call_vfunc(void* obj, uint32_t off, void* a) {
 int wmain(int argc, wchar_t** argv) {
     using namespace host;
     fs::path game, setup_from, shot;
-    std::wstring input_spec;
+    std::wstring input_spec, menu_mouse_spec;
     int ticks = 0;  // 0 = bis das Fenster geschlossen wird
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
@@ -325,6 +326,7 @@ int wmain(int argc, wchar_t** argv) {
         else if (a == L"--takte" && i + 1 < argc) ticks = _wtoi(argv[++i]);
         else if (a == L"--bild" && i + 1 < argc) shot = fs::absolute(argv[++i]);
         else if (a == L"--eingabe" && i + 1 < argc) input_spec = argv[++i];
+        else if (a == L"--menuemaus" && i + 1 < argc) menu_mouse_spec = argv[++i];
         else {
             std::fwprintf(stderr,
                           L"Aufruf: ts2 --einrichten <Homefront-Ordner>\n"
@@ -349,6 +351,7 @@ int wmain(int argc, wchar_t** argv) {
     const Settings settings = load_settings(self_dir() / L"ts2.ini");
     features_install(g_img, settings);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
+    menumouse_install(g_img, GetPrivateProfileIntW(L"maus", L"menue", 1, (self_dir() / L"ts2.ini").c_str()) != 0);
 
     // gEnv füllen
     uint8_t* genv = g_img.va(hf2::kGEnv);
@@ -387,6 +390,7 @@ int wmain(int argc, wchar_t** argv) {
     // (TS2 kopiert daraus für Bildschirmeffekte).
     input_init(gfx.wnd, obj, self_dir() / L"ts2.ini");
     if (!input_spec.empty()) input_script(input_spec.c_str());
+    if (!menu_mouse_spec.empty()) menumouse_script(menu_mouse_spec.c_str());
 
     ID3D11Texture2D* back = nullptr;
     ID3D11RenderTargetView* rtv = nullptr;
