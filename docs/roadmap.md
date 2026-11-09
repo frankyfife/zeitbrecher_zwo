@@ -65,6 +65,11 @@ Funktionen von außen erreicht. Daraus:
    Siberias Innenräumen) erscheinen schwarz statt durchsichtig. Vermutlich
    ein Blend- oder Alpha-Zustand, den der Render-Pfad ohne Homefront anders
    setzt; mit einer Aufnahme des Bildes und den D3D11-Zuständen prüfen.
+   Werkzeug: `TS2_D3DDEBUG=1` (D3D11-Debug-Schicht, Meldungen ins Log). Im
+   Siberia-Start meldet sie keinen Kopierfehler, aber dauerhaft einen
+   ungesetzten Sampler in Slot 1 (2 Mio. Mal): Unter Homefront hatte
+   CryEngine dort vermutlich einen eigenen gesetzt. Nächster Schritt: an der
+   Glasstelle mit der Debug-Schicht laufen lassen.
 6. Freecam, Sichtfeld.
 7. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
 8. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image

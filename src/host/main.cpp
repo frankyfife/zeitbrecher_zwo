@@ -14,6 +14,8 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi1_6.h>
+#include <d3d11sdklayers.h>
+#include <map>
 #include <timeapi.h>
 
 #include <algorithm>
@@ -185,6 +187,32 @@ LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     return DefWindowProcW(h, m, w, l);
 }
 
+ID3D11InfoQueue* g_info = nullptr;
+
+// Meldungen der Debug-Schicht: jede Art einmal mit Text, am Ende die Zähler
+void d3d_messages(bool final_report) {
+    static std::map<int, long> counts;
+    static std::map<int, std::string> first;
+    if (!g_info) return;
+    const UINT64 n = g_info->GetNumStoredMessages();
+    for (UINT64 i = 0; i < n; ++i) {
+        SIZE_T len = 0;
+        g_info->GetMessage(i, nullptr, &len);
+        std::vector<char> buf(len);
+        auto* msg = reinterpret_cast<D3D11_MESSAGE*>(buf.data());
+        if (FAILED(g_info->GetMessage(i, msg, &len))) continue;
+        if (msg->Severity > D3D11_MESSAGE_SEVERITY_WARNING) continue;  // nur Fehler und Warnungen
+        if (counts[msg->ID]++ == 0) {
+            first[msg->ID] = std::string(msg->pDescription, msg->DescriptionByteLength ? msg->DescriptionByteLength - 1 : 0);
+            log("[d3d] %s %d: %s\n", msg->Severity <= D3D11_MESSAGE_SEVERITY_ERROR ? "Fehler" : "Warnung", int(msg->ID),
+                first[msg->ID].c_str());
+        }
+    }
+    g_info->ClearStoredMessages();
+    if (final_report)
+        for (auto& [id, c] : counts) log("[d3d] Meldung %d: %ld mal\n", id, c);
+}
+
 struct Gfx {
     HWND wnd = nullptr;
     ID3D11Device* dev = nullptr;
@@ -231,9 +259,20 @@ bool make_gfx(Gfx* g, int width, int height) {
         log("Grafikkarte: %s (%llu MB)\n", name, static_cast<unsigned long long>(d.DedicatedVideoMemory >> 20));
     }
     D3D_FEATURE_LEVEL fl = D3D_FEATURE_LEVEL_11_0;
-    const HRESULT dhr = D3D11CreateDevice(best, best ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr,
-                                          D3D11_CREATE_DEVICE_BGRA_SUPPORT, &fl, 1, D3D11_SDK_VERSION, &g->dev,
-                                          nullptr, &g->ctx);
+    // TS2_D3DDEBUG=1: D3D11-Debug-Schicht, Meldungen ins Protokoll (d3d_messages)
+    const bool debug = GetEnvironmentVariableW(L"TS2_D3DDEBUG", nullptr, 0) > 0;
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | (debug ? D3D11_CREATE_DEVICE_DEBUG : 0);
+    HRESULT dhr = D3D11CreateDevice(best, best ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
+                                    &fl, 1, D3D11_SDK_VERSION, &g->dev, nullptr, &g->ctx);
+    if (FAILED(dhr) && debug) {
+        log("D3D11-Debug-Schicht nicht verfügbar\n");
+        flags &= ~UINT(D3D11_CREATE_DEVICE_DEBUG);
+        dhr = D3D11CreateDevice(best, best ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, &fl, 1,
+                                D3D11_SDK_VERSION, &g->dev, nullptr, &g->ctx);
+    }
+    if (SUCCEEDED(dhr) && debug &&
+        SUCCEEDED(g->dev->QueryInterface(__uuidof(ID3D11InfoQueue), reinterpret_cast<void**>(&g_info))))
+        log("D3D11-Debug-Schicht an\n");
     if (best) best->Release();
     if (FAILED(dhr)) return false;
     IDXGIDevice* xd = nullptr;
@@ -497,8 +536,10 @@ int wmain(int argc, wchar_t** argv) {
         // nächsten Bildwechsel, ohne Zerreißen und ohne zu blockieren.
         gfx.swap->Present(settings.vsync ? 1 : 0, 0);
         frame_stats();
+        d3d_messages(false);
     }
     audio_shutdown();
+    d3d_messages(true);
     log("%d Takte gelaufen\n", t);
     return 0;
 }
