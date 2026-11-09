@@ -41,7 +41,7 @@ Funktionen von außen erreicht. Daraus:
 | Bildrate ≥ 120, Belichtung, HDR | 60 Hz sauber getaktet; 120 Hz Stufe 1 (Spieler und Kamera nativ, Welt in 60-Hz-Takten, `[grafik] takt=120`); Belichtung/Kontrast fehlerhaft; HDR offen |
 | TS2-Funktionen benennen/dekompilieren | laufend (≈ 4 500 ohne Namen) |
 | Lokalisierung (Texte, ggf. Sprache) aus dem eigenen Xbox-Image, z. B. die PAL-Fassung (En/Fr/De/Es/It); Sprachwahl im Launcher | offen |
-| Launcher | offen |
+| Launcher | begonnen (Qt 6, `src/launcher`: ini-Zugriff, Tastenfeld; noch nicht im Build) |
 
 ## Nächste Schritte, konkret
 
@@ -64,8 +64,12 @@ Funktionen von außen erreicht. Daraus:
    Vollbild (Flip-Modell; G-Sync/VRR geht damit unter aktuellem Windows),
    exklusiv als Option, falls G-Sync es braucht. `[grafik] vollbild`
    (gelesen, aber noch ohne Wirkung) dafür verwenden.
-5. Freecam, Sichtfeld.
-6. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
-7. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
+5. Grafikfehler: Glasflächen (z. B. die Fenster mit Laserschranken in
+   Siberias Innenräumen) erscheinen schwarz statt durchsichtig. Vermutlich
+   ein Blend- oder Alpha-Zustand, den der Render-Pfad ohne Homefront anders
+   setzt; mit einer Aufnahme des Bildes und den D3D11-Zuständen prüfen.
+6. Freecam, Sichtfeld.
+7. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
+8. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
    lesen; TS2 hat eine Texttabelle je Sprache (`0x1424E2430`, Sprache
    `0x142EE39C0`), im PC-Port ist nur Englisch belegt. Auswahl im Launcher.
