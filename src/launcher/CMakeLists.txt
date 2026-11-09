@@ -4,7 +4,7 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
 add_executable(ts2launcher WIN32
-  main.cpp mainwindow.cpp mainwindow.h keyslot.cpp keyslot.h theme.cpp theme.h ini.cpp ini.h
+  main.cpp mainwindow.cpp mainwindow.h keyslot.cpp keyslot.h theme.cpp theme.h ini.cpp ini.h xboxtext.cpp xboxtext.h
   ${CMAKE_SOURCE_DIR}/src/common/ts2options.cpp ${CMAKE_SOURCE_DIR}/src/common/ts2options.h)
 set_target_properties(ts2launcher PROPERTIES
   MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"

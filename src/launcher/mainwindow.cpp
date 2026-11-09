@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 
+#include <QApplication>
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
@@ -27,6 +28,7 @@
 #include "keyslot.h"
 #include "theme.h"
 #include "ts2options.h"
+#include "xboxtext.h"
 
 namespace {
 
@@ -227,6 +229,7 @@ QWidget* MainWindow::page_game() {
     setup_log_->hide();
     f1->addWidget(setup_log_);
     v->addWidget(p1);
+    v->addWidget(language_panel());
 
     auto* p2 = panel();
     auto* f2 = new QVBoxLayout(p2);
@@ -242,6 +245,82 @@ QWidget* MainWindow::page_game() {
     v->addWidget(p2);
     v->addStretch();
     return scroll_page(content);
+}
+
+// Spieltexte: Auswahl [sprache] text, Texte aus dem eigenen Xbox-Image
+// (PAL: de, fr, it, es, en) nach game/sprache/<code>.bin holen.
+QWidget* MainWindow::language_panel() {
+    auto* p = panel();
+    auto* f = new QVBoxLayout(p);
+    f->addWidget(heading(QStringLiteral("Sprache")));
+    f->addWidget(hint(QStringLiteral(
+        "Der PC-Port hat nur englische Texte. Die Xbox-PAL-Fassung bringt Deutsch, Französisch, Italienisch und "
+        "Spanisch mit: einmal aus dem eigenen Image holen. Die Sprachausgabe bleibt englisch.")));
+    auto* row = new QHBoxLayout;
+    lang_ = new QComboBox;
+    const QList<QPair<QString, QString>> langs = {
+        {QStringLiteral("pc"), QStringLiteral("Englisch (PC-Port)")}, {QStringLiteral("de"), QStringLiteral("Deutsch")},
+        {QStringLiteral("fr"), QStringLiteral("Französisch")},        {QStringLiteral("it"), QStringLiteral("Italienisch")},
+        {QStringLiteral("es"), QStringLiteral("Spanisch")},           {QStringLiteral("en"), QStringLiteral("Englisch (Xbox, britisch)")}};
+    for (const auto& l : langs) lang_->addItem(l.second, l.first);
+    const int cur = lang_->findData(ini_.get("sprache", "text"));
+    lang_->setCurrentIndex(cur < 0 ? 0 : cur);
+    connect(lang_, &QComboBox::currentIndexChanged, this, [this](int) {
+        ini_.set("sprache", "text", lang_->currentData().toString());
+        refresh_language();
+    });
+    row->addWidget(new QLabel(QStringLiteral("Spieltexte")));
+    row->addWidget(lang_, 1);
+    f->addLayout(row);
+    lang_status_ = new QLabel;
+    lang_status_->setWordWrap(true);
+    f->addWidget(lang_status_);
+    auto* row2 = new QHBoxLayout;
+    xbox_image_ = new QLineEdit(ini_.get("sprache", "xbox_image"));
+    xbox_image_->setPlaceholderText(QStringLiteral("Eigenes Xbox-Image von TimeSplitters 2 (.iso, PAL)"));
+    auto* browse = new QPushButton(QStringLiteral("Durchsuchen …"));
+    connect(browse, &QPushButton::clicked, this, [this] {
+        const QString file = QFileDialog::getOpenFileName(this, QStringLiteral("Xbox-Image wählen"), xbox_image_->text(),
+                                                          QStringLiteral("Xbox-Image (*.iso *.xiso);;Alle Dateien (*)"));
+        if (!file.isEmpty()) xbox_image_->setText(QDir::toNativeSeparators(file));
+    });
+    auto* go = new QPushButton(QStringLiteral("Texte holen"));
+    connect(go, &QPushButton::clicked, this, &MainWindow::extract_texts);
+    row2->addWidget(xbox_image_, 1);
+    row2->addWidget(browse);
+    row2->addWidget(go);
+    f->addLayout(row2);
+    refresh_language();
+    return p;
+}
+
+void MainWindow::refresh_language() {
+    const QString code = lang_->currentData().toString();
+    if (code == QStringLiteral("pc")) {
+        lang_status_->setText(QStringLiteral("Texte wie im PC-Port."));
+        return;
+    }
+    const bool have = QFile::exists(game_.filePath(QStringLiteral("sprache/%1.bin").arg(code)));
+    lang_status_->setText(have ? QStringLiteral("<span style='color:#7dff6a'>Texte vorhanden.</span>")
+                               : QStringLiteral("<span style='color:#ff4fd8'>Texte fehlen:</span> "
+                                                "unten das eigene Xbox-Image wählen und „Texte holen“."));
+}
+
+void MainWindow::extract_texts() {
+    const QString image = xbox_image_->text().trimmed();
+    if (image.isEmpty()) return;
+    ini_.set("sprache", "xbox_image", image);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const auto r = xboxtext::extract(image.toStdWString(), game_.filePath(QStringLiteral("sprache")).toStdWString());
+    QApplication::restoreOverrideCursor();
+    if (!r.error.empty()) {
+        lang_status_->setText(QStringLiteral("<span style='color:#ff4fd8'>%1</span>").arg(QString::fromStdString(r.error)));
+        return;
+    }
+    QStringList got;
+    for (const auto& l : r.languages) got << QString::fromStdString(l);
+    refresh_language();
+    lang_status_->setText(lang_status_->text() + QStringLiteral(" Geholt: %1.").arg(got.join(QStringLiteral(", "))));
 }
 
 QWidget* MainWindow::page_graphics() {

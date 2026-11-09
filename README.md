@@ -75,6 +75,10 @@ Danach braucht es Homefront nicht mehr. Einstellungen stehen in `ts2.ini`
 neben der EXE (Auflösung, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen, Ton), das Protokoll in
 `ts2.log`.
 
+Deutsche (französische, italienische, spanische) Spieltexte kommen aus dem
+eigenen Xbox-Image der PAL-Fassung: im Launcher unter Spiel → Sprache holen
+und wählen ([docs/host.md](docs/host.md#sprache-srchostmenucpp-toolsrexbox_textpy)).
+
 ## Quellen
 
 - [split2-recomp_ff](https://github.com/frankyfife/split2-recomp_ff): Xbox-Recompile

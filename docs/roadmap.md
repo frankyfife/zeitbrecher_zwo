@@ -40,7 +40,7 @@ Funktionen von außen erreicht. Daraus:
 | Ton (5.1), Musik | erledigt: XAudio2; eigener 5.1-Mixer auf TS2s Stimmen (gegen das Original geprüft), Ogg mit stb_vorbis |
 | Bildrate ≥ 120, Belichtung, HDR | 60 Hz sauber getaktet; 120 Hz Stufe 1 (Spieler und Kamera nativ, Welt in 60-Hz-Takten, `[grafik] takt=120`); Belichtung/Kontrast fehlerhaft; HDR offen |
 | TS2-Funktionen benennen/dekompilieren | laufend (≈ 4 500 ohne Namen) |
-| Lokalisierung (Texte, ggf. Sprache) aus dem eigenen Xbox-Image, z. B. die PAL-Fassung (En/Fr/De/Es/It); Sprachwahl im Launcher | Texte erledigt (`[sprache] text=de`, `tools/re/xbox_text.py`); offen: Sprachwahl und Auslesen im Launcher, Sprachausgabe |
+| Lokalisierung (Texte, ggf. Sprache) aus dem eigenen Xbox-Image, z. B. die PAL-Fassung (En/Fr/De/Es/It); Sprachwahl im Launcher | Texte erledigt (`[sprache] text=de`; Sprachwahl und Auslesen im Launcher, oder `tools/re/xbox_text.py`); offen: Sprachausgabe |
 | Launcher | erste Fassung (Qt 6, `ts2launcher.exe`): alle Optionen, Tastenerfassung, Einrichten, Spielen; offen: Waffennamen, Feinschliff |
 
 ## Nächste Schritte, konkret
@@ -81,5 +81,5 @@ Funktionen von außen erreicht. Daraus:
 8. Lokalisierung: Texte erledigt. `tools/re/xbox_text.py` holt die fünf
    Tabellen der PAL-XBE nach `game/sprache/<code>.bin`, ts2.exe ersetzt
    damit die PC-Tabelle (`0x1424E2430`), geprüft auf Deutsch (Hauptmenü,
-   Optionen, Umlaute). Offen: Auswahl und Auslesen im Launcher (Python-Teil
-   nach C++), Sprachausgabe.
+   Optionen, Umlaute). Der Launcher wählt die Sprache und holt die Texte
+   selbst (gleiche Dateien wie das Skript). Offen: Sprachausgabe.

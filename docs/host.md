@@ -198,8 +198,11 @@ Rest britische Schreibweise oder Plattformwörter). Gefunden werden sie über
 den gemeinsamen Text "Arcade" an Eintrag 422, die Sprache über Eintrag 2142
 ("Quit", "Beenden", …).
 
-Einmalig aus dem eigenen Image holen (nur lesend; `tools/re/xiso.py` liest
-XISO und Redump-Abbilder):
+Einmalig aus dem eigenen Image holen (nur lesend): im Launcher unter
+Spiel → Sprache das Image wählen und „Texte holen“ (`src/launcher/xboxtext.cpp`,
+dort auch die Auswahl der Sprache), oder per Skript (`tools/re/xiso.py`
+liest XISO und Redump-Abbilder; beide Wege liefern byteweise dieselben
+Dateien):
 
 ```bash
 python -I tools/re/xbox_text.py "<TimeSplitters 2 (Europe).iso>" game

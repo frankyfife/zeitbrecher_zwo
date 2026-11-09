@@ -90,7 +90,8 @@ const std::vector<IniOption>& ini_options() {
             {"ton", "surround", "1", "5.1 ausgeben, wenn das Geraet es kann"},
             {"sprache", "text", "pc",
              "Spieltexte: pc (englisch, wie im PC-Port), de, fr, it, es, en (britisch);\n"
-             "die Texte kommen aus dem eigenen Xbox-Image (tools/re/xbox_text.py)"},
+             "die Texte kommen aus dem eigenen Xbox-Image (Launcher oder tools/re/xbox_text.py)"},
+            {"sprache", "xbox_image", "", "Pfad des eigenen Xbox-Images (nur fuer den Launcher)"},
             {"grafik", "breite", "1920", "Render-Aufloesung"},
             {"grafik", "hoehe", "1080", ""},
             {"grafik", "takt", "60", "Bildtakt: 60 oder 120 (120: Spieler und Kamera nativ, Gegner in 60er-Schritten)"},

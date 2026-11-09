@@ -35,6 +35,9 @@ private:
     QWidget* page_weapons();
     QWidget* page_sound();
     QWidget* page_about();
+    QWidget* language_panel();
+    void refresh_language();
+    void extract_texts();
 
     // Bindungen an ts2.ini
     QCheckBox* check(const QString& text, const char* sec, const char* key);
@@ -60,4 +63,7 @@ private:
     QPushButton* setup_btn_ = nullptr;
     QPushButton* play_btn_ = nullptr;
     QProcess* setup_proc_ = nullptr;
+    class QComboBox* lang_ = nullptr;
+    QLabel* lang_status_ = nullptr;
+    QLineEdit* xbox_image_ = nullptr;
 };
