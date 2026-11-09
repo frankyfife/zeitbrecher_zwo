@@ -34,8 +34,8 @@ Funktionen von außen erreicht. Daraus:
 | Schnittstelle zur Engine | erledigt: Fabrik, Start, Tick, Render samt Argumenten; `gEnv`-Felder ([host.md](host.md)) |
 | TS2 ohne Homefront (`ts2.exe` + `game/ts2.bin`) | **erreicht**: spielbar bis ins Level (Chicago) |
 | Spieler, Bewegung, Blick im PC-Code | gefunden (Spielertabelle, Dispatcher, Gehen, Fallen, Blick) |
-| Erweiterungen | Render-Auflösung, Sprung (im Spiel geprüft), Waffenwechsel-Tempo (ungeprüft) |
-| Eingabe | erledigt: Tastatur+Maus (Raw Input), Pad (XInput), Belegung in `ts2.ini` |
+| Erweiterungen | Render-Auflösung, Sprung mit Laufgeschwindigkeit (im Spiel geprüft), Waffenwechsel-Tempo (ungeprüft) |
+| Eingabe | Tastatur+Maus (Raw Input, Belegung wie im Xbox-Fork), Pad (XInput); **offen: Maus im Menü** |
 | Menü-Sperre der Homefront-Fassung ("Story/Quit") | erledigt: Arcade, Challenge, alle Story-Level, Options (`ts2.ini` [freischalten]) |
 | Ton (5.1), Musik | erledigt: XAudio2; eigener 5.1-Mixer auf TS2s Stimmen (gegen das Original geprüft), Ogg mit stb_vorbis |
 | Bildrate ≥ 120, HDR | offen |
@@ -45,9 +45,11 @@ Funktionen von außen erreicht. Daraus:
 
 ## Nächste Schritte, konkret
 
-1. Sprung mit Laufgeschwindigkeit, Rennen, Freecam, Sichtfeld.
-2. Tick und Render entkoppeln, dann ≥ 120 fps und HDR.
-3. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
-4. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
+1. Maus im Menü (wie im Xbox-Fork: Menüstruktur und Eintragsrechtecke im
+   PC-Code finden, Zeiger, Zeile anwählen, Klick = OK).
+2. Rennen, Freecam, Sichtfeld.
+3. Tick und Render entkoppeln, dann ≥ 120 fps und HDR.
+4. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
+5. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
    lesen; TS2 hat eine Texttabelle je Sprache (`0x1424E2430`, Sprache
    `0x142EE39C0`), im PC-Port ist nur Englisch belegt. Auswahl im Launcher.

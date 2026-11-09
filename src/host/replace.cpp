@@ -192,12 +192,33 @@ const void* replacement_for(uint32_t rva) {
     return nullptr;
 }
 
+void WINAPI precise_sleep(DWORD ms) {
+    if (ms == 0) {
+        SwitchToThread();
+        return;
+    }
+    static thread_local HANDLE timer =
+        CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    if (!timer) {
+        Sleep(ms);
+        return;
+    }
+    LARGE_INTEGER due;
+    due.QuadPart = -LONGLONG(ms) * 10000;  // 100-ns-Schritte, relativ
+    SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
+    WaitForSingleObject(timer, INFINITE);
+}
+
 const void* import_for(const char* dll, const char* name) {
     if (_stricmp(dll, "msvcr100.dll") == 0) {
         for (auto& i : kCrt)
             if (std::strcmp(i.name, name) == 0) return i.fn;
         return nullptr;
     }
+    // Sleep: TS2 schläft bis kurz vor seinen nächsten Takt und wartet den
+    // Rest aktiv ab (0x14107CC64). Ein hochauflösender Zeitgeber schläft
+    // genauer als Sleep (auch mit timeBeginPeriod).
+    if (_stricmp(dll, "kernel32.dll") == 0 && std::strcmp(name, "Sleep") == 0) return reinterpret_cast<const void*>(&precise_sleep);
     // Windows selbst: kernel32, user32, advapi32
     HMODULE h = LoadLibraryA(dll);
     return h ? reinterpret_cast<const void*>(GetProcAddress(h, name)) : nullptr;

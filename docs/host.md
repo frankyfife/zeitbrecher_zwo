@@ -135,10 +135,23 @@ Tastenbits (aus `0x14015F880`):
 | | | 0x400000 / 0x800000 | nächste / vorige Waffe |
 | | | 0x1000000 / 0x2000000 | Zoom rein / raus |
 
-Vorgaben: WASD, Maus zielt (Raw Input, eingefangen, solange das Fenster
-vorn ist), linke/rechte/mittlere Maustaste Feuer/Alt-Feuer/Zoom, E benutzen,
-R nachladen, Strg ducken, Mausrad Waffe, Esc Pause, Enter/Rücktaste OK/zurück,
-Pfeiltasten Menü, Leertaste Sprung (ts2.exe). Pad (XInput): A/B/X/Y =
+Vorgaben wie die PC-Belegung des Xbox-Forks (`launcher/src/bindings.cpp`,
+TS2s Belegung "Standard"); die Bits sind gegen Homefronts Übersetzer
+geprüft (`rad_fire` 0x10000, `rad_fire_alt` 0x20000, `rad_zoom` 0x200000 …):
+
+- **Bewegen und Zielen:** WASD; die Maus zielt (Raw Input, eingefangen,
+  solange das Fenster vorn ist).
+- **Maustasten:** links Feuer, rechts Zielen/Zoom, Mitte oder F
+  Zweitfunktion.
+- **Waffe:** Mausrad nach oben oder Q die vorige, nach unten die nächste.
+- **Weitere Tasten:** E benutzen, R nachladen, Strg oder C ducken, X
+  Quadrat, Tab Dreieck, Esc Pause.
+- **Menü:** Enter/Rücktaste OK/zurück, Pfeiltasten.
+- **Sprung (ts2.exe):** Leertaste.
+
+Je Aktion bis zu drei Tasten (`ducken=162,67`). Ein `[tasten]`-Abschnitt
+einer älteren Fassung (ohne `belegung=2`) wird einmal auf diese Belegung
+umgestellt; die Lauftasten bleiben dabei, wie sie waren. Pad (XInput): A/B/X/Y =
 Kreuz/Kreis/Quadrat/Dreieck, rechter/linker Trigger = R1/L1, Schultertasten =
 R2/L2, Start/Back = Start, Steuerkreuz. Alles in `ts2.ini` ([tasten], [maus])
 änderbar. Es gilt das zuletzt benutzte Gerät.
@@ -243,6 +256,28 @@ eigene dabei im Stereomodus.
 `0x141226070`) bleiben TS2s Werte bei 1,0. `ts2.exe` setzt sie aus
 `ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
 `ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
+
+## Bildtakt
+
+TS2 hält seine 60 Takte selbst ein (`0x14107CC64`). Es schläft mit
+`Sleep(ms)` bis kurz vor den nächsten Takt und wartet den Rest aktiv ab.
+Liegt dabei mehr als ein Takt zwischen zwei Bildern, rechnet es 2–4 Takte
+auf einmal (`0x14259CBE8`).
+
+`ts2.exe` lässt TS2 den Takt:
+- **Zeitgeber:** `timeBeginPeriod(1)`, und `Sleep` ist durch einen
+  hochauflösenden Wartezeitgeber ersetzt.
+- **Kein Warten auf den Monitor:** Das Flip-Modell zeigt jedes Bild ab dem
+  nächsten Bildwechsel (`Present(0)`). Mit `[grafik] bildsync=1` wartet
+  `ts2.exe` zusätzlich auf den Monitor (wie bisher).
+- **Grafikkarte:** `ts2.exe` nimmt die leistungsstärkste GPU (DXGI
+  "high performance").
+
+`ts2.log` meldet alle 600 Bilder Mittel, Spanne und Ausreißer. Gemessen im
+Level auf einem 120-Hz-Monitor: 16,67 ms im Mittel, 16,1–17,2 ms Spanne,
+keine Ausreißer; Spitzen nur bei Ladebildschirmen. Vorher lief das Warten
+auf den Monitor gegen TS2s eigenen Takt. Mehr als 60 Bilder pro Sekunde
+brauchen die Entkopplung von Takt und Bild (Roadmap).
 
 ## Was fehlt (in dieser Reihenfolge)
 

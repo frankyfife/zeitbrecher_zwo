@@ -75,6 +75,8 @@ eigenständige EXE.
 | 0x14107CA94 | | Ende (vtable +0x10, danach `delete`) | Aufrufstruktur |
 | 0x14107CF44 | | ein Logik-Takt (aus Tick); Zustand `0x142EE3DF0` | Aufrufstruktur |
 | 0x14107CFB4 | | ein Bild zeichnen (aus Render) → `0x14107CC64` | Aufrufstruktur |
+| 0x14107CC64 | 678 | Bildende und Takt: wartet (Sleep, dann Schleife) auf 1/60 s, setzt die Taktzahl `0x14259CBE8` (1–4) | QPC/Sleep |
+| 0x14015F880 | | (Homefront) Übersetzer der Action-Map `radical` in TS2s Tastenbits | Strings `rad_*` |
 | 0x14112D4A0 | | Hand-Zustandsautomat der Waffen (Xbox `FUN_000B64C0`); einziger Leser von 20/7 bei `0x1421DA4B0` | Konstante |
 | 0x141109DA0 | 15 | Freischalt-Flag `i` abfragen (`0x142F2C360[i]`) | Hauptmenü |
 | 0x141109DB0 | | Freischalt-Flag `i` umschalten (mit Ton); Handler der Konsolen-Codes 0x141109E3C … E74 | Code-Tabelle |
@@ -137,7 +139,11 @@ Spieler (Offsets im PC-Port; Xbox jeweils 0xC weniger, bis auf +0xC):
 | +0x154 | Gier in Grad |
 | +0x158 | Nick in Grad |
 | +0x164 | Bewegungsmodus (0 Gehen, 2 Fallen, …) |
+| +0x010 | Flags; Bit 0x800000 setzt der Gehcode beim Übergang ins Fallen |
+| +0x0FC | Lage x, y (oben), z |
 | +0x1C8 | Zeiger; dessen +0x140 ist der Charakter |
+| +0xDB8 | Zeiger, den der Fall bei der Landung löscht (Leiter/Wasser?) |
+| +0xDF8, +0xE00 | Quergeschwindigkeit im Fall je Takt (Xbox +0x8DC/+0x8E4); wird nie zurückgesetzt und ist vor dem ersten Fall eines Levels Müll |
 
 Charakter: +0x19CC Vertikalgeschwindigkeit (Xbox +0x1338), +0x1A20 Höhe zu
 Beginn des Falls für den Fallschaden (Xbox +0x1388).

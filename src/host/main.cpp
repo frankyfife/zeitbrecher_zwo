@@ -13,7 +13,8 @@
 // protokollierende Attrappen (fake.cpp) und ein eigenes D3D11-Gerät.
 #include <windows.h>
 #include <d3d11.h>
-#include <dxgi1_2.h>
+#include <dxgi1_6.h>
+#include <timeapi.h>
 
 #include <algorithm>
 #include <cstdarg>
@@ -35,6 +36,7 @@
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "winmm.lib")
 
 namespace fs = std::filesystem;
 
@@ -173,10 +175,29 @@ bool make_gfx(Gfx* g, int width, int height) {
                            r.right - r.left, r.bottom - r.top, nullptr, nullptr, wc.hInstance, nullptr);
     if (!g->wnd) return false;
     ShowWindow(g->wnd, SW_SHOW);
+    // Die leistungsstärkste GPU nehmen: mit mehreren Grafikkarten (z. B. einer
+    // im Prozessor) wäre der Standard-Adapter sonst womöglich die schwächste,
+    // und jedes Bild müsste zur Karte am Monitor kopiert werden.
+    IDXGIAdapter1* best = nullptr;
+    IDXGIFactory6* f6 = nullptr;
+    if (SUCCEEDED(CreateDXGIFactory2(0, __uuidof(IDXGIFactory6), reinterpret_cast<void**>(&f6)))) {
+        f6->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, __uuidof(IDXGIAdapter1),
+                                       reinterpret_cast<void**>(&best));
+        f6->Release();
+    }
+    if (best) {
+        DXGI_ADAPTER_DESC1 d{};
+        best->GetDesc1(&d);
+        char name[128];
+        WideCharToMultiByte(CP_UTF8, 0, d.Description, -1, name, sizeof name, nullptr, nullptr);
+        log("Grafikkarte: %s (%llu MB)\n", name, static_cast<unsigned long long>(d.DedicatedVideoMemory >> 20));
+    }
     D3D_FEATURE_LEVEL fl = D3D_FEATURE_LEVEL_11_0;
-    if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, &fl, 1,
-                                 D3D11_SDK_VERSION, &g->dev, nullptr, &g->ctx)))
-        return false;
+    const HRESULT dhr = D3D11CreateDevice(best, best ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                                          D3D11_CREATE_DEVICE_BGRA_SUPPORT, &fl, 1, D3D11_SDK_VERSION, &g->dev,
+                                          nullptr, &g->ctx);
+    if (best) best->Release();
+    if (FAILED(dhr)) return false;
     IDXGIDevice* xd = nullptr;
     IDXGIAdapter* ad = nullptr;
     IDXGIFactory2* fa = nullptr;
@@ -322,6 +343,9 @@ int wmain(int argc, wchar_t** argv) {
     }
     // TS2 öffnet seine Dateien als "ts2/<name>" relativ hierzu.
     SetCurrentDirectoryW(game.c_str());
+    // TS2 wartet mit Sleep(ms) auf seinen nächsten Takt; ohne feinere
+    // Zeitgeber-Auflösung schläft Windows dabei bis zu 15,6 ms zu lange.
+    timeBeginPeriod(1);
     const Settings settings = load_settings(self_dir() / L"ts2.ini");
     features_install(g_img, settings);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
@@ -369,6 +393,28 @@ int wmain(int argc, wchar_t** argv) {
     gfx.swap->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back));
     gfx.dev->CreateRenderTargetView(back, nullptr, &rtv);
 
+    // Bildzeiten protokollieren (alle 600 Bilder): Mittel, Spanne, Ausreißer
+    LARGE_INTEGER qf, q0;
+    QueryPerformanceFrequency(&qf);
+    QueryPerformanceCounter(&q0);
+    double ft_sum = 0, ft_min = 1e9, ft_max = 0;
+    int ft_n = 0, ft_slow = 0;
+    auto frame_stats = [&] {
+        LARGE_INTEGER q;
+        QueryPerformanceCounter(&q);
+        const double ms = double(q.QuadPart - q0.QuadPart) * 1000.0 / double(qf.QuadPart);
+        q0 = q;
+        ft_sum += ms;
+        ft_min = std::min(ft_min, ms);
+        ft_max = std::max(ft_max, ms);
+        ft_slow += ms > 20.0;
+        if (++ft_n == 600) {
+            log("[bild] 600 Bilder: Mittel %.2f ms (%.1f fps), %.2f-%.2f ms, %d über 20 ms\n", ft_sum / ft_n,
+                1000.0 * ft_n / ft_sum, ft_min, ft_max, ft_slow);
+            ft_sum = 0, ft_min = 1e9, ft_max = 0, ft_n = 0, ft_slow = 0;
+        }
+    };
+
     bool running = true;
     int t = 0;
     for (; running && (ticks == 0 || t < ticks); ++t) {
@@ -390,7 +436,12 @@ int wmain(int argc, wchar_t** argv) {
             return 5;
         }
         if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, back, shot);
-        gfx.swap->Present(1, 0);
+        // TS2 hält seine 60 Takte selbst ein (Sleep, dann Warteschleife,
+        // 0x14107CC64); ein zusätzliches Warten auf den Monitor liefe gegen
+        // diesen Takt. Ohne bildsync zeigt das Flip-Modell jedes Bild ab dem
+        // nächsten Bildwechsel, ohne Zerreißen und ohne zu blockieren.
+        gfx.swap->Present(settings.vsync ? 1 : 0, 0);
+        frame_stats();
     }
     audio_shutdown();
     log("%d Takte gelaufen\n", t);

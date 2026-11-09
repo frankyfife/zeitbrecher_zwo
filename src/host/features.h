@@ -9,6 +9,7 @@ namespace host {
 struct Settings {
     int width = 1920, height = 1080;  // Render-Auflösung (TS2 intern: 1920x1080)
     bool fullscreen = false;
+    bool vsync = false;               // auf den Bildwechsel warten (TS2 taktet selbst)
     int weapon_switch_percent = 100;  // 100 = wie das Spiel
     bool jump = true;
     int jump_key = 0x20;              // virtueller Tastencode (Leertaste)

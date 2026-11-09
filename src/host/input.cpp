@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -41,21 +42,41 @@ enum : uint32_t {
 struct KeyBind {
     const wchar_t* name;  // Schlüssel in ts2.ini [tasten]
     uint32_t bit;
-    int vk;               // Vorgabe
+    int vk[3];            // bis zu drei Tasten; Vorgabe
 };
-// Vorgaben Tastatur/Maus; virtuelle Tastencodes (VK_*), Maustasten 1/2/4.
+// Vorgaben Tastatur/Maus wie die PC-Belegung des Xbox-Forks
+// (split2-recomp_ff, launcher/src/bindings.cpp: TS2s Belegung "Standard"):
+// links feuern, rechts zielen/Zoom, Mitte oder F Zweitfunktion, Mausrad
+// und Q die Waffe, Strg oder C ducken. Virtuelle Tastencodes (VK_*),
+// Maustasten 1 links, 2 rechts, 4 Mitte.
 KeyBind g_keys[] = {
-    {L"feuer", kFire, VK_LBUTTON},        {L"alt_feuer", kFireAlt, VK_RBUTTON},
-    {L"zoom", kZoom, VK_MBUTTON},         {L"benutzen", kActivate, 'E'},
-    {L"nachladen", kReload, 'R'},         {L"ducken", kCrouch, VK_LCONTROL},
-    {L"naechste_waffe", kNextWeapon, 0},  {L"vorige_waffe", kPrevWeapon, 0},  // Mausrad
-    {L"zoom_rein", kZoomIn, VK_ADD},      {L"zoom_raus", kZoomOut, VK_SUBTRACT},
-    {L"pause", kStart, VK_ESCAPE},        {L"ok", kCross, VK_RETURN},
-    {L"zurueck", kCircle, VK_BACK},       {L"dreieck", kTriangle, VK_TAB},
-    {L"quadrat", kSquare, 'F'},           {L"menue_hoch", kUp, VK_UP},
-    {L"menue_runter", kDown, VK_DOWN},    {L"menue_links", kLeft, VK_LEFT},
-    {L"menue_rechts", kRight, VK_RIGHT},
+    {L"feuer", kFire, {VK_LBUTTON}},
+    {L"alt_feuer", kFireAlt, {VK_MBUTTON, 'F'}},
+    {L"zoom", kZoom, {VK_RBUTTON}},
+    {L"benutzen", kActivate, {'E'}},
+    {L"nachladen", kReload, {'R'}},
+    {L"ducken", kCrouch, {VK_LCONTROL, 'C'}},
+    {L"naechste_waffe", kNextWeapon, {}},  // dazu Mausrad nach unten
+    {L"vorige_waffe", kPrevWeapon, {'Q'}},  // dazu Mausrad nach oben
+    {L"zoom_rein", kZoomIn, {VK_ADD}},
+    {L"zoom_raus", kZoomOut, {VK_SUBTRACT}},
+    {L"pause", kStart, {VK_ESCAPE}},
+    {L"ok", kCross, {VK_RETURN}},
+    {L"zurueck", kCircle, {VK_BACK}},
+    {L"dreieck", kTriangle, {VK_TAB}},
+    {L"quadrat", kSquare, {'X'}},
+    {L"menue_hoch", kUp, {VK_UP}},
+    {L"menue_runter", kDown, {VK_DOWN}},
+    {L"menue_links", kLeft, {VK_LEFT}},
+    {L"menue_rechts", kRight, {VK_RIGHT}},
 };
+constexpr int kBindingVersion = 2;  // [tasten] belegung; ältere Abschnitte werden ersetzt
+
+std::wstring vk_list(const int* vk) {
+    std::wstring s;
+    for (int i = 0; i < 3 && vk[i]; ++i) s += (s.empty() ? L"" : L",") + std::to_wstring(vk[i]);
+    return s.empty() ? L"0" : s;
+}
 int g_fwd = 'W', g_back = 'S', g_left = 'A', g_right = 'D';
 float g_mouse_sens = 1.0f;
 bool g_mouse_invert = false;
@@ -114,18 +135,48 @@ void input_init(HWND wnd, void* obj, const std::filesystem::path& ini) {
     g_wnd = wnd;
     g_obj = obj;
     const std::wstring p = ini.wstring();
-    if (GetPrivateProfileIntW(L"tasten", L"vorwaerts", -1, p.c_str()) == UINT(-1)) {
+    const bool have_keys = GetPrivateProfileIntW(L"tasten", L"vorwaerts", -1, p.c_str()) != UINT(-1);
+    if (have_keys && int(GetPrivateProfileIntW(L"tasten", L"belegung", 1, p.c_str())) < kBindingVersion) {
+        // Abschnitt aus einer früheren Fassung: durch die neue Belegung
+        // ersetzen; die Lauftasten bleiben, wie sie dort stehen.
+        // Format für WritePrivateProfileSection: "a=1\0b=2\0\0".
+        std::wstring sec;
+        auto line = [&](const std::wstring& s) {
+            sec += s;
+            sec.push_back(L'\0');
+        };
+        auto keep = [&](const wchar_t* key, int def) {
+            line(std::wstring(key) + L"=" + std::to_wstring(GetPrivateProfileIntW(L"tasten", key, def, p.c_str())));
+        };
+        line(L"belegung=" + std::to_wstring(kBindingVersion));
+        keep(L"vorwaerts", g_fwd);
+        keep(L"rueckwaerts", g_back);
+        keep(L"links", g_left);
+        keep(L"rechts", g_right);
+        for (auto& k : g_keys) line(std::wstring(k.name) + L"=" + vk_list(k.vk));
+        sec.push_back(L'\0');
+        WritePrivateProfileSectionW(L"tasten", sec.data(), p.c_str());
+        log("ts2.ini: [tasten] auf die neue Belegung umgestellt\n");
+    } else if (!have_keys) {
         std::wofstream f(ini, std::ios::app);
-        f << L"\n[tasten]\n; virtuelle Tastencodes (dezimal); 1/2/4 = linke/rechte/mittlere Maustaste\n";
+        f << L"\n[tasten]\n; virtuelle Tastencodes (dezimal), bis zu drei je Aktion mit Komma;\n"
+             L"; 1/2/4 = linke/rechte/mittlere Maustaste. Mausrad: Waffe wechseln.\n";
+        f << L"belegung=" << kBindingVersion << L"\n";
         f << L"vorwaerts=" << g_fwd << L"\nrueckwaerts=" << g_back << L"\nlinks=" << g_left << L"\nrechts=" << g_right << L"\n";
-        for (auto& k : g_keys) f << k.name << L"=" << k.vk << L"\n";
+        for (auto& k : g_keys) f << k.name << L"=" << vk_list(k.vk) << L"\n";
         f << L"\n[maus]\nempfindlichkeit=1.0\numkehren=0\n";
     }
     g_fwd = int(GetPrivateProfileIntW(L"tasten", L"vorwaerts", g_fwd, p.c_str()));
     g_back = int(GetPrivateProfileIntW(L"tasten", L"rueckwaerts", g_back, p.c_str()));
     g_left = int(GetPrivateProfileIntW(L"tasten", L"links", g_left, p.c_str()));
     g_right = int(GetPrivateProfileIntW(L"tasten", L"rechts", g_right, p.c_str()));
-    for (auto& k : g_keys) k.vk = int(GetPrivateProfileIntW(L"tasten", k.name, k.vk, p.c_str()));
+    for (auto& k : g_keys) {
+        wchar_t buf[64];
+        GetPrivateProfileStringW(L"tasten", k.name, vk_list(k.vk).c_str(), buf, 64, p.c_str());
+        int v[3] = {};
+        swscanf(buf, L"%d,%d,%d", &v[0], &v[1], &v[2]);
+        std::copy(v, v + 3, k.vk);
+    }
     wchar_t buf[32];
     GetPrivateProfileStringW(L"maus", L"empfindlichkeit", L"1.0", buf, 32, p.c_str());
     g_mouse_sens = float(_wtof(buf));
@@ -228,7 +279,8 @@ void input_frame() {
     } else {
         if (f) {
             for (auto& k : g_keys)
-                if (down(k.vk)) bits |= k.bit;
+                for (int vk : k.vk)
+                    if (down(vk)) bits |= k.bit;
             lx = float(down(g_right)) - float(down(g_left));
             ly = float(down(g_fwd)) - float(down(g_back));
             if (bits || lx || ly) g_use_pad = false;
