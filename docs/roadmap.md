@@ -52,9 +52,9 @@ Funktionen von außen erreicht. Daraus:
    ist erledigt.
 2. Belichtung und Kontrast: Das Bild wirkt flau bzw. falsch belichtet.
    Vorhanden: Bildanpassung `[grafik] gamma/kontrast/helligkeit/saettigung`
-   (eigener letzter Schritt, neutral aus). Ursache noch offen; Spuren: der
-   ungesetzte Sampler in Slot 1 (siehe Grafikfehler) und die Gamma-Kodierung
-   der Swapchain.
+   (eigener letzter Schritt, neutral aus). Ursache noch offen (der ungesetzte
+   Sampler in Slot 1 ist es nicht, geprüft); nächste Spur: Gamma-Kodierung
+   der Swapchain bzw. eine Nachbearbeitung, die Homefront anwandte.
    Erster Verdacht: Die Swapchain ist `R8G8B8A8_UNORM` ohne sRGB, also eine
    mögliche Gamma-Abweichung zu dem, was TS2 schreibt. Außerdem fehlt
    womöglich eine Nachbearbeitung (Gamma, Tonemapping), die Homefront nach
@@ -71,8 +71,8 @@ Funktionen von außen erreicht. Daraus:
    setzt; mit einer Aufnahme des Bildes und den D3D11-Zuständen prüfen.
    Werkzeug: `TS2_D3DDEBUG=1` (D3D11-Debug-Schicht, Meldungen ins Log). Im
    Siberia-Start meldet sie keinen Kopierfehler, aber dauerhaft einen
-   ungesetzten Sampler in Slot 1 (2 Mio. Mal): Unter Homefront hatte
-   CryEngine dort vermutlich einen eigenen gesetzt. Nächster Schritt: an der
+   ungesetzten Sampler in Slot 1 (2 Mio. Mal). Geprüft: ein eigener
+   Sampler dort (anisotrop, wiederholend) ändert kein Pixel; keine Ursache. Nächster Schritt: an der
    Glasstelle mit der Debug-Schicht laufen lassen.
 6. Freecam, Sichtfeld.
 7. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
