@@ -6,8 +6,8 @@ aufgebaut auf dem nativen x64-Port, den Dambuster Studios 2016 in
 
 **Stand:** `ts2.exe` startet TS2 ohne Homefront, CryEngine oder Steam;
 Menüs und Level sind mit Tastatur/Maus oder Pad spielbar; Arcade,
-Challenge, alle Story-Level und das Optionsmenü sind freigeschaltet. Ton und
-Musik fehlen noch ([docs/host.md](docs/host.md)).
+Challenge, alle Story-Level und das Optionsmenü sind freigeschaltet. Ton,
+Musik und Sprache laufen, auf 5.1-Anlagen räumlich ([docs/host.md](docs/host.md)).
 
 Ziel: Dekompilat und Funktionsbestimmung dieses Ports, daraus ein PC-Port mit
 den Funktionen, die der Xbox-Recompile-Fork
@@ -29,7 +29,7 @@ Laufzeit aus der eigenen EXE gelesen.
 ## Aufbau
 
 ```text
-CMakeLists.txt         Build, Abhängigkeiten per FetchContent (zlib, Brotli)
+CMakeLists.txt         Build, Abhängigkeiten per FetchContent (zlib, Brotli, stb_vorbis)
 scripts/build.cmd      Build mit den VS 2022 Build Tools (Ninja, Release)
 src/host/              ts2.exe: lädt game/ts2.bin, ersetzt Fremdes, eigenes D3D11
 tools/hfpak/           hfpak: entschlüsselt/entpackt die CryPaks von Homefront
@@ -70,7 +70,7 @@ Das Einrichten liest die eigene Homefront-Installation einmal und legt in
   ([docs/formate/crypak.md](docs/formate/crypak.md)).
 
 Danach braucht es Homefront nicht mehr. Einstellungen stehen in `ts2.ini`
-neben der EXE (Auflösung, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen), das Protokoll in
+neben der EXE (Auflösung, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen, Ton), das Protokoll in
 `ts2.log`.
 
 ## Quellen

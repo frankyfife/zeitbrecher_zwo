@@ -28,6 +28,7 @@
 #include "features.h"
 #include "input.h"
 #include "menu.h"
+#include "audio.h"
 #include "hf2.h"
 #include "log.h"
 #include "ts2bin.h"
@@ -334,9 +335,10 @@ int wmain(int argc, wchar_t** argv) {
         fields[off / 8] = make_fake(_strdup(name));
         *reinterpret_cast<void**>(genv + off) = fake_object(fields[off / 8]);
     }
-    // Soundsystem (gEnv+0xD0): +0x100(callback) liefert das Objekt, über das
-    // ce_sound (0x14122829C) die Lautstärke setzt; TS2 legt es in 0x142FAEB88 ab.
-    fake_returns(fields[0xD0 / 8], 0x100, fake_object(make_fake("Sound+0x100-Objekt")));
+    // Soundsystem (gEnv+0xD0): ce_sound (0x14122829C) meldet über +0x100 seinen
+    // Mixer an und bekommt ein Strom-Objekt (in 0x142FAEB88); audio.cpp.
+    audio_install(g_img, load_audio_config(self_dir() / L"ts2.ini"));
+    fake_set(fields[0xD0 / 8], 0x100, reinterpret_cast<const void*>(&audio_open_stream));
 
     Gfx gfx;
     if (!make_gfx(&gfx, settings.width, settings.height)) {
@@ -390,6 +392,7 @@ int wmain(int argc, wchar_t** argv) {
         if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, back, shot);
         gfx.swap->Present(1, 0);
     }
+    audio_shutdown();
     log("%d Takte gelaufen\n", t);
     return 0;
 }

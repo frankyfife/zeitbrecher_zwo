@@ -53,19 +53,17 @@ void* crystring_assign(void* self, const char*, size_t) {
 }
 
 // ---------------------------------------------------------------- libvorbisfile
-// Statisch gelinktes vorbisfile, von TS2s Musik/Sprache (0x14117EDA0..) benutzt.
-// Vorerst: Öffnen schlägt fehl, damit TS2 ohne Musik weiterläuft.
-// TODO: mit stb_vorbis nachbauen.
-int ov_open_callbacks_stub(void*, void*, const char*, long, ...) {  // 0x141C34420
-    static bool once = false;
-    if (!once) log("[ersatz] ov_open_callbacks: Ogg-Wiedergabe noch nicht nachgebaut\n"), once = true;
-    return -1;
-}
-int ov_clear_stub(void*) { return 0; }                   // 0x141C32B60
-void* ov_info_stub(void*, int) { return nullptr; }       // 0x141C33B50
-int64_t ov_pcm_total_stub(void*, int) { return -1; }     // 0x141C32C80 (prüft ready_state)
-double ov_time_stub(void*, int) { return 0.0; }          // 0x141C33A80
-long ov_read_stub(void*, char*, int, int, int, int, int*) { return 0; }  // 0x141C33FF0
+// Statisch gelinktes vorbisfile, von TS2s Musik/Sprache benutzt; Ersatz mit
+// stb_vorbis in vorbis.cpp.
+}  // namespace
+struct OvCallbacks;
+int ov_open_callbacks_x(void*, void*, const char*, long, const OvCallbacks*);
+int ov_clear_x(void*);
+void* ov_info_x(void*, int);
+int64_t ov_pcm_total_x(void*, int);
+int ov_time_seek_x(void*, double);
+long ov_read_x(void*, char*, int, int, int, int, int*);
+namespace {
 
 // ---------------------------------------------------------------- C-Laufzeit (msvcr100)
 // __iob_func liefert in msvcr100 ein Feld von FILE-Strukturen à 0x30 Byte;
@@ -151,12 +149,12 @@ const Rep kRep[] = {
     {0x0095E660, F(nothing)},
     {0x00C6E840, F(ts2_free)},
     {0x00C6F8B0, F(ts2_malloc)},
-    {0x01C32B60, F(ov_clear_stub)},
-    {0x01C32C80, F(ov_pcm_total_stub)},
-    {0x01C33A80, F(ov_time_stub)},
-    {0x01C33B50, F(ov_info_stub)},
-    {0x01C33FF0, F(ov_read_stub)},
-    {0x01C34420, F(ov_open_callbacks_stub)},
+    {0x01C32B60, F(ov_clear_x)},
+    {0x01C32C80, F(ov_pcm_total_x)},
+    {0x01C33A80, F(ov_time_seek_x)},
+    {0x01C33B50, F(ov_info_x)},
+    {0x01C33FF0, F(ov_read_x)},
+    {0x01C34420, F(ov_open_callbacks_x)},
     {0x01C50C6E, F(x_memcpy)},
     {0x01C50C74, F(x_memset)},
     {0x01C50C80, F(x_powf)},

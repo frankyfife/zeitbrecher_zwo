@@ -99,6 +99,13 @@ eigenständige EXE.
 | 0x141228F30, 0x141229070 | | `dx11\dlImmediate.cpp` | `__FILE__` |
 | 0x14122B214, 0x14122B458 | | `dx11\dx11.cpp` | `__FILE__` |
 | 0x14122C008 | 315 | Tick (vtable +0x18) | `"TS Tick"` |
+| 0x14122829C | 247 | Ton starten: 80 Critical Sections, Mixer bei `gEnv+0xD0 ->+0x100` anmelden | Aufrufstruktur |
+| 0x141227CB4 | 1 340 | Mixer `mix(float* out, frames, rate, channels)`, Stereo | Rückruf |
+| 0x1412276A0 | 838 | `soundPlayBuffer`: Stimme belegen und starten | `__FILE__`-Text |
+| 0x1412270E0 | 381 | Position einer Stimme relativ zur Kamera des nächsten Spielers (`[Spieler+8]+0x210`, Position +0x2A0) | Aufrufstruktur |
+| 0x141226070 | 321 | Lautstärken aus CVars | Strings |
+| 0x14117EF9C, 0x14117F350 | | Ogg ganz laden / als Strom öffnen (vorbisfile) | Aufrufe |
+| 0x14117F45C | | Ogg-Strom nachfüllen, am Ende zurückspulen | Aufrufe |
 | 0x14122C2B0 | 138 | Fabrik des Laufzeitobjekts | einziger Aufruf von außen |
 | 0x14122C400 | 14 | `host0:textures/misc/blank.raw` | Strings |
 | 0x14122C700 | 371 | Textur laden (`host0:textures/%04d.%s`) | Strings |
@@ -112,6 +119,9 @@ eigenständige EXE.
 | `0x143F1A388` | Zeiger auf den Spieler, der gerade bewegt wird (Xbox `0x497340`) |
 | `0x14259CBE4` | Bildzeit in Takten (float, Xbox `0x348CEC`); Schwerkraft und Blick werden damit multipliziert |
 | `0x1421DA4B0` | Tempo des Waffenwechsels, 20/7 je Sekunde (.rdata) |
+| `0x142FB77E0` | 80 Tonstimmen je 0xD8 Byte ([host.md](host.md), "Ton") |
+| `0x142F9B240` | Tonpuffer je 0x28 Byte |
+| `0x14259CF7C`, `0x14259CF8C`, `0x14259CF90` | Lautstärke gesamt, Musik, Effekte (float, Vorgabe 1,0) |
 | `0x142F2C360` | Freischalt-Flags (char[6]): 0 alle Story-Level, 1 Arcade, 2 Challenge, 3 ohne Leser, 4 Cheats, 5 Unverwundbarkeit |
 | `0x142F2C35C` | "alles frei" (int): jede Freischalt-Bedingung gilt als erfüllt |
 | `0x1425078B8` | Code-Tabelle, 8 Einträge je 0x38 Byte (Tastenfolge u16[20] davor, Länge, Handler) |

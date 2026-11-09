@@ -30,6 +30,12 @@ set(BROTLI_BUNDLED_MODE ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(brotli)
 
+# stb (nur stb_vorbis.c, Ogg-Dekoder für Musik und Sprache)
+FetchContent_Declare(stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d)
+FetchContent_MakeAvailable(stb)
+
 # Alle Programme und DLLs nach build/bin
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 

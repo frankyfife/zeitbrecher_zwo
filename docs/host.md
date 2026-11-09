@@ -4,8 +4,8 @@ Stand 2026-11-09: `ts2.exe` startet TS2 in einem eigenen Fenster mit
 eigenem D3D11-Gerät, ohne Homefront, CryEngine oder Steam, und ist
 spielbar: Menüs, Intro, Briefing und das Level Chicago laufen mit Tastatur
 und Maus oder einem Pad; der Sprung funktioniert. Arcade, Challenge, alle
-Story-Level und das Optionsmenü sind freigeschaltet. Ton und Musik fehlen noch
-(siehe unten).
+Story-Level und das Optionsmenü sind freigeschaltet. Ton, Musik und Sprache
+laufen, auf 5.1-Geräten mit positionierten Geräuschen im Raum.
 
 ## Einrichten und Starten
 
@@ -27,7 +27,7 @@ Danach wird Homefront nicht mehr gebraucht. `game/` gehört nie ins Repo.
 `ts2.exe [--spiel <game>] [--takte N [--bild datei.bmp]]`: `--takte` hält
 nach N Takten an (Tests), `--bild` speichert den letzten Bildpuffer.
 Einstellungen in `ts2.ini` neben der EXE (wird beim ersten Start angelegt):
-Render-Auflösung, Vollbild, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen. Protokoll:
+Render-Auflösung, Vollbild, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen, Ton. Protokoll:
 `ts2.log` neben der EXE.
 
 ## Wie es funktioniert
@@ -60,7 +60,7 @@ Zugriffsverletzung; `ts2.log` nennt dann die Original-Adresse.
 | 0x1408761DC, 0x14095E660 | leer (ausgebaute Protokollierung) | leer |
 | 0x14088251C / 0x1402E5830 | `return 0` / `return 4` | dasselbe |
 | 0x140004370 | `CryString::assign`, nur im CryPak-Pfad | Meldung (wird nicht gebraucht) |
-| 0x141C34420, 0x141C33B50, 0x141C32C80, 0x141C33A80, 0x141C33FF0, 0x141C32B60 | libvorbisfile (`ov_open_callbacks`, `ov_info`, `ov_pcm_total`, `ov_time_*`, `ov_read`, `ov_clear`), statisch gelinkt | **noch Platzhalter** (Öffnen schlägt fehl) |
+| 0x141C34420, 0x141C33B50, 0x141C32C80, 0x141C33A80, 0x141C33FF0, 0x141C32B60 | libvorbisfile (`ov_open_callbacks`, `ov_info`, `ov_pcm_total`, `ov_time_seek`, `ov_read`, `ov_clear`), statisch gelinkt | stb_vorbis (`vorbis.cpp`) |
 | 0x141C50C6E … 0x141C50ED6 | CRT-Sprünge: memcpy, memset, memcmp, powf, sinf, cosf, tanf, asinf, acosf, atanf, atan2f | eigene CRT |
 | Importe `msvcr100!…` | sprintf, strncpy, fopen, fread, … `__iob_func` | eigene CRT; `__iob_func` liefert ein Platzhalterfeld, das die Datei-Funktionen auf stdin/stdout/stderr abbilden |
 
@@ -75,7 +75,7 @@ melden und 0 liefern. Was TS2 bisher verlangt:
 | --- | --- | --- | --- |
 | +0x60 | CryPak | — | **bleibt null**: TS2s `ce_file` (`sceOpen` 0x1412252AC …) fällt dann selbst auf `fopen("ts2/…")` zurück; das Arbeitsverzeichnis ist `game/` |
 | +0xC0 | ? | +0xB0 (in Start) | Attrappe |
-| +0xD0 | Soundsystem | +0x100(callback) → Objekt, darauf +0x10 (Lautstärke) | Attrappe, liefert ein Attrappen-Objekt |
+| +0xD0 | Soundsystem | +0x100(Mixer) → Strom-Objekt (+0x08 freigeben, +0x10 Abtastrate, +0x18 drei Floats) | **echt**: XAudio2 (`audio.cpp`), siehe "Ton" |
 | +0xD8 | ? | +0x4D8 (je Takt) | Attrappe |
 | +0x140 | Profiler | +0x90/+0x98 (Beginn/Ende "TS Tick"/"TS Render") | Attrappe (passt so) |
 | +0xF8, +0x128, +0x168 | | bisher keine | Attrappe |
@@ -175,11 +175,79 @@ Options (Spieler, Ton, Abspann, Zwischensequenzen, Cheats) öffnen sich,
 "Zurück" führt ins Hauptmenü; die Story-Levelwahl zeigt mehr als zwei
 Level.
 
+## Ton (`src/host/audio.cpp`, `mixer.cpp`, `vorbis.cpp`)
+
+TS2 mischt selbst. Beim Start meldet ce_sound (`0x14122829C`) seinen Mixer
+`0x141227CB4` über `gEnv+0xD0 ->+0x100` an und meldet über das zurückgegebene
+Strom-Objekt die Abtastrate (+0x10, 48000). Der Mixer hat die Form
+`mix(float* out, frames, rate, channels)`. Er nullt den Block und addiert
+80 Stimmen hinein; jede Stimme hat ihre eigene Critical Section, sodass der
+Mixer aus einem eigenen Thread laufen darf.
+
+Musik und Sprache laufen über dieselben Stimmen. Die Ogg-Dateien dekodiert
+libvorbisfile, das in `ts2.exe` durch stb_vorbis ersetzt ist (ganze Datei
+über TS2s Lese-Rückruf in den Speicher, dann dekodieren).
+
+**Stimme** (`0x142FB77E0`, 80 × 0xD8 Byte):
+
+| Offset | Feld |
+| --- | --- |
+| +0x00 | aktiv |
+| +0x04 | Ringpuffer mit 32 Puffernummern (1-basiert) |
+| +0x84 | Schleifenanfang |
+| +0x88 | aktueller Eintrag |
+| +0x8C | Ende |
+| +0x90 | Flags; 0x1000 = Musik |
+| +0x94 | Schleife |
+| +0x98 | positioniert |
+| +0x9C | Zustand; 2 = spielt |
+| +0xA0 | Spielzeit in Sekunden |
+| +0xA4 | Position in Sekunden |
+| +0xA8 | Tonhöhe |
+| +0xAC / +0xB0 / +0xB4 | Abstand max / min / Abfall |
+| +0xB8 / +0xBC | Lautstärke links / rechts |
+| +0xC0 | Position relativ zur Kamera: x rechts, y oben, z vorn |
+| +0xD0 | `CRITICAL_SECTION*` |
+
+Puffer: `0x142F9B240`, je 0x28 Byte, mit +8 Daten (int16), +0x18 Frames,
++0x1C Rate und +0x20 Kanäle.
+
+**Original-Panning:** nur Stereo, nur waagerecht.
+- links = clamp(0,75 − nx), rechts = clamp(0,75 + nx), wobei (nx, nz) die
+  waagerechte Richtung ist.
+- Abstandsdämpfung: min / (min + Abfall · (d − min)), wobei d auf [min, max]
+  begrenzt ist.
+- Gemessen: Läuft man vorwärts, zeigt die Bewegung im Ton-Kameraraum auf +z.
+
+**5.1:** Hat das Gerät mindestens sechs Kanäle, mischt `ts2.exe` selbst
+(`mixer.cpp`).
+- **Stimmen:** dieselben Stimmen mit derselben Fortschreibung von Position,
+  Ringpuffer und Schleife.
+- **Positionierte Mono-Stimmen:** paarweise mit konstanter Leistung über
+  den Azimut auf FC 0°, FR 30°, SR 110°, SL 250° und FL 330° verteilt. Die
+  Lautheit ist an Stereo von vorn angeglichen.
+- **Übrige Stimmen** (Musik, Menü): wie im Original auf FL/FR.
+- **LFE:** bleibt leer.
+
+Auf Stereo-Geräten läuft TS2s eigener Mixer.
+
+**Prüfung** mit der Umgebungsvariable `TS2_TONPRUEFUNG=1`: Etwa jeder 47.
+Block wird von beiden Mixern auf demselben Stimmenzustand gerechnet, der
+eigene dabei im Stereomodus.
+- Ergebnis in Menü, Intro und Siberia mit Schüssen: 158 Vergleiche, davon
+  27 mit positionierten Stimmen.
+- Größte Abweichung 1,8·10⁻⁷ (Float-Rundung).
+- Der Stimmenzustand danach war jedes Mal bytegleich.
+
+**Lautstärken:** Ohne Engine-CVars (`s_MusicVolume`, `s_SFXVolume`,
+`0x141226070`) bleiben TS2s Werte bei 1,0. `ts2.exe` setzt sie aus
+`ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
+`ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
+
 ## Was fehlt (in dieser Reihenfolge)
 
-1. **Ton**: die Soundsystem-Schnittstelle (+0xD0) mit XAudio2 (5.1) nachbauen.
-2. **Musik/Sprache**: die sechs vorbisfile-Funktionen mit stb_vorbis.
-3. **Bildrate**: Takt und Bild entkoppeln (Tick bei fester Rate, Render frei),
+1. **Bildrate**: Takt und Bild entkoppeln (Tick bei fester Rate, Render frei),
    dann ≥ 120 fps; HDR über die Swapchain.
-4. Ein Arcade-Match und eine Challenge durchspielen (bisher nur die Menüs geprüft).
-5. LAN (`ce_lan`, gEnv-Netzwerk), Vollbild, Launcher.
+2. Ein Arcade-Match und eine Challenge durchspielen (bisher nur die Menüs geprüft).
+3. Ton am Gerät anhören (bisher nur über Pegel und Mixer-Vergleich geprüft); LFE, Hall.
+4. LAN (`ce_lan`, gEnv-Netzwerk), Vollbild, Launcher.

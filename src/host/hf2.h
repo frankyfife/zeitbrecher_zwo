@@ -85,6 +85,14 @@ enum StringId : uint32_t {
     kStrArcade = 0xD30, kStrStory = 0xD48, kStrStoryCoop = 0xD50, kStrOptions = 0xD68,
     kStrChallenge = 0xD70, kStrQuit = 0x42F0, kStrSelectHint = 0x7C0, kStrBackHint = 0x938,
 };
+// Ton (ce_sound.cpp, docs/host.md "Ton")
+constexpr uint64_t kSoundMixer = 0x141227CB4;       // mix(float* out, frames, rate, channels)
+constexpr uint64_t kSoundVoices = 0x142FB77E0;      // 80 Stimmen je 0xD8 Byte
+constexpr uint64_t kSoundBuffers = 0x142F9B240;     // Puffer je 0x28 Byte (+8 Daten, +0x18 Frames, +0x1C Rate, +0x20 Kanäle)
+constexpr uint64_t kMasterVolume = 0x14259CF7C;     // float, s_GameMasterVolume × s_RadicalVolume
+constexpr uint64_t kMusicVolume = 0x14259CF8C;      // float, Stimmen mit Flag 0x1000
+constexpr uint64_t kEffectsVolume = 0x14259CF90;    // float, übrige Stimmen
+constexpr uint64_t kSoundListenerDir = 0x142479550; // float[2] = (0, 1), Bezugsrichtung des Stereo-Pannings
 constexpr uint64_t kPlayersInGame = 0x143F35188;    // int; 2 = Koop ("Story Co-op")
 
 }  // namespace hf2
