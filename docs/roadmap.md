@@ -57,8 +57,15 @@ Funktionen von außen erreicht. Daraus:
 3. HDR-Ausgabe (noch nicht drin): Swapchain mit HDR10 oder scRGB, TS2s
    Bild in einen erweiterten Bereich abbilden (Spitzlichter, Weißpunkt
    einstellbar), als Option im Launcher.
-4. Freecam, Sichtfeld.
-5. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
-6. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
+4. Vollbild: Alt+Enter schaltet heute DXGIs eigenes (exklusives)
+   Vollbild ein, ohne dass `ts2.exe` die Puffer anpasst; das Bild steht
+   dann. Plan: DXGIs Alt+Enter abschalten (`MakeWindowAssociation`,
+   `DXGI_MWA_NO_ALT_ENTER`) und selbst umschalten, vorzugsweise randloses
+   Vollbild (Flip-Modell; G-Sync/VRR geht damit unter aktuellem Windows),
+   exklusiv als Option, falls G-Sync es braucht. `[grafik] vollbild`
+   (gelesen, aber noch ohne Wirkung) dafür verwenden.
+5. Freecam, Sichtfeld.
+6. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
+7. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
    lesen; TS2 hat eine Texttabelle je Sprache (`0x1424E2430`, Sprache
    `0x142EE39C0`), im PC-Port ist nur Englisch belegt. Auswahl im Launcher.
