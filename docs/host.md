@@ -366,6 +366,16 @@ geprüft.
 - **Nickgrenze** (`ts2_pitch_limit`): `0x143F1A390` (Xbox 0x497344) steht
   im Mausmodus auf `[maus] nickgrenze` (85) statt 40, fürs Pad wieder auf
   dem Spielwert.
+- **Sichtfeld** (`ts2_fov`): `[grafik] sichtfeld` (70–150 %, Vorgabe 100).
+  Die Kamera-Einrichtung `0x14107EE0C(near, far, aspect, fov_grad)` (Xbox:
+  camera_setup) baut die Projektion und legt tan(fov/2) und
+  aspect·tan(fov/2) für das Ausblenden ab (Kamera `*0x143F3A870`
+  +0x348/+0x34C). Beide Aufrufe (`0x141080C85` beim Einrichten,
+  `0x14108208A` je Bild mit dem gemerkten fov +0x350) gehen über eine
+  Hülle, die das fov skaliert; Projektion und Ausblenden passen so
+  zusammen, das Zielfernrohr zoomt im Verhältnis des Spiels. Geprüft:
+  Glass-Smash-Start bei 100 und 130 %, breiteres Bild ohne fehlende Teile
+  am Rand.
 - **Zurückkippen beim Gehen:** Der Fork hält dafür +0x150 fest. Gemessen
   (`TS2_BLICKPROBE`): Der PC-Port kippt mit der Maus nicht zurück (Nick
   bleibt 30°, Zustand 1), also nichts zu tun.

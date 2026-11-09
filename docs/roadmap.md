@@ -74,7 +74,8 @@ Funktionen von außen erreicht. Daraus:
    ungesetzten Sampler in Slot 1 (2 Mio. Mal). Geprüft: ein eigener
    Sampler dort (anisotrop, wiederholend) ändert kein Pixel; keine Ursache. Nächster Schritt: an der
    Glasstelle mit der Debug-Schicht laufen lassen.
-6. Freecam, Sichtfeld.
+6. Freecam (Xbox: Kameramodus 8, im PC-Code suchen). Sichtfeld erledigt
+   (`[grafik] sichtfeld`, Kamera-Einrichtung `0x14107EE0C`).
 7. Arcade und Challenge: per Skript geprüft (Arcade-Custom-Match `l_42_AR` mit
    Bots, Challenge „Glass Smash“ mit richtiger Uhr bei 60 und 120 Hz); offen
    nur ganze Durchgänge von Hand.

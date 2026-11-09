@@ -350,6 +350,8 @@ QWidget* MainWindow::page_graphics() {
     f->addRow(QStringLiteral("Bildtakt"), rate);
     f->addRow(QString(), check(QStringLiteral("Randloses Vollbild (Alt+Enter schaltet um)"), "grafik", "vollbild"));
     f->addRow(QString(), check(QStringLiteral("Zusätzlich auf den Monitor warten (Bildsync)"), "grafik", "bildsync"));
+    f->addRow(QStringLiteral("Sichtfeld"), spin("grafik", "sichtfeld", 70, 150, QStringLiteral(" %")));
+    f->addRow(hint(QStringLiteral("In Prozent des Spiels; das Zielfernrohr zoomt im selben Verhältnis.")));
     v->addWidget(p1);
 
     auto* p2 = panel();

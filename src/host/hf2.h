@@ -49,6 +49,14 @@ constexpr uint32_t kPlayerStance = 0x168;           // Haltung (0 stehen, 1 duck
 constexpr uint32_t kPlayerTopSpeed = 0xCC;          // float[4] Höchstgeschwindigkeit je Haltung
 constexpr uint64_t kPlayerNow = 0x143F1A388;        // Spieler, der gerade bewegt wird
 constexpr uint64_t kPitchLimit = 0x143F1A390;       // float, Nickgrenze in Grad (Spiel: 40)
+// Kamera-Einrichtung (Xbox-Fork: camera_setup(near, far, aspect, fov_grad)):
+// baut die Projektion und legt tan(fov/2) und aspect*tan(fov/2) für das
+// Ausblenden ab (Kamera *0x143F3A870 +0x348/+0x34C). Zwei Aufrufe: beim
+// Einrichten der Kamera (das Spiel merkt sich sein fov an +0x350) und je Bild
+// mit dem gemerkten Wert.
+constexpr uint64_t kCameraSetup = 0x14107EE0C;
+constexpr uint64_t kCameraSetupCallInit = 0x141080C85;
+constexpr uint64_t kCameraSetupCallFrame = 0x14108208A;
 constexpr uint64_t kWalk = 0x1411D9748;             // Bewegungsmodus 0, Gehen
 constexpr uint64_t kWalkCall = 0x1411DBE73;         // sein einziger Aufruf (im Dispatcher 0x1411DAF8C)
 constexpr uint32_t kPlayerFallSpeedX = 0xDF8;       // Quergeschwindigkeit im Fall, je Takt

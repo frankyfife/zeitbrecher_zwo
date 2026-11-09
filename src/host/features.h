@@ -22,6 +22,7 @@ struct Settings {
     int run_percent = 160;            // Tempo beim Rennen (100–300)
     bool run_toggle = false;          // Taste schaltet um statt gehalten zu werden
     float pitch_limit = 85.0f;        // Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)
+    int fov_percent = 100;            // Sichtfeld in Prozent des Spiels (70–150)
 };
 
 // Liest ts2.ini (neben ts2.exe); fehlt sie, wird sie mit Vorgaben angelegt.

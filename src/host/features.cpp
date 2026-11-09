@@ -47,6 +47,7 @@ Settings load_settings(const std::filesystem::path& ini) {
     s.run_key = int(GetPrivateProfileIntW(L"bewegung", L"renntaste", 0xA0, p.c_str()));
     s.run_percent = std::clamp(int(GetPrivateProfileIntW(L"bewegung", L"renntempo", 160, p.c_str())), 100, 300);
     s.run_toggle = GetPrivateProfileIntW(L"bewegung", L"rennen_umschalten", 0, p.c_str()) != 0;
+    s.fov_percent = std::clamp(int(GetPrivateProfileIntW(L"grafik", L"sichtfeld", 100, p.c_str())), 70, 150);
     return s;
 }
 
@@ -76,6 +77,19 @@ bool g_jump_was_down = false;
 // einen schnelleren Stick. Nur für Spieler 1.
 using WalkFn = void (*)(void* ctx, float* a, float step1, float* b, float* c, float step2);
 WalkFn g_walk = nullptr;
+
+// Sichtfeld (Xbox-Fork: ts2_fov): jedes fov, das das Spiel der Kamera-
+// Einrichtung gibt, wird skaliert, auch das des Zielfernrohrs (der Zoom
+// bleibt im Verhältnis des Spiels). Projektion und Ausblend-Halbbreiten
+// folgen daraus, nichts verschwindet am Rand. Das Spiel merkt sich sein
+// eigenes fov (+0x350), das Skalieren schaukelt sich also nicht auf.
+using CameraSetupFn = void (*)(float near_z, float far_z, float aspect, float fov_deg);
+CameraSetupFn g_camera_setup = nullptr;
+float g_fov_scale = 1.0f;
+
+void camera_setup_fov(float near_z, float far_z, float aspect, float fov_deg) {
+    g_camera_setup(near_z, far_z, aspect, std::min(fov_deg * g_fov_scale, 170.0f));
+}
 const Ts2Image* g_img = nullptr;
 float g_run_factor = 1.0f;
 bool g_running = false;
@@ -149,6 +163,14 @@ void features_install(const Ts2Image& img, const Settings& s) {
         g_run_factor = float(s.run_percent) / 100.0f;
         g_walk = reinterpret_cast<WalkFn>(hook_call(img, hf2::kWalkCall, hf2::kWalk, reinterpret_cast<const void*>(&run_walk)));
         if (g_walk) log("Rennen: %d %%\n", s.run_percent);
+    }
+    if (s.fov_percent != 100) {
+        g_fov_scale = float(s.fov_percent) / 100.0f;
+        const auto fn = reinterpret_cast<const void*>(&camera_setup_fov);
+        auto* a = hook_call(img, hf2::kCameraSetupCallInit, hf2::kCameraSetup, fn);
+        auto* b = hook_call(img, hf2::kCameraSetupCallFrame, hf2::kCameraSetup, fn);
+        g_camera_setup = reinterpret_cast<CameraSetupFn>(a ? a : b);
+        log("Sichtfeld: %d %% (%s)\n", s.fov_percent, a && b ? "beide Aufrufe" : "FEHLER: Aufruf nicht gefunden");
     }
     // Render-Auflösung: die festen 1920/1080 im Aufruf des DX11-Setups ersetzen.
     auto* w = img.va<uint32_t>(hf2::kResWidthImm);
