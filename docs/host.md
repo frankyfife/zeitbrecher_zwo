@@ -406,6 +406,38 @@ Einschalten mit `[grafik] takt=120` (oder `TS2_TAKT=120`); Vorgabe bleibt
   noch im 60-Hz-Raster.
 - Proben: `TS2_GEHPROBE=1`, `TS2_BILDPAAR=1`.
 
+## 120 Hz, Stufe 2 (Gegner und Objekte): Forschungsstand
+
+Nur mit `TS2_STUFE2=1`; Standard bleibt Stufe 1.
+
+**Ansatz:** Der Aufruf `0x1411F3B54(obj, 2, 0)` (Stelle `0x1411FE896`)
+verteilt die Aktualisierung an die Klasse des Objekts. `timing.cpp` setzt
+dort die Float-Bildzeit pro Objekt auf halbe Takte, gemessen mit einem
+eigenen 120-Hz-Zeitstempel pro Objekt; die Integer-Takte bleiben.
+
+**Messung:** `TS2_OBJSUMME=1` misst die Strecke aller Objekte in den
+Spielsekunden 34 bis 44 (Siberia, Skript). Die Läufe sind deterministisch.
+
+| Variante | Strecke | Bewegungsschritte |
+| --- | --- | --- |
+| 60 Hz | 605 | 2 078 |
+| 120 Hz, Stufe 1 | 623 (+3 %) | 2 144 |
+| Stufe 2, halbe Takte für alle | 545 | 2 145 |
+| Stufe 2, Einordnung pro Objekt | 744 | 2 144 |
+
+Die Einordnung pro Objekt funktioniert so: Bewegt sich ein Objekt in
+Bildern ohne Takt, läuft es flüssig; sonst bekommt es die Originalwerte.
+
+**Befund**
+- Die meisten Objekte bewegen sich auch mit halben Takten nur in Bildern
+  mit ganzem Takt. Ihre Klassen sperren also selbst ohne ganzen Takt, mit
+  Logik pro Klasse.
+- Stufe 1 hält das Tempo der Objekte. Beide Stufe-2-Varianten verfälschen
+  es.
+- Weiter geht es nur über die Klassen-Aktualisierungen (Tabelle
+  `0x142F94FF0`, Klasse × Platz) selbst, Klasse für Klasse mit dieser
+  Messung.
+
 ## 120 Hz nativ: Befund
 
 TS2 rechnet in ganzen 1/60-s-Takten, und die Logik hängt daran.

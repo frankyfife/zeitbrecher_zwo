@@ -45,9 +45,11 @@ Funktionen von außen erreicht. Daraus:
 
 ## Nächste Schritte, konkret
 
-1. 120 fps nativ, Stufe 2: Gegner und Objekte (Objektuhr `0x143F2F7A4`,
-   Zeitstempel +0x1C) und die Dämpfungen pro Takt auf halbe Takte. Stufe 1
-   (Spieler und Kamera, `[grafik] takt=120`) ist erledigt.
+1. 120 fps nativ, Stufe 2: Gegner und Objekte. Ein allgemeiner Ansatz pro
+   Objekt verfälscht das Tempo (gemessen, [host.md](host.md) "Stufe 2");
+   nötig ist der Umbau der Klassen-Aktualisierungen (Tabelle `0x142F94FF0`)
+   Klasse für Klasse. Stufe 1 (Spieler und Kamera, `[grafik] takt=120`)
+   ist erledigt.
 2. Belichtung und Kontrast: Das Bild wirkt flau bzw. falsch belichtet.
    Erster Verdacht: Die Swapchain ist `R8G8B8A8_UNORM` ohne sRGB, also eine
    mögliche Gamma-Abweichung zu dem, was TS2 schreibt. Außerdem fehlt

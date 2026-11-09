@@ -2,7 +2,10 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <unordered_map>
 
 #include "hooks.h"
 #include "log.h"
@@ -70,6 +73,142 @@ void player_update_hook() {
     *t = was;
 }
 
+// ---- Stufe 2: Objekte (Gegner, Geschosse, Türen …)
+// Die Objektschleife 0x1411FE70C gibt jedem Objekt Takte = Objektuhr −
+// Zeitstempel (+0x1C), höchstens 5, als Integer- und Float-Bildzeit, und
+// ruft dann 0x1411F3B54(obj, 2, 0) (Aufruf 0x1411FE896), der die
+// Aktualisierung an die Klasse des Objekts verteilt. Die Integer-Takte
+// bleiben (KI, Timer, Planung "Uhr + N" unverändert); die Float-Bildzeit
+// wird die tatsächlich vergangene Zeit in halben Takten, gemessen mit einem
+// eigenen 120-Hz-Zeitstempel je Objekt. Passt der nicht zu den Takten des
+// Spiels (neues Objekt, wiederverwendete Adresse), gelten die Takte des
+// Spiels. Zweimal hintereinander 0 Takte heißt: das Spiel hält das Objekt
+// an; dann bleibt die Bildzeit 0.
+uint64_t g_now120 = 0;  // 120-Hz-Takte seit dem Start (bei 60 Hz: Bilder)
+bool g_half_ticks = false;  // 120 Hz aktiv
+bool g_stage2 = false;      // TS2_STUFE2=1: Objekte mit halben Takten (Forschungsstand, Tempo noch falsch)
+struct ObjTime {
+    uint64_t last = 0;
+    int last_d = 0;
+    float last_ft = 0;
+    float px = 0, py = 0, pz = 0;  // Lage beim letzten Aufruf (+0xCC)
+    bool have_pos = false;
+    bool tick_moved = false;       // beim letzten Aufruf mit Takt bewegt
+    int votes_free = 0, votes_gated = 0;
+    bool gated = false;            // bewegt sich nur mit ganzem Takt: Originalwerte
+};
+std::unordered_map<uint8_t*, ObjTime> g_objects;
+using ObjUpdateFn = void (*)(uint8_t* obj, int slot, int64_t arg);
+ObjUpdateFn g_obj_update = nullptr;
+
+void object_update_hook(uint8_t* obj, int slot, int64_t arg) {
+    float* t = va<float>(kTicksFRun);
+    if (!g_paused && *t >= 0.0f) {  // bei 60 Hz (nur Probe) bleibt alles, wie das Spiel es setzt
+        const int d = *va<int32_t>(kTicksIntRun);  // Takte dieses Objekts (Spiel)
+        ObjTime& o = g_objects[obj];
+        // Wie hat sich das Objekt bei seinem letzten Aufruf verhalten? Bewegt
+        // es sich in Bildern ohne Takt (mit halbem Takt), läuft es flüssig.
+        // Bewegt es sich wiederholt nur in Bildern mit Takt, sperrt sein Code
+        // ohne ganzen Takt: dann bekommt es die Originalwerte, sonst liefe es
+        // mit halbem Takt nur in jedem zweiten Bild, also zu langsam.
+        const float* pos = reinterpret_cast<const float*>(obj + 0xCC);
+        if (o.have_pos) {
+            const float dx = pos[0] - o.px, dy = pos[1] - o.py, dz = pos[2] - o.pz;
+            const bool moved = dx * dx + dy * dy + dz * dz > 1e-10f;
+            if (o.last_d == 0 && o.last_ft > 0.0f) {
+                if (moved) ++o.votes_free, o.votes_gated = 0;
+                else if (o.tick_moved && o.votes_free == 0) ++o.votes_gated;
+                if (o.votes_gated >= 3) o.gated = true;
+            } else if (o.last_d > 0) {
+                o.tick_moved = moved;
+            }
+        }
+        o.px = pos[0], o.py = pos[1], o.pz = pos[2], o.have_pos = true;
+        float ft;
+        if (o.gated) {
+            ft = float(d);  // wie das Spiel: ganze Takte
+        } else if (d == 0 && o.last_d == 0 && o.last != 0) {
+            ft = 0.0f;  // angehalten
+        } else {
+            int64_t dt = o.last ? int64_t(g_now120 - o.last) : -1;
+            if (dt < 1 || dt > 2 * int64_t(d) + 2) dt = std::max<int64_t>(1, 2 * int64_t(d));
+            ft = float(std::min<int64_t>(dt, 10)) * 0.5f;
+        }
+        if (!g_half_ticks || !g_stage2) ft = *t;
+        o.last = g_now120;
+        o.last_d = d;
+        o.last_ft = ft;
+        // TS2_OBJPROBE=1: Lage (+0xCC) und Bildzeit eines bewegten Objekts
+        static const bool probe = GetEnvironmentVariableW(L"TS2_OBJPROBE", nullptr, 0) > 0;
+        static uint8_t* watched = nullptr;
+        static float wx = 0, wz = 0;
+        static int logged = 0;
+        if (probe && logged < 40) {
+            const float* p = reinterpret_cast<const float*>(obj + 0xCC);
+            if (!watched && g_now120 > 600) {
+                // das erste Objekt, das sich in kleinen Schritten bewegt
+                // (fünf Aktualisierungen mit Takt hintereinander)
+                struct Seen {
+                    float x = 0, z = 0;
+                    int moving = 0;
+                };
+                static std::unordered_map<uint8_t*, Seen> seen;
+                Seen& s = seen[obj];
+                const float step = std::sqrt((p[0] - s.x) * (p[0] - s.x) + (p[2] - s.z) * (p[2] - s.z));
+                if (d > 0) s.moving = (step > 0.001f && step < 2.0f) ? s.moving + 1 : 0;
+                if (s.moving >= 5) watched = obj, wx = p[0], wz = p[2];
+                s.x = p[0], s.z = p[2];
+            }
+            if (obj == watched) {
+                log("[objekt] %p Bild %llu: Takte %d, Bildzeit Spiel %.2f -> %.2f, Lage %.3f %.3f (Schritt %.4f)\n", obj,
+                    static_cast<unsigned long long>(g_now120), d, *t, ft, p[0], p[2],
+                    std::sqrt((p[0] - wx) * (p[0] - wx) + (p[2] - wz) * (p[2] - wz)));
+                wx = p[0], wz = p[2];
+                ++logged;
+            }
+        }
+        *t = ft;
+    }
+    // TS2_OBJSUMME=1: Strecke aller Objekte in Sekunde 34–44 nach dem Start
+    static const bool sum = GetEnvironmentVariableW(L"TS2_OBJSUMME", nullptr, 0) > 0;
+    if (!sum) {
+        g_obj_update(obj, slot, arg);
+        return;
+    }
+    // Strecke seit dem letzten Aufruf desselben Objekts (bewegt wird in den
+    // Rückrufen nach 0x1411F3B54)
+    struct Last {
+        float x, y, z;
+    };
+    static std::unordered_map<uint8_t*, Last> last;
+    const float* p = reinterpret_cast<const float*>(obj + 0xCC);
+    static double total = 0;
+    static long moves = 0;
+    static bool done = false;
+    const double secs = double(g_now120) / (g_half_ticks ? 120.0 : 60.0);
+    auto it = last.find(obj);
+    if (secs >= 34.0 && secs < 44.0 && it != last.end()) {
+        const Last& l = it->second;
+        const double d = std::sqrt(double(p[0] - l.x) * (p[0] - l.x) + double(p[1] - l.y) * (p[1] - l.y) +
+                                   double(p[2] - l.z) * (p[2] - l.z));
+        if (d > 0.0 && d < 50.0) total += d, ++moves;
+    } else if (secs >= 44.0 && !done) {
+        done = true;
+        int gated = 0, free_ = 0;
+        for (auto& [k, v] : g_objects) gated += v.gated, free_ += v.votes_free > 0;
+        log("[objekte] Sekunde 34-44: Strecke aller Objekte %.1f in %ld Schritten; %d Objekte flüssig, %d mit ganzen Takten\n",
+            total, moves, free_, gated);
+    }
+    last[obj] = {p[0], p[1], p[2]};
+    g_obj_update(obj, slot, arg);
+}
+
+// bei 60 Hz mit Objektprobe: nur die Bilder zählen
+void time_probe_hook() {
+    g_time();
+    ++g_now120;
+}
+
 void time_hook() {
     int32_t* raw = va<int32_t>(kRawTicks);
     const int n120 = *raw;
@@ -83,6 +222,7 @@ void time_hook() {
     *raw = n120;
     const bool paused = *va<float>(kTicksFRun) == 0.0f && *va<int32_t>(kTicksIntRun) == 0;
     g_n120 = n120;
+    g_now120 += uint64_t(n120);
     g_paused = paused;
     *va<int32_t>(kTicksInt) = n60;
     *va<int32_t>(kTicksIntRun) = paused ? 0 : n60;
@@ -95,7 +235,21 @@ void time_hook() {
 
 void timing_install(const Ts2Image& img, int hz) {
     g_img = &img;
-    if (hz != 120) return;
+    if (hz != 120) {
+        // TS2_OBJPROBE bei 60 Hz: nur beobachten (Vergleichswerte)
+        if (GetEnvironmentVariableW(L"TS2_OBJPROBE", nullptr, 0) > 0) {
+            g_obj_update = reinterpret_cast<ObjUpdateFn>(
+                hook_call(img, 0x1411FE896, 0x1411F3B54, reinterpret_cast<const void*>(&object_update_hook)));
+            g_time = reinterpret_cast<TimeFn>(
+                hook_call(img, kTimeUpdateJmp, kTimeUpdate, reinterpret_cast<const void*>(&time_probe_hook)));
+        }
+        return;
+    }
+    g_half_ticks = true;
+    {
+        wchar_t v[4] = {};
+        if (GetEnvironmentVariableW(L"TS2_STUFE2", v, 4) > 0 && v[0] == L'1') g_stage2 = true;
+    }
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_period = uint64_t(f.QuadPart) / 120;
@@ -104,6 +258,11 @@ void timing_install(const Ts2Image& img, int hz) {
     g_apply = reinterpret_cast<ApplyFn>(
         hook_call(img, kApplyRecordCall, kApplyRecord, reinterpret_cast<const void*>(&apply_record_hook)));
     if (!g_apply) return;
+    // Objekt-Umweg nur für Stufe 2 oder die Objektproben
+    if (g_stage2 || GetEnvironmentVariableW(L"TS2_OBJSUMME", nullptr, 0) > 0 ||
+        GetEnvironmentVariableW(L"TS2_OBJPROBE", nullptr, 0) > 0)
+        g_obj_update = reinterpret_cast<ObjUpdateFn>(
+            hook_call(img, 0x1411FE896, 0x1411F3B54, reinterpret_cast<const void*>(&object_update_hook)));
     for (uint64_t site : {0x1411C6C93ull, 0x1411C6D99ull}) {
         auto* f = reinterpret_cast<PlayerFn>(
             hook_call(img, site, 0x14114C990, reinterpret_cast<const void*>(&player_update_hook)));
