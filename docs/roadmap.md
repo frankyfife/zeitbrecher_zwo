@@ -53,13 +53,12 @@ Funktionen von außen erreicht. Daraus:
 2. Belichtung und Kontrast: Das Bild wirkt flau bzw. falsch belichtet.
    Vorhanden: Bildanpassung `[grafik] gamma/kontrast/helligkeit/saettigung`
    (eigener letzter Schritt, neutral aus). Ursache noch offen (der ungesetzte
-   Sampler in Slot 1 ist es nicht, geprüft); nächste Spur: Gamma-Kodierung
-   der Swapchain bzw. eine Nachbearbeitung, die Homefront anwandte.
+   Sampler in Slot 1 ist es nicht, geprüft).
    Verdacht sRGB ausgeräumt: `TS2_BLENDPROBE=1` protokolliert auch die
    Texturformate; alle 724 Texturen im Glass-Smash-Start (Inhalte, eigene
    Ziele, 1920×1080-Kopien) sind `R8G8B8A8_UNORM`, keine sRGB-Form. TS2
    rechnet also im Gamma-Raum, die UNORM-Swapchain passt dazu. Womöglich fehlt
-   womöglich eine Nachbearbeitung (Gamma, Tonemapping), die Homefront nach
+   eine Nachbearbeitung (Gamma, Tonemapping), die Homefront nach
    TS2s Render-Aufruf angewandt hat. Zuerst messen: Bild gegen die
    Homefront-Fassung und die Xbox-Fassung vergleichen.
 3. HDR-Ausgabe (noch nicht drin): Swapchain mit HDR10 oder scRGB, TS2s
