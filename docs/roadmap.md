@@ -86,7 +86,8 @@ Funktionen von außen erreicht. Daraus:
 6. Freecam: erledigt (`[kamera] freecam`, Taste F6; WASD, Maus,
    Leertaste/C, Umschalt), geprüft im Glass-Smash-Start (über die Mauer
    geflogen, Level bleibt gezeichnet; zurück steht der Spieler unverändert).
-   Offen: von Hand im Spiel, 120 Hz. Grundlagen: PC-Gegenstück zu Xbox
+   Auch bei 120 Hz geprüft (gleiche Strecke je Sekunde). Offen: von Hand
+   im Spiel. Grundlagen: PC-Gegenstück zu Xbox
    `0x4B2CA0`: Globale ab `0x143F3A870` (Kamera-Zeiger), Modus
    `0x143F3A888`. Die Kamera-Aktualisierung `0x141081F28` verteilt nach Modus
    (2…9); Modus 8 (`0x1410828DB`) setzt die Kamera-Position (+0x2A0) aus
