@@ -1,0 +1,24 @@
+# Daten des Spiels: nie committen (Urheberrecht von Free Radical / Deep Silver).
+/game/
+/reference/
+
+# Ghidra-Projekt und Exporte (enthalten Code des Spiels)
+/re/ghidra_project/
+/re/out/
+
+# Build
+/build/
+/out/
+*.obj
+*.pdb
+*.ilk
+
+# Python
+__pycache__/
+*.pyc
+
+# Editoren
+.vs/
+.vscode/
+*.user
+.DS_Store

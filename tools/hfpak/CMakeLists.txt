@@ -1,0 +1,7 @@
+add_executable(hfpak hfpak.cpp twofish.cpp twofish.h)
+target_compile_features(hfpak PRIVATE cxx_std_17)
+target_compile_definitions(hfpak PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+target_link_libraries(hfpak PRIVATE brotlidec zlibstatic bcrypt)
+if(MSVC)
+  target_link_options(hfpak PRIVATE /ENTRY:wmainCRTStartup)
+endif()

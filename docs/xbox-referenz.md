@@ -1,0 +1,30 @@
+# Referenz: was der Xbox-Fork kann und wie es auf den PC-Port übertragen wird
+
+Quelle: [split2-recomp_ff](https://github.com/frankyfife/split2-recomp_ff)
+(archiviert, November 2026), vor allem `src/recomp_manual.c`,
+`docs/pc-work-plan.md`, `docs/mouse-aim.md`. Adressen sind die der
+**PAL-Xbox-Fassung** (`default.xbe` SHA-1 `2809eb14…`). Der dortige Code
+arbeitet auf geliftetem Xbox-Code; übertragbar ist die **Logik**, nicht der
+Code: dieselben TS2-Funktionen gibt es im Homefront-Port als x64-Code, ihre
+Adressen und (wegen 8-Byte-Zeigern) teils die Strukturoffsets sind andere.
+Für jede Funktion unten ist die PC-Entsprechung zu suchen (Spalte "PC").
+
+| Funktion | Xbox (PAL): wo und wie | PC |
+| --- | --- | --- |
+| Mauszielen | Blickwinkel als Grad-Floats im Spielerobjekt: +0x148 Gier [0,360), +0x14C Nick (−40…40, Grenze global 0x497344). Spielertabelle 0x497268, aktueller Spieler 0x497340. Blickcode `FUN_00148EB0` (rechter Stick × Bildzeit 0x348CEC; nur wenn Bit 3 von +0xC, +0x998 == 0, Bewegungsmodus +0x158 frei). Zielmodus Bit 1 von +0xC (`FUN_00140F40`) | Homefront-Port hat Maus bereits nativ; Empfindlichkeit war fehlerhaft (TS2Redux: `cl_sensitivity`). Zu prüfen |
+| Rennen | Gehen `FUN_00145300` (2711 Byte): Vorwärts-/Seitschritt (Arg. 3 und 6), Deckelung pro Haltung (+0xC0 + 4·Haltung, +0x15C). Hook multipliziert Schritte und Deckel (Standard 160 %) | Funktion per Struktur/Konstanten finden, gleich hooken |
+| Springen | Fallen = Bewegungsmodus 2 (`FUN_00145DA0`): ballistisch, quer +0x8DC/+0x8E4 je Tick, hoch Charakter +0x1338, Schwerkraft 0.01/Tick bis −0.6, Fallschaden ab 15 Einheiten (+0x1388). Sprung = Modus 2 vom Boden mit Aufwärtsgeschwindigkeit (1.2 Einheiten Höhe) | wie Xbox, Modus-Feld und Felder im PC-Spielerobjekt finden |
+| Freecam | Kamera `*0x4B2CA0`, Modus 8 von `FUN_00035960` baut die Sicht aus Position/Blickpunkt (0x4B2CC0, 0x4B2CCC). Raum der Kamera (+0x294) per `FUN_00120320(pos, 1.0, player+0xE8)` nachschlagen, sonst verschwindet das Level | Kameramodus 8 im PC-Code suchen |
+| Waffenwechsel | Hand-Zustandsautomat `FUN_000B64C0` (+0x34 Zustand, +0x38 Fortschritt; 1 halten, 2 senken, 3 tauschen, 4/5 Modell, 6 heben). Tempo: ein Float 2.857/s bei 0x00227C10 (nur dort gelesen) | Float im PC-`.rdata` suchen (2.857142 = 1/0.35) |
+| Feuerrate | Waffentabelle 0x002C3890 (46 Zeilen à 0x240), zwei Feuermodi à 0xB0 ab +0x58, Schussabstand in Ticks bei +0x10/+0x14 (`FUN_000AFAA0`). PAL-Werte sind 5/6 der USA-Werte (50-Hz-Ticks) | Tabelle im PC-Port suchen; der PC-Port stammt wohl von NTSC-Daten |
+| Sichtfeld | `ts2_camera_setup`: fov-Argument von camera_setup skaliert (70–150 %); Breitbild über das Seitenverhältnis | Kamera-Setup im PC-Code finden; Breitbild hat der PC-Port schon |
+| 5.1 | Weltklänge sind DirectSound-3D-Stimmen; Verteilung vorn/hinten nach Lage zum Hörer. Musik/Sprache/Menü nur Front | PC-Port nutzt `ce_sound.cpp` (FMOD?): dort 3D-Ausgabe auf 5.1 stellen |
+| Bildrate > 60 | Logik bleibt bei 60, Zwischenbilder durch Matrix-Interpolation; Überscan gegen Löcher | PC-Port: Logik-Takt ermitteln; Ziel ist echte Interpolation im eigenen Renderer |
+| Detailtextur | Schalter 0x47C884, `FUN_001C9792(room bounds, cam+0x27C, 20.0)` | prüfen, ob der PC-Port dasselbe Umschalten zeigt |
+| Tickrate PAL | 366 Stellen 1/50 → 1/60 | entfällt (PC-Port hat eigene Zeitbasis), prüfen |
+| Menümaus | Panels `FUN_000F1D30(screen, panel)`; Felder +0x34/+0x38 Lage, +0x44/+0x48 Größe, +0x398 Zeile | Homefront-Port hat Mauszeiger im Menü teilweise; prüfen |
+
+Die Symbolkarte der GameCube-Fassung (`OpenRadical/symbol_maps`,
+`ghidra/GTSE4F.map`) gibt die Funktionsnamen der gemeinsamen Codebasis und
+hilft, die PC-Funktionen zu benennen (über Strings, Konstanten und
+Aufrufstruktur).
