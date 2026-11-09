@@ -190,6 +190,41 @@ LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
 ID3D11InfoQueue* g_info = nullptr;
 
+// TS2_BLENDPROBE=1 (Glasfehler): protokolliert jeden Blend-Zustand, den TS2
+// anlegt, und die ersten Löschfarben. Eigene Geräte-Methoden über die
+// vtable des eigenen Geräts umgelenkt; nur zur Untersuchung.
+using CreateBlendFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const D3D11_BLEND_DESC*, ID3D11BlendState**);
+using ClearRtvFn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, ID3D11RenderTargetView*, const FLOAT*);
+CreateBlendFn g_create_blend = nullptr;
+ClearRtvFn g_clear_rtv = nullptr;
+int g_clear_n = 0;
+
+HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_DESC* bd, ID3D11BlendState** out) {
+    const HRESULT hr = g_create_blend(d, bd, out);
+    if (bd) {
+        const auto& r = bd->RenderTarget[0];
+        log("[blend] %p: an %d, Farbe %d*%d op %d, Alpha %d*%d op %d, Maske %X, a2c %d, einzeln %d\n",
+            out ? static_cast<void*>(*out) : nullptr, r.BlendEnable, r.SrcBlend, r.DestBlend, r.BlendOp,
+            r.SrcBlendAlpha, r.DestBlendAlpha, r.BlendOpAlpha, r.RenderTargetWriteMask, bd->AlphaToCoverageEnable,
+            bd->IndependentBlendEnable);
+    }
+    return hr;
+}
+
+void STDMETHODCALLTYPE probe_clear_rtv(ID3D11DeviceContext* c, ID3D11RenderTargetView* v, const FLOAT* col) {
+    if (g_clear_n++ < 40) log("[loeschen] %p: %.3f %.3f %.3f %.3f\n", static_cast<void*>(v), col[0], col[1], col[2], col[3]);
+    g_clear_rtv(c, v, col);
+}
+
+void patch_vtable(void* obj, int index, void* fn, void** orig) {
+    void** vt = *reinterpret_cast<void***>(obj);
+    DWORD old;
+    VirtualProtect(&vt[index], sizeof(void*), PAGE_READWRITE, &old);
+    *orig = vt[index];
+    vt[index] = fn;
+    VirtualProtect(&vt[index], sizeof(void*), old, &old);
+}
+
 // Meldungen der Debug-Schicht: jede Art einmal mit Text, am Ende die Zähler
 void d3d_messages(bool final_report) {
     static std::map<int, long> counts;
@@ -276,6 +311,13 @@ bool make_gfx(Gfx* g, int width, int height) {
         log("D3D11-Debug-Schicht an\n");
     if (best) best->Release();
     if (FAILED(dhr)) return false;
+    if (GetEnvironmentVariableW(L"TS2_BLENDPROBE", nullptr, 0) > 0) {
+        // ID3D11Device: CreateBlendState ist Methode 20; Kontext:
+        // ClearRenderTargetView Methode 50 (+0x190)
+        patch_vtable(g->dev, 20, reinterpret_cast<void*>(&probe_create_blend), reinterpret_cast<void**>(&g_create_blend));
+        patch_vtable(g->ctx, 50, reinterpret_cast<void*>(&probe_clear_rtv), reinterpret_cast<void**>(&g_clear_rtv));
+        log("Blend-Probe an\n");
+    }
     IDXGIDevice* xd = nullptr;
     IDXGIAdapter* ad = nullptr;
     IDXGIFactory2* fa = nullptr;
@@ -546,6 +588,18 @@ int wmain(int argc, wchar_t** argv) {
             return 4;
         }
         timing_frame();
+        // TS2_ALPHALOESCHEN=<0..1>: Ziel vor jedem Bild auf (0,0,0,a) löschen
+        // (Glasfehler: TS2 mischt mit dem Ziel-Alpha und löscht selbst nicht)
+        {
+            static const float clear_alpha = [] {
+                wchar_t v[16] = {};
+                return GetEnvironmentVariableW(L"TS2_ALPHALOESCHEN", v, 16) > 0 ? float(_wtof(v)) : -1.0f;
+            }();
+            if (clear_alpha >= 0.0f) {
+                const FLOAT c[4] = {0.0f, 0.0f, 0.0f, clear_alpha};
+                gfx.ctx->ClearRenderTargetView(scene_rtv, c);
+            }
+        }
         if (!call_render(obj, &devh, &ctxh, scene_rtv, scene_tex)) {
             log("Bild %d ist abgestürzt\n", t);
             return 5;

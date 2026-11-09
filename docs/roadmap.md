@@ -72,8 +72,16 @@ Funktionen von außen erreicht. Daraus:
    Werkzeug: `TS2_D3DDEBUG=1` (D3D11-Debug-Schicht, Meldungen ins Log). Im
    Siberia-Start meldet sie keinen Kopierfehler, aber dauerhaft einen
    ungesetzten Sampler in Slot 1 (2 Mio. Mal). Geprüft: ein eigener
-   Sampler dort (anisotrop, wiederholend) ändert kein Pixel; keine Ursache. Nächster Schritt: an der
-   Glasstelle mit der Debug-Schicht laufen lassen.
+   Sampler dort (anisotrop, wiederholend) ändert kein Pixel; keine Ursache.
+   Glass-Smash (Challenge) mit Debug-Schicht: keine Fehler; es fehlen keine
+   Texturen. `TS2_BLENDPROBE=1`: TS2 legt Blend-Zustände mit Ziel-Alpha an
+   (DEST_ALPHA/INV_DEST_ALPHA, DEST_ALPHA·ONE, wie auf der PS2) und löscht
+   das Ziel nie selbst; im Flip-Modell ist dessen Alpha am Bildanfang also
+   unbestimmt. Homefront übergab ein von CryEngine vorbereitetes Ziel.
+   Nächster Schritt an der Glasstelle: `TS2_ALPHALOESCHEN=0` und `=1`
+   (löscht das Ziel vor jedem Bild auf Alpha 0 bzw. 1) vergleichen; ändert
+   sich das Glas, ist das die Ursache und die Lösung ein festes Löschen.
+   Im Glass-Smash-Start ändern beide kein Pixel.
 6. Freecam (Xbox: Kameramodus 8, im PC-Code suchen). Sichtfeld erledigt
    (`[grafik] sichtfeld`, Kamera-Einrichtung `0x14107EE0C`).
 7. Arcade und Challenge: per Skript geprüft (Arcade-Custom-Match `l_42_AR` mit
