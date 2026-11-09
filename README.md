@@ -72,7 +72,7 @@ Das Einrichten liest die eigene Homefront-Installation einmal und legt in
   ([docs/formate/crypak.md](docs/formate/crypak.md)).
 
 Danach braucht es Homefront nicht mehr. Einstellungen stehen in `ts2.ini`
-neben der EXE (Auflösung, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen, Ton), das Protokoll in
+neben der EXE (Auflösung, Sichtfeld, Waffenwechsel-Tempo, Sprung, Tasten, freie Kamera (F6), Freischaltungen, Ton, Sprache), das Protokoll in
 `ts2.log`.
 
 Deutsche (französische, italienische, spanische) Spieltexte kommen aus dem
