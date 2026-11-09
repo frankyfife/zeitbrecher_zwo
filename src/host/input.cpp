@@ -313,6 +313,14 @@ void input_frame() {
 }
 
 uint32_t input_host_bits() { return g_host_bits; }
+
+void input_reclip() {
+    if (!g_captured) return;
+    RECT r;
+    GetClientRect(g_wnd, &r);
+    MapWindowPoints(g_wnd, nullptr, reinterpret_cast<POINT*>(&r), 2);
+    ClipCursor(&r);
+}
 bool input_uses_mouse() { return g_mode == 1; }
 
 }  // namespace host

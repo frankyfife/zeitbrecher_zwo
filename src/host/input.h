@@ -31,6 +31,8 @@ constexpr uint32_t kHostJump = 0x80000000u, kHostForward = 0x40000000u, kHostRun
 uint32_t input_host_bits();
 // true, solange Tastatur+Maus das Gerät ist (Mausmodus, Port 6)
 bool input_uses_mouse();
+// nach Größen- oder Lageänderung des Fensters: Mausbereich anpassen
+void input_reclip();
 
 
 }  // namespace host

@@ -59,13 +59,8 @@ Funktionen von außen erreicht. Daraus:
 3. HDR-Ausgabe (noch nicht drin): Swapchain mit HDR10 oder scRGB, TS2s
    Bild in einen erweiterten Bereich abbilden (Spitzlichter, Weißpunkt
    einstellbar), als Option im Launcher.
-4. Vollbild: Alt+Enter schaltet heute DXGIs eigenes (exklusives)
-   Vollbild ein, ohne dass `ts2.exe` die Puffer anpasst; das Bild steht
-   dann. Plan: DXGIs Alt+Enter abschalten (`MakeWindowAssociation`,
-   `DXGI_MWA_NO_ALT_ENTER`) und selbst umschalten, vorzugsweise randloses
-   Vollbild (Flip-Modell; G-Sync/VRR geht damit unter aktuellem Windows),
-   exklusiv als Option, falls G-Sync es braucht. `[grafik] vollbild`
-   (gelesen, aber noch ohne Wirkung) dafür verwenden.
+4. Vollbild: erledigt (randlos, Alt+Enter, `[grafik] vollbild`, DPI-bewusst);
+   offen nur exklusives Vollbild, falls G-Sync es auf einem System braucht.
 5. Grafikfehler: Glasflächen (z. B. die Fenster mit Laserschranken in
    Siberias Innenräumen) erscheinen schwarz statt durchsichtig. Vermutlich
    ein Blend- oder Alpha-Zustand, den der Render-Pfad ohne Homefront anders

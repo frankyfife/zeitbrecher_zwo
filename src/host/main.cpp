@@ -142,11 +142,46 @@ int setup(const fs::path& homefront, const fs::path& game) {
 }
 
 // ---- Fenster und D3D11
+// ---- Vollbild: randlos über dem ganzen Monitor des Fensters. DXGIs eigenes
+// Alt+Enter (exklusiv, ohne dass die Puffer angepasst werden: das Bild stand)
+// ist abgeschaltet; das Flip-Modell skaliert das Bild in der Render-Auflösung
+// auf jede Fenstergröße. G-Sync/VRR arbeitet unter aktuellem Windows auch im
+// randlosen Vollbild.
+WINDOWPLACEMENT g_windowed_place{sizeof(WINDOWPLACEMENT)};
+bool g_fullscreen = false;
+
+void set_fullscreen(HWND h, bool on) {
+    if (on == g_fullscreen) return;
+    if (on) {
+        GetWindowPlacement(h, &g_windowed_place);
+        MONITORINFO mi{sizeof mi};
+        GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mi);
+        SetWindowLongPtrW(h, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+        SetWindowPos(h, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                     mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+    } else {
+        SetWindowLongPtrW(h, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+        SetWindowPlacement(h, &g_windowed_place);
+        SetWindowPos(h, nullptr, 0, 0, 0, 0,
+                     SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+    }
+    g_fullscreen = on;
+    input_reclip();
+    log("Vollbild %s\n", on ? "an (randlos)" : "aus");
+}
+
 LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (m == WM_DESTROY) {
         PostQuitMessage(0);
         return 0;
     }
+    // Alt+Enter: randloses Vollbild ein/aus
+    if (m == WM_SYSKEYDOWN && w == VK_RETURN && (l & (1 << 29)) && !(l & (1 << 30))) {
+        set_fullscreen(h, !g_fullscreen);
+        return 0;
+    }
+    if (m == WM_SYSCHAR && w == VK_RETURN) return 0;  // kein Signalton
+    if (m == WM_SIZE || m == WM_MOVE) input_reclip();
     return DefWindowProcW(h, m, w, l);
 }
 
@@ -164,10 +199,10 @@ bool make_gfx(Gfx* g, int width, int height) {
     wc.lpszClassName = L"zeitbrecher_zwo";
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     RegisterClassW(&wc);
-    // Fenster höchstens 80 % des Bildschirms, im Seitenverhältnis des Bildes
+    // Fenster: 80 % des Bildschirms (echte Pixel), im Seitenverhältnis des Bildes
     int ww = width, wh = height;
     const int sw = GetSystemMetrics(SM_CXSCREEN) * 4 / 5, shh = GetSystemMetrics(SM_CYSCREEN) * 4 / 5;
-    if (ww > sw || wh > shh) {
+    {
         const double k = std::min(double(sw) / ww, double(shh) / wh);
         ww = int(ww * k);
         wh = int(wh * k);
@@ -217,6 +252,8 @@ bool make_gfx(Gfx* g, int width, int height) {
     sd.BufferCount = 2;
     sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     HRESULT hr = fa->CreateSwapChainForHwnd(g->dev, g->wnd, &sd, nullptr, nullptr, &g->swap);
+    // Alt+Enter übernimmt ts2.exe selbst (randlos, set_fullscreen)
+    fa->MakeWindowAssociation(g->wnd, DXGI_MWA_NO_ALT_ENTER);
     fa->Release();
     ad->Release();
     xd->Release();
@@ -318,6 +355,9 @@ bool call_vfunc(void* obj, uint32_t off, void* a) {
 
 int wmain(int argc, wchar_t** argv) {
     using namespace host;
+    // In echten Pixeln arbeiten: sonst skaliert Windows das Fenster bei
+    // Anzeigeskalierung > 100 % nachträglich (unscharf, kein direktes Flip).
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     fs::path game, setup_from, shot;
     std::wstring input_spec, menu_mouse_spec;
     int ticks = 0;  // 0 = bis das Fenster geschlossen wird
@@ -377,6 +417,7 @@ int wmain(int argc, wchar_t** argv) {
         log("D3D11 nicht verfügbar\n");
         return 1;
     }
+    if (settings.fullscreen) set_fullscreen(gfx.wnd, true);
     static DeviceHolder devh{gfx.dev, {}};
     static ContextHolder ctxh{gfx.ctx, {}};
 

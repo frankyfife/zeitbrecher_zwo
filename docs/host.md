@@ -257,6 +257,22 @@ eigene dabei im Stereomodus.
 `ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
 `ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
 
+## Fenster und Vollbild
+
+- **DPI:** `ts2.exe` ist DPI-bewusst (pro Monitor, v2) und arbeitet in
+  echten Pixeln. Vorher hat Windows es bei Anzeigeskalierung (hier 225 %)
+  nachträglich gestreckt.
+- **Fenster:** 80 % des Bildschirms im Seitenverhältnis des Bildes.
+- **Vollbild:** `[grafik] vollbild=1` oder Alt+Enter schaltet randloses
+  Vollbild über den Monitor des Fensters ein und aus. DXGIs eigenes
+  Alt+Enter ist abgeschaltet (`DXGI_MWA_NO_ALT_ENTER`). Vorher schaltete es
+  ins exklusive Vollbild, ohne dass die Puffer angepasst wurden, und das
+  Bild stand.
+- **Skalierung:** Das Flip-Modell skaliert das Bild in Render-Auflösung auf
+  jede Fenstergröße.
+- **Geprüft:** Fenster 3072×1728; Vollbild 3840×2160; Alt+Enter zweimal
+  hin und zurück.
+
 ## Aus dem Xbox-Fork übernommen (Steuerung, Waffen, Menü)
 
 Grundlage sind die Commits von frankyfife in

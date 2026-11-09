@@ -92,6 +92,7 @@ const std::vector<IniOption>& ini_options() {
             {"grafik", "hoehe", "1080", ""},
             {"grafik", "takt", "60", "Bildtakt: 60 oder 120 (120: Spieler und Kamera nativ, Gegner in 60er-Schritten)"},
             {"grafik", "bildsync", "0", "1: zusaetzlich auf den Bildwechsel des Monitors warten (TS2 taktet selbst)"},
+            {"grafik", "vollbild", "0", "1: randloses Vollbild beim Start (Alt+Enter schaltet um)"},
         };
         o.insert(o.end(), rest.begin(), rest.end());
         return o;
