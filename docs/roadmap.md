@@ -42,8 +42,10 @@ ersetzen.**
 | TS2-Daten in `game/ts2/` | erledigt |
 | Laufzeit-Referenz `reference/homefront/` | erledigt (2,5 GB) |
 | TS2-Plattformschicht in der EXE gefunden | erledigt (`Code\TS2\ts2redux\…`) |
-| Ghidra-Analyse und Export | läuft / siehe `re/out/` |
-| TS2-Funktionen von CRYENGINE trennen | als Nächstes ([funktionen.md](funktionen.md)) |
+| Ghidra-Analyse und Export | erledigt (94 202 Funktionen, `re/out/`) |
+| TS2-Funktionen von CRYENGINE trennen | erledigt: ein Block, 4 544 Funktionen, ≈ 1,8 MB ([funktionen.md](funktionen.md)) |
+| Schnittstelle Homefront → TS2 | gefunden: Fabrik `0x14122C2B0`, vtable `0x1421EAE20`, Tick +0x18 |
+| TS2-Funktionen benennen | offen (≈ 4 500 ohne Namen) |
 | TS2-Einsprung finden (direkt starten) | teilweise: Lua `Arcade.StartRadical` → `0x14015EC48` ([exe-befunde.md](exe-befunde.md)) |
 | Hook-DLL und Starter | offen |
 | Erweiterungen (Tabelle in [xbox-referenz.md](xbox-referenz.md)) | offen |
@@ -52,9 +54,9 @@ ersetzen.**
 
 ## Nächste Schritte, konkret
 
-1. Ghidra-Export auswerten: TS2-Funktionen über den Aufrufgraphen von den
-   Plattform-Dateien aus bestimmen, Liste `docs/funktionen.md` füllen.
-2. Den Einsprung in TS2 finden: Homefront ruft TS2 aus dem Menü
+1. TS2-Funktionen benennen und die vtable-Methoden des Laufzeitobjekts
+   bestimmen ([funktionen.md](funktionen.md), "Nächste Schritte").
+2. Den Einsprung in TS2 nutzen: Homefront ruft TS2 aus dem Menü
    (Extras → "TimeSplitters 2") bzw. vom Automaten auf. Danach ein Starter,
    der direkt dorthin geht.
 3. Die Spielerstruktur im PC-Port finden (Blickwinkel, Bewegungsmodus,

@@ -39,11 +39,11 @@ Die Spiellogik von TS2 selbst hat (fast) keine `__FILE__`-Strings. Ihre
 Daten liegen in `.rdata` grob ab Offset 0x21A0000 bis 0x21EA000, darunter die
 Objekttabelle (`ob/neotokyo/…xbr`, `ob/planetx/…`, `ob/rfactory/…`,
 `ob/csprops/…pob`) und die Animationsliste (`host0:anim/data/ts2/…raw`, ein
-Überbleibsel der PS2-Fassung, Offset 0x21B9BD8). Code, der diese Daten
-referenziert, häuft sich zwischen 0x141000000 und 0x141300000; eine reine
-Adressstatistik trennt TS2 und Engine dort aber nicht sauber (Unity-Builds,
-zusammengefaltete identische Funktionen). Die Zuordnung jeder Funktion folgt
-aus dem Aufrufgraphen, siehe [funktionen.md](funktionen.md).
+Überbleibsel der PS2-Fassung, Offset 0x21B9BD8). Der Code von TS2 ist ein
+zusammenhängender Block, 0x141069B20 < f < 0x141231770 (4 544 Funktionen,
+≈ 1,8 MB), mit genau einem direkten Einsprung von außen (Fabrik
+`0x14122C2B0`, vtable `0x1421EAE20`); Einzelheiten in
+[funktionen.md](funktionen.md).
 
 ## Wie Homefront TS2 startet: "Radical"
 
