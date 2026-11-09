@@ -36,7 +36,7 @@ Funktionen von außen erreicht. Daraus:
 | Spieler, Bewegung, Blick im PC-Code | gefunden (Spielertabelle, Dispatcher, Gehen, Fallen, Blick) |
 | Erweiterungen | Render-Auflösung, Sprung (im Spiel geprüft), Waffenwechsel-Tempo (ungeprüft) |
 | Eingabe | erledigt: Tastatur+Maus (Raw Input), Pad (XInput), Belegung in `ts2.ini` |
-| Menü-Sperre der Homefront-Fassung ("Story/Quit") | offen |
+| Menü-Sperre der Homefront-Fassung ("Story/Quit") | erledigt: Arcade, Challenge, alle Story-Level, Options (`ts2.ini` [freischalten]) |
 | Ton (5.1), Musik | offen (Attrappe bzw. Platzhalter) |
 | Bildrate ≥ 120, HDR | offen |
 | TS2-Funktionen benennen/dekompilieren | laufend (≈ 4 500 ohne Namen) |
@@ -44,7 +44,7 @@ Funktionen von außen erreicht. Daraus:
 
 ## Nächste Schritte, konkret
 
-1. Die Menü-Sperre aufheben (TS2Redux schaltet Arcade/Challenge frei).
-2. Ton und Musik (XAudio2 mit 5.1, stb_vorbis).
-3. Sprung mit Laufgeschwindigkeit, Rennen, Freecam, Sichtfeld.
-4. Tick und Render entkoppeln, dann ≥ 120 fps und HDR.
+1. Ton und Musik (XAudio2 mit 5.1, stb_vorbis).
+2. Sprung mit Laufgeschwindigkeit, Rennen, Freecam, Sichtfeld.
+3. Tick und Render entkoppeln, dann ≥ 120 fps und HDR.
+4. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).

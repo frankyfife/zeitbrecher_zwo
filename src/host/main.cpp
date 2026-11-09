@@ -27,6 +27,7 @@
 #include "fake.h"
 #include "features.h"
 #include "input.h"
+#include "menu.h"
 #include "hf2.h"
 #include "log.h"
 #include "ts2bin.h"
@@ -322,6 +323,7 @@ int wmain(int argc, wchar_t** argv) {
     SetCurrentDirectoryW(game.c_str());
     const Settings settings = load_settings(self_dir() / L"ts2.ini");
     features_install(g_img, settings);
+    unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
 
     // gEnv füllen
     uint8_t* genv = g_img.va(hf2::kGEnv);

@@ -46,4 +46,45 @@ constexpr uint64_t kFrameTicks = 0x14259CBE4;      // float, Bildzeit in Takten,
 constexpr uint64_t kWeaponSwitchRate = 0x1421DA4B0;  // .rdata, 20/7 je Sekunde
 constexpr float kWeaponSwitchRateValue = 20.0f / 7.0f;
 
+// Freischaltungen. Die Konsolen-Codes (Tabelle 0x1425078B8, je 0x38 Byte:
+// Tastenfolge, Länge, Handler; geprüft von 0x141109E80) schalten Flags um:
+//   0x142F2C35C (int)   alles: jede Freischalt-Bedingung gilt als erfüllt
+//                       (0x141111408, 0x141111560); Handler 0x141109E04
+//   0x142F2C360 (char[6]) 0 alle Story-Level, 1 Arcade, 2 Challenge,
+//                       3 (ohne Leser), 4 Cheats/Extras (0x14111164C),
+//                       5 Unverwundbarkeit; Abfrage 0x141109DA0(i),
+//                       Umschalten 0x141109DB0(i)
+constexpr uint64_t kUnlockAll = 0x142F2C35C;
+constexpr uint64_t kUnlockFlags = 0x142F2C360;
+enum UnlockFlag { kUnlockStory = 0, kUnlockArcade = 1, kUnlockChallenge = 2, kUnlockCheats = 4, kUnlockInvincible = 5 };
+
+// Menüseiten: {Takt, ?, ?, ?, Aufbau(page), …}; die Aufbau-Funktion bekommt
+// den Seitenzustand (Titel +0x650, Maße +0x658/+0x65C/+0x660, Flags +0x10).
+constexpr uint64_t kMainMenuPage = 0x1424F2D90;
+constexpr uint64_t kMainMenuBuild = 0x1410C81B8;    // Original-Aufbau (Seite +0x20)
+constexpr uint32_t kPageBuild = 0x20;
+constexpr uint64_t kOptionsPage = 0x1424F1D78;      // Aufbau 0x1410C3C60
+// Menü-Bausteine (Namen nach TS2Redux, Signaturen aus den Aufrufern)
+constexpr uint64_t kMenuCreate = 0x1410DADF8;       // menu* (page*, int höhe)
+constexpr uint64_t kMenuAddEntry = 0x1410E05C4;     // entry* (menu*, int, int)
+constexpr uint64_t kEntryWidth = 0x1410DE308;       // int (entry*)
+constexpr uint64_t kMenuX = 0x1410DE368;            // int (menu*)
+constexpr uint64_t kMenuY = 0x1410DE378;            // int (menu*)
+constexpr uint64_t kMenuLayout = 0x1410DEEBC;       // void (menu*)
+constexpr uint64_t kMenuSelect = 0x1410DE0AC;       // void (menu*, int)
+constexpr uint64_t kMenuFinish = 0x1410DD97C;       // void (menu*)
+constexpr uint64_t kPageShow = 0x1410B3CCC;         // void (page*, int)
+constexpr uint64_t kSetNextPage = 0x1410B4948;      // void (page-Beschreibung*)
+constexpr uint64_t kGotoStory = 0x1410C817C, kGotoArcade = 0x1410C8194,
+                   kGotoChallenge = 0x1410C81A0, kQuit = 0x1410C0D80;
+constexpr uint64_t kMenuYOffset = 0x1421D444C;      // float
+constexpr uint64_t kMenuHintOffset = 0x1421D4360;   // float
+// Texte: char** Tabelle = [0x1424E2430 + Sprache*8], Sprache = [0x142EE39C0]
+constexpr uint64_t kStringTables = 0x1424E2430, kLanguage = 0x142EE39C0;
+enum StringId : uint32_t {
+    kStrArcade = 0xD30, kStrStory = 0xD48, kStrStoryCoop = 0xD50, kStrOptions = 0xD68,
+    kStrChallenge = 0xD70, kStrQuit = 0x42F0, kStrSelectHint = 0x7C0, kStrBackHint = 0x938,
+};
+constexpr uint64_t kPlayersInGame = 0x143F35188;    // int; 2 = Koop ("Story Co-op")
+
 }  // namespace hf2

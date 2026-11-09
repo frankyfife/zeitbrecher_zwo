@@ -3,7 +3,8 @@
 Stand 2026-11-09: `ts2.exe` startet TS2 in einem eigenen Fenster mit
 eigenem D3D11-Gerät, ohne Homefront, CryEngine oder Steam, und ist
 spielbar: Menüs, Intro, Briefing und das Level Chicago laufen mit Tastatur
-und Maus oder einem Pad; der Sprung funktioniert. Ton und Musik fehlen noch
+und Maus oder einem Pad; der Sprung funktioniert. Arcade, Challenge, alle
+Story-Level und das Optionsmenü sind freigeschaltet. Ton und Musik fehlen noch
 (siehe unten).
 
 ## Einrichten und Starten
@@ -26,7 +27,7 @@ Danach wird Homefront nicht mehr gebraucht. `game/` gehört nie ins Repo.
 `ts2.exe [--spiel <game>] [--takte N [--bild datei.bmp]]`: `--takte` hält
 nach N Takten an (Tests), `--bild` speichert den letzten Bildpuffer.
 Einstellungen in `ts2.ini` neben der EXE (wird beim ersten Start angelegt):
-Render-Auflösung, Vollbild, Waffenwechsel-Tempo, Sprung. Protokoll:
+Render-Auflösung, Vollbild, Waffenwechsel-Tempo, Sprung, Tasten, Freischaltungen. Protokoll:
 `ts2.log` neben der EXE.
 
 ## Wie es funktioniert
@@ -151,13 +152,34 @@ Chicago; Sprung 0 → Modus 2 (+0,145) → Landung Modus 0.
 Offen: die Pad-Belegung für das Spiel selbst (welche Konsolenbits TS2 im
 Spiel für Feuern/Zielen nutzt) ist am Pad noch nicht ausprobiert.
 
+## Freischalten (`src/host/menu.cpp`)
+
+Die Homefront-Fassung zeigt nur "Story" und "Quit" und in der Levelwahl nur
+Siberia und Chicago. Das ganze Spiel ist enthalten; Dambuster hat es hinter
+Konsolen-Codes versteckt (TS2Redux, `UnlockCodes.md`). Die Codes stehen in
+einer Tabelle (`0x1425078B8`) und schalten nur Flags um
+([funktionen.md](funktionen.md), "Daten"): `0x142F2C360[i]` mit 0 alle
+Story-Level, 1 Arcade, 2 Challenge, 4 Cheats, 5 Unverwundbarkeit, dazu
+`0x142F2C35C` "alles". Das Hauptmenü (`0x1410C81B8`) zeigt Arcade und
+Challenge nur, wenn ihr Flag gesetzt ist; "Options" fehlt darin ganz, die
+Seite (`0x1424F1D78`) ist aber vollständig.
+
+`ts2.exe` setzt die Flags vor dem Start laut `ts2.ini` [freischalten]
+(Vorgabe: Story, Arcade, Challenge an; Cheats, Unverwundbarkeit, alles aus)
+und trägt mit `optionen=1` einen eigenen Aufbau des Hauptmenüs in die
+Seitenbeschreibung ein (`0x1424F2DB0`, wie TS2Redux): Story, Arcade,
+Challenge, Options, Quit, mit den Maßen und Texten des Originals.
+
+Geprüft per Skript: Arcade (League/Custom), Challenge (Challenge-Sets),
+Options (Spieler, Ton, Abspann, Zwischensequenzen, Cheats) öffnen sich,
+"Zurück" führt ins Hauptmenü; die Story-Levelwahl zeigt mehr als zwei
+Level.
+
 ## Was fehlt (in dieser Reihenfolge)
 
-1. **Freischalten**: das Homefront-Menü zeigt nur "Story/Quit"; die
-   Sperre (TS2Redux: Unlock-Codes, `UnlockArcadeAndChallenge…`) im Code finden
-   und aufheben.
-2. **Ton**: die Soundsystem-Schnittstelle (+0xD0) mit XAudio2 (5.1) nachbauen.
-3. **Musik/Sprache**: die sechs vorbisfile-Funktionen mit stb_vorbis.
-4. **Bildrate**: Takt und Bild entkoppeln (Tick bei fester Rate, Render frei),
+1. **Ton**: die Soundsystem-Schnittstelle (+0xD0) mit XAudio2 (5.1) nachbauen.
+2. **Musik/Sprache**: die sechs vorbisfile-Funktionen mit stb_vorbis.
+3. **Bildrate**: Takt und Bild entkoppeln (Tick bei fester Rate, Render frei),
    dann ≥ 120 fps; HDR über die Swapchain.
+4. Ein Arcade-Match und eine Challenge durchspielen (bisher nur die Menüs geprüft).
 5. LAN (`ce_lan`, gEnv-Netzwerk), Vollbild, Launcher.

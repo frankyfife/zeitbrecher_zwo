@@ -76,6 +76,16 @@ eigenständige EXE.
 | 0x14107CF44 | | ein Logik-Takt (aus Tick); Zustand `0x142EE3DF0` | Aufrufstruktur |
 | 0x14107CFB4 | | ein Bild zeichnen (aus Render) → `0x14107CC64` | Aufrufstruktur |
 | 0x14112D4A0 | | Hand-Zustandsautomat der Waffen (Xbox `FUN_000B64C0`); einziger Leser von 20/7 bei `0x1421DA4B0` | Konstante |
+| 0x141109DA0 | 15 | Freischalt-Flag `i` abfragen (`0x142F2C360[i]`) | Hauptmenü |
+| 0x141109DB0 | | Freischalt-Flag `i` umschalten (mit Ton); Handler der Konsolen-Codes 0x141109E3C … E74 | Code-Tabelle |
+| 0x141109E04 | | Code "alles freischalten": schaltet `0x142F2C35C` um, schreibt alles ins Profil "DUFFINS" (0x1411111C8) | Code-Tabelle |
+| 0x141109E80 | | prüft die letzten 20 Tasten gegen die Code-Tabelle `0x1425078B8` | Code-Tabelle |
+| 0x141111408 | | Freischalt-Bedingung eines Eintrags; immer erfüllt bei `0x142F2C35C` | Flag |
+| 0x14111164C | | Cheat `i` (13 Stück, Tabelle `0x142507A58`) frei? Flag 4 schaltet alle frei | Flag |
+| 0x1410C81B8 | 847 | Aufbau des Hauptmenüs (Story, Arcade/Challenge nur mit Flag, Quit) | Seite `0x1424F2D90` |
+| 0x1410C3C60 | | Aufbau des Optionsmenüs (in der Homefront-Fassung nicht erreichbar) | Seite `0x1424F1D78` |
+| 0x1410DADF8, 0x1410E05C4 | | Menü anlegen, Eintrag anhängen (Namen nach TS2Redux) | Aufrufer |
+| 0x1410B4948 | | nächste Menüseite setzen | Aufrufer |
 | 0x1411C2B38 | | setzt den aktuellen Spieler aus der Spielertabelle | Schreibzugriff |
 | 0x1411D9748 | | Bewegungsmodus 0, Gehen (Xbox `FUN_00145300`) | Dispatcher |
 | 0x1411DA36C | 958 | Bewegungsmodus 2, Fallen (Xbox `FUN_00145DA0`): Schwerkraft 0,01/Takt, Grenze −0,6, Fallschaden ab 15 | Konstanten |
@@ -102,6 +112,11 @@ eigenständige EXE.
 | `0x143F1A388` | Zeiger auf den Spieler, der gerade bewegt wird (Xbox `0x497340`) |
 | `0x14259CBE4` | Bildzeit in Takten (float, Xbox `0x348CEC`); Schwerkraft und Blick werden damit multipliziert |
 | `0x1421DA4B0` | Tempo des Waffenwechsels, 20/7 je Sekunde (.rdata) |
+| `0x142F2C360` | Freischalt-Flags (char[6]): 0 alle Story-Level, 1 Arcade, 2 Challenge, 3 ohne Leser, 4 Cheats, 5 Unverwundbarkeit |
+| `0x142F2C35C` | "alles frei" (int): jede Freischalt-Bedingung gilt als erfüllt |
+| `0x1425078B8` | Code-Tabelle, 8 Einträge je 0x38 Byte (Tastenfolge u16[20] davor, Länge, Handler) |
+| `0x1424E2430` | Texttabellen je Sprache (`0x142EE39C0`); z. B. +0xD30 "Arcade", +0xD68 "Options" |
+| `0x1424F2D90` | Seitenbeschreibung Hauptmenü `{Takt, ?, 0, 0, Aufbau, …}`; ebenso Options `0x1424F1D78`, Arcade `0x1424F1B70`, Challenge `0x1424F1AB0`, Story `0x1424F1868` |
 
 Spieler (Offsets im PC-Port; Xbox jeweils 0xC weniger, bis auf +0xC):
 
