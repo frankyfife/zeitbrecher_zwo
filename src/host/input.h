@@ -20,7 +20,13 @@ bool input_message(const MSG& m);
 void input_frame();
 // Für Tests: feste Tastenbits für einige Takte vorgeben ("ab Takt N Bits B für K Takte").
 void input_script(const wchar_t* spec);
-// Skript-Bits für ts2.exe selbst: 0x80000000 Sprung, 0x40000000 vorwärts.
+// Bits für ts2.exe selbst (erreichen TS2 nicht): Sprung, vorwärts (nur
+// Testskripte), Rennen. Vom Pad: rechte Schultertaste Sprung, linke Rennen
+// (wie White/Black im Xbox-Fork).
+constexpr uint32_t kHostJump = 0x80000000u, kHostForward = 0x40000000u, kHostRun = 0x20000000u,
+                   kHostMouseRight = 0x10000000u;  // nur Testskripte: Maus 20 Zählschritte je Takt nach rechts
 uint32_t input_host_bits();
+// true, solange Tastatur+Maus das Gerät ist (Mausmodus, Port 6)
+bool input_uses_mouse();
 
 }  // namespace host

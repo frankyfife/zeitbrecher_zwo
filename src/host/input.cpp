@@ -91,7 +91,7 @@ bool g_captured = false;
 uint32_t g_frame = 0;
 
 // Bits nur für Testskripte (nicht an TS2): Sprung, vorwärts gehen
-constexpr uint32_t kScriptJump = 0x80000000u, kScriptForward = 0x40000000u, kHostBits = 0xC0000000u;
+constexpr uint32_t kScriptForward = kHostForward, kHostBits = kHostJump | kHostForward | kHostRun | kHostMouseRight;
 uint32_t g_host_bits = 0;
 
 struct Scripted {
@@ -164,7 +164,7 @@ void input_init(HWND wnd, void* obj, const std::filesystem::path& ini) {
         f << L"belegung=" << kBindingVersion << L"\n";
         f << L"vorwaerts=" << g_fwd << L"\nrueckwaerts=" << g_back << L"\nlinks=" << g_left << L"\nrechts=" << g_right << L"\n";
         for (auto& k : g_keys) f << k.name << L"=" << vk_list(k.vk) << L"\n";
-        f << L"\n[maus]\nempfindlichkeit=1.0\numkehren=0\n";
+        f << L"\n[maus]\nempfindlichkeit=1.0\numkehren=0\n; Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)\nnickgrenze=85\n";
     }
     g_fwd = int(GetPrivateProfileIntW(L"tasten", L"vorwaerts", g_fwd, p.c_str()));
     g_back = int(GetPrivateProfileIntW(L"tasten", L"rueckwaerts", g_back, p.c_str()));
@@ -230,7 +230,7 @@ void input_script(const wchar_t* spec) {
 
 void input_frame() {
     ++g_frame;
-    uint32_t bits = 0;
+    uint32_t bits = 0, pad_host = 0;
     float lx = 0, ly = 0, rx = 0, ry = 0;
 
     // Pad (XInput, das erste verbundene)
@@ -261,8 +261,10 @@ void input_frame() {
         if (b & XINPUT_GAMEPAD_B) bits |= kCircle;
         if (b & XINPUT_GAMEPAD_X) bits |= kSquare;
         if (b & XINPUT_GAMEPAD_Y) bits |= kTriangle;
-        if (b & XINPUT_GAMEPAD_LEFT_SHOULDER) bits |= kL2;
-        if (b & XINPUT_GAMEPAD_RIGHT_SHOULDER) bits |= kR2;
+        // Schultertasten wie Black/White im Xbox-Fork: Rennen und Sprung,
+        // nicht an TS2
+        if (b & XINPUT_GAMEPAD_LEFT_SHOULDER) pad_host |= kHostRun;
+        if (b & XINPUT_GAMEPAD_RIGHT_SHOULDER) pad_host |= kHostJump;
         if (g.bLeftTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD) bits |= kL1;
         if (g.bRightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD) bits |= kR1;
         if (b & (XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_BACK)) bits |= kStart;
@@ -301,12 +303,14 @@ void input_frame() {
     uint32_t scripted = 0;
     for (auto& sc : g_script)
         if (g_frame >= sc.from && g_frame < sc.from + sc.count) scripted |= sc.bits;
-    g_host_bits = scripted & kHostBits;
+    g_host_bits = (scripted & kHostBits) | pad_host;
     if (g_host_bits & kScriptForward) call(kSetLeftY, 1.0f);
+    if ((g_host_bits & kHostMouseRight) && g_mode == 1) call(kLookX, 20.0f * g_mouse_sens);
     bits |= scripted & ~kHostBits;
     call(kSetButtons, int32_t(bits));
 }
 
 uint32_t input_host_bits() { return g_host_bits; }
+bool input_uses_mouse() { return g_mode == 1; }
 
 }  // namespace host

@@ -45,9 +45,20 @@ constexpr uint32_t kCharVerticalSpeed = 0x19CC;    // Einheiten je Takt, nach ob
 constexpr uint32_t kCharFallStartY = 0x1A20;       // Höhe zu Beginn des Falls (Fallschaden)
 constexpr uint32_t kPlayerPos = 0xFC;               // float[3] x, y (oben), z
 constexpr uint32_t kPlayerFlags10 = 0x10;           // Bit 0x800000: fällt (Gehcode setzt es)
+constexpr uint32_t kPlayerStance = 0x168;           // Haltung (0 stehen, 1 ducken, …)
+constexpr uint32_t kPlayerTopSpeed = 0xCC;          // float[4] Höchstgeschwindigkeit je Haltung
+constexpr uint64_t kPlayerNow = 0x143F1A388;        // Spieler, der gerade bewegt wird
+constexpr uint64_t kPitchLimit = 0x143F1A390;       // float, Nickgrenze in Grad (Spiel: 40)
+constexpr uint64_t kWalk = 0x1411D9748;             // Bewegungsmodus 0, Gehen
+constexpr uint64_t kWalkCall = 0x1411DBE73;         // sein einziger Aufruf (im Dispatcher 0x1411DAF8C)
 constexpr uint32_t kPlayerFallSpeedX = 0xDF8;       // Quergeschwindigkeit im Fall, je Takt
 constexpr uint32_t kPlayerFallSpeedZ = 0xE00;
 constexpr uint64_t kFrameTicks = 0x14259CBE4;      // float, Bildzeit in Takten, 0 in der Pause
+// Waffentabelle: 46 Zeilen à 0x240 (dahinter −1), zwei Feuermodi à 0xB0 ab
+// +0x58, Schussabstand in Takten bei +0x10/+0x14 des Modus (Xbox USA 0x2C3470)
+constexpr uint64_t kWeaponTable = 0x14250C2A8;
+constexpr int kWeaponRows = 46;
+constexpr uint32_t kWeaponRowSize = 0x240;
 constexpr uint64_t kWeaponSwitchRate = 0x1421DA4B0;  // .rdata, 20/7 je Sekunde
 constexpr float kWeaponSwitchRateValue = 20.0f / 7.0f;
 

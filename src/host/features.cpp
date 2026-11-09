@@ -2,11 +2,13 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
 
 #include "hf2.h"
+#include "hooks.h"
 #include "input.h"
 #include "log.h"
 
@@ -18,14 +20,24 @@ Settings load_settings(const std::filesystem::path& ini) {
         f << "; Einstellungen für ts2.exe\n"
              "[waffen]\n"
              "; Tempo des Waffenwechsels in Prozent (100 = wie das Spiel; gilt auch für die KI)\n"
-             "wechseltempo=100\n\n"
+             "wechseltempo=100\n"
+             "; Feuerrate in Prozent (200 = doppelt so oft; gilt auch für die KI);\n"
+             "; einzelne Waffen: feuerrate_<zeile>=Prozent (Zeile 0–45 der Waffentabelle)\n"
+             "feuerrate=100\n\n"
              "[bewegung]\n"
              "; Springen aus dem Stand (erste Fassung)\n"
              "springen=1\n"
              "; virtueller Tastencode, 32 = Leertaste\n"
              "sprungtaste=32\n"
              "; Sprunghöhe in Spieleinheiten\n"
-             "sprunghoehe=1.2\n";
+             "sprunghoehe=1.2\n"
+             "; Rennen, solange die Taste gehalten wird (160 = 1,6-fach)\n"
+             "rennen=1\n"
+             "; 160 = linke Umschalttaste\n"
+             "renntaste=160\n"
+             "renntempo=160\n"
+             "; 1: die Taste schaltet Rennen ein und aus\n"
+             "rennen_umschalten=0\n";
     }
     Settings s;
     const std::wstring p = ini.wstring();
@@ -34,11 +46,23 @@ Settings load_settings(const std::filesystem::path& ini) {
     s.fullscreen = GetPrivateProfileIntW(L"grafik", L"vollbild", 0, p.c_str()) != 0;
     s.vsync = GetPrivateProfileIntW(L"grafik", L"bildsync", 0, p.c_str()) != 0;
     s.weapon_switch_percent = int(GetPrivateProfileIntW(L"waffen", L"wechseltempo", 100, p.c_str()));
+    s.rof_percent = int(GetPrivateProfileIntW(L"waffen", L"feuerrate", 100, p.c_str()));
+    if (s.rof_percent < 10 || s.rof_percent > 1000) s.rof_percent = 100;
+    for (int w = 0; w < 46; ++w) {
+        const std::wstring key = L"feuerrate_" + std::to_wstring(w);
+        s.rof_row[w] = int(GetPrivateProfileIntW(L"waffen", key.c_str(), 0, p.c_str()));
+    }
     s.jump = GetPrivateProfileIntW(L"bewegung", L"springen", 1, p.c_str()) != 0;
     s.jump_key = int(GetPrivateProfileIntW(L"bewegung", L"sprungtaste", 0x20, p.c_str()));
     wchar_t buf[64];
     GetPrivateProfileStringW(L"bewegung", L"sprunghoehe", L"1.2", buf, 64, p.c_str());
     s.jump_height = float(_wtof(buf));
+    GetPrivateProfileStringW(L"maus", L"nickgrenze", L"85", buf, 64, p.c_str());
+    s.pitch_limit = std::clamp(float(_wtof(buf)), 40.0f, 89.0f);
+    s.run = GetPrivateProfileIntW(L"bewegung", L"rennen", 1, p.c_str()) != 0;
+    s.run_key = int(GetPrivateProfileIntW(L"bewegung", L"renntaste", 0xA0, p.c_str()));
+    s.run_percent = std::clamp(int(GetPrivateProfileIntW(L"bewegung", L"renntempo", 160, p.c_str())), 100, 300);
+    s.run_toggle = GetPrivateProfileIntW(L"bewegung", L"rennen_umschalten", 0, p.c_str()) != 0;
     return s;
 }
 
@@ -57,11 +81,79 @@ uint8_t* character_of(uint8_t* player) {
 
 bool g_jump_was_down = false;
 
+// ---- Rennen (Xbox-Fork: ts2_run_walk)
+// Der Gehcode (Bewegungsmodus 0, 0x1411D9748) bekommt vom Dispatcher
+// (Aufruf 0x1411DBE73) zwei Schritte für diesen Takt, das dritte und sechste
+// Argument (aus dem linken Stick), und deckelt beide zusammen auf den
+// Anteil einer Höchstgeschwindigkeit je Haltung (Spieler +0xCC + 4 · Haltung,
+// Haltung +0x168; Xbox +0xC0/+0x15C). Beim Rennen werden beide Schritte und
+// der Deckel für diesen Aufruf mit dem Tempo multipliziert, der Deckel danach
+// zurückgesetzt: Kollision, Steigungen und der Rest des Gehens sehen nur
+// einen schnelleren Stick. Nur für Spieler 1.
+using WalkFn = void (*)(void* ctx, float* a, float step1, float* b, float* c, float step2);
+WalkFn g_walk = nullptr;
+const Ts2Image* g_img = nullptr;
+float g_run_factor = 1.0f;
+bool g_running = false;
+
+void run_walk(void* ctx, float* a, float step1, float* b, float* c, float step2) {
+    uint8_t* now = *g_img->va<uint8_t*>(hf2::kPlayerNow);
+    float* cap = nullptr;
+    float cap_was = 0.0f;
+    if (g_running && now && now == player1(*g_img)) {
+        const int32_t stance = *reinterpret_cast<int32_t*>(now + hf2::kPlayerStance);
+        if (stance >= 0 && stance < 4) {
+            cap = reinterpret_cast<float*>(now + hf2::kPlayerTopSpeed + 4 * stance);
+            cap_was = *cap;
+            *cap *= g_run_factor;
+        }
+        step1 *= g_run_factor;
+        step2 *= g_run_factor;
+    }
+    g_walk(ctx, a, step1, b, c, step2);
+    if (cap) *cap = cap_was;
+}
+
 }  // namespace
+
+// Feuerrate je Waffe (Xbox-Fork: ts2_rof_apply). Die Waffentabelle
+// (0x14250C2A8, 46 Zeilen à 0x240, dahinter −1; Aufbau wie auf der Xbox,
+// Werte wie die USA-Fassung) gibt jedem der beiden Feuermodi (0xB0 ab +0x58)
+// den Abstand zwischen zwei Schüssen in Takten bei +0x10 und +0x14. Die
+// Abstände werden einmal durch das Tempo geteilt, nie unter einen Takt. Die
+// Tabelle gilt für alle, auch die KI.
+void apply_rate_of_fire(const Ts2Image& img, const Settings& s) {
+    int changed = 0;
+    const auto* row0 = reinterpret_cast<const int32_t*>(img.va(hf2::kWeaponTable) + 0x68);
+    const int32_t before[2] = {row0[0], row0[1]};
+    for (int w = 0; w < hf2::kWeaponRows; ++w) {
+        int pct = s.rof_percent;
+        if (s.rof_row[w] >= 10 && s.rof_row[w] <= 1000) pct = s.rof_percent * s.rof_row[w] / 100;
+        if (pct == 100 || pct <= 0) continue;
+        uint8_t* row = img.va(hf2::kWeaponTable) + size_t(w) * hf2::kWeaponRowSize;
+        for (int m = 0; m < 2; ++m)
+            for (int k = 0x10; k <= 0x14; k += 4) {
+                auto* t = reinterpret_cast<int32_t*>(row + 0x58 + m * 0xB0 + k);
+                if (*t <= 0 || *t > 10000) continue;
+                const int n = (*t * 100 + pct / 2) / pct;
+                *t = n < 1 ? 1 : n;
+            }
+        ++changed;
+    }
+    if (changed)
+        log("Feuerrate: %d Waffe(n) geändert (alle %d %%; Zeile 0: %d/%d -> %d/%d Takte)\n", changed, s.rof_percent,
+            before[0], before[1], row0[0], row0[1]);
+}
 
 // Waffenwechsel: TS2 liest das Tempo (20/7 je Sekunde) an genau einer Stelle
 // (0x14112D4A0); wie im Xbox-Fork wird die Konstante einmal skaliert.
 void features_install(const Ts2Image& img, const Settings& s) {
+    g_img = &img;
+    if (s.run) {
+        g_run_factor = float(s.run_percent) / 100.0f;
+        g_walk = reinterpret_cast<WalkFn>(hook_call(img, hf2::kWalkCall, hf2::kWalk, reinterpret_cast<const void*>(&run_walk)));
+        if (g_walk) log("Rennen: %d %%\n", s.run_percent);
+    }
     // Render-Auflösung: die festen 1920/1080 im Aufruf des DX11-Setups ersetzen.
     auto* w = img.va<uint32_t>(hf2::kResWidthImm);
     auto* h = img.va<uint32_t>(hf2::kResHeightImm);
@@ -74,6 +166,7 @@ void features_install(const Ts2Image& img, const Settings& s) {
         FlushInstructionCache(GetCurrentProcess(), w, 16);
         log("Render-Auflösung %dx%d\n", s.width, s.height);
     }
+    apply_rate_of_fire(img, s);
     const int pct = s.weapon_switch_percent;
     if (pct == 100 || pct <= 0) return;
     float* rate = img.va<float>(hf2::kWeaponSwitchRate);
@@ -103,6 +196,68 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
             if (c) log(", Vertikalgeschwindigkeit %.3f\n", *reinterpret_cast<float*>(c + hf2::kCharVerticalSpeed));
             last_mode = m;
         }
+    }
+    // Nickgrenze (Xbox-Fork: ts2_pitch_limit). Die Globale 0x143F1A390 (Xbox
+    // 0x497344, gleich hinter dem aktuellen Spieler) setzt die Spieler-
+    // Einrichtung 0x1411D72B0 auf 40; der Blickcode begrenzt den Nickwinkel
+    // damit. Solange die Maus zielt, gilt die eigene Grenze, fürs Pad wieder
+    // die des Spiels.
+    {
+        auto* limit = img.va<float>(hf2::kPitchLimit);
+        static float game_limit = 0.0f;
+        if (*limit != s.pitch_limit && *limit > 0.0f) game_limit = *limit;
+        if (input_uses_mouse())
+            *limit = s.pitch_limit;
+        else if (game_limit > 0.0f)
+            *limit = game_limit;
+    }
+    // Rennen: Taste gehalten (oder umgeschaltet), Shift oder linke Schultertaste
+    {
+        const bool fg = GetForegroundWindow() == HWND(window);
+        const bool run_down = (fg && (GetAsyncKeyState(s.run_key) & 0x8000) != 0) || (input_host_bits() & kHostRun);
+        static bool was = false, latched = false;
+        if (s.run_toggle) {
+            if (run_down && !was) latched = !latched;
+            g_running = latched;
+        } else {
+            g_running = run_down;
+        }
+        // TS2_BLICKPROBE=<takt>: setzt dort den Nickwinkel auf 30° und
+        // protokolliert Nickwinkel, Blickzustand (+0x15C) und Nickgrenze
+        static const int look_probe = [] {
+            wchar_t v[16] = {};
+            return GetEnvironmentVariableW(L"TS2_BLICKPROBE", v, 16) > 0 ? _wtoi(v) : 0;
+        }();
+        static int look_n = -1;  // ab dem ersten Vorwärts-Takt des Skripts
+        if (look_probe) {
+            if (uint8_t* p1 = player1(img)) {
+                if (look_n < 0 && (input_host_bits() & kHostForward)) look_n = 0;
+                if (look_n >= 0) ++look_n;
+                auto* pitch = reinterpret_cast<float*>(p1 + 0x158);
+                if (look_n == look_probe) *pitch = 30.0f;
+                if (look_n >= look_probe && look_n < look_probe + 200 && (look_n - look_probe) % 10 == 0)
+                    log("[blick] Takt +%d: Nick %.2f, Zustand %d, Grenze %.1f\n", look_n - look_probe, *pitch,
+                        *reinterpret_cast<int32_t*>(p1 + 0x15C), *img.va<float>(0x143F1A390));
+            }
+        }
+        // TS2_RENNPROBE=1: Strecke von Spieler 1 je 10 Takte (wie RECOMP_TS2_RUN_TRACE)
+        static const bool probe = [] {
+            wchar_t v[4] = {};
+            return GetEnvironmentVariableW(L"TS2_RENNPROBE", v, 4) > 0 && v[0] == L'1';
+        }();
+        static float p0[3];
+        static int n = 0;
+        if (probe) {
+            if (uint8_t* p1 = player1(img)) {
+                const float* q = reinterpret_cast<const float*>(p1 + hf2::kPlayerPos);
+                if (++n % 10 == 0) {
+                    const float d = std::sqrt((q[0] - p0[0]) * (q[0] - p0[0]) + (q[2] - p0[2]) * (q[2] - p0[2]));
+                    if (d > 0.0f && d < 50.0f) log("[rennen] 10 Takte: %.3f Einheiten, rennt %d\n", d, int(g_running));
+                    std::memcpy(p0, q, sizeof p0);
+                }
+            }
+        }
+        was = run_down;
     }
     // Lage von Spieler 1 je Takt merken: daraus die Laufgeschwindigkeit
     uint8_t* p = player1(img);

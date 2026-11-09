@@ -11,9 +11,16 @@ struct Settings {
     bool fullscreen = false;
     bool vsync = false;               // auf den Bildwechsel warten (TS2 taktet selbst)
     int weapon_switch_percent = 100;  // 100 = wie das Spiel
+    int rof_percent = 100;            // Feuerrate aller Waffen (10–1000)
+    int rof_row[46] = {};             // je Waffenzeile, 0 = wie alle
     bool jump = true;
     int jump_key = 0x20;              // virtueller Tastencode (Leertaste)
     float jump_height = 1.2f;         // Spieleinheiten (Xbox-Fork: 1.2)
+    bool run = true;                  // Rennen (Xbox-Fork: Black / Shift)
+    int run_key = 0xA0;               // virtueller Tastencode (linke Umschalttaste)
+    int run_percent = 160;            // Tempo beim Rennen (100–300)
+    bool run_toggle = false;          // Taste schaltet um statt gehalten zu werden
+    float pitch_limit = 85.0f;        // Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)
 };
 
 // Liest ts2.ini (neben ts2.exe); fehlt sie, wird sie mit Vorgaben angelegt.
