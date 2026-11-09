@@ -257,6 +257,17 @@ eigene dabei im Stereomodus.
 `ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
 `ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
 
+## Arcade und Challenge im Spiel
+
+Geprüft per Menümaus-Skript (`--menuemaus`, Koordinaten aus `TS2_MENUSPUR`):
+
+- **Arcade Custom:** Hauptmenü → Arcade → Arcade Custom → Tempo „Normal“,
+  dann die Vorgaben mit OK. Das Match auf `l_42_AR` läuft mit Rangliste,
+  Bots auf dem Radar und Waffen, ohne Absturz.
+- **Challenge:** Hauptmenü → Challenge → „Glass Smash“, erste Challenge
+  (`l_35_AR`). Die Spieluhr zeigt nach 35,8 s Spielzeit 00:36,1 bei 60 Hz
+  und 00:36,2 bei 120 Hz. Die Spielzeit läuft also auch bei 120 Hz richtig.
+
 ## Bildanpassung (`src/host/postfx.cpp`)
 
 `[grafik] gamma`, `kontrast`, `helligkeit` und `saettigung` passen das Bild

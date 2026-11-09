@@ -75,7 +75,9 @@ Funktionen von außen erreicht. Daraus:
    Sampler dort (anisotrop, wiederholend) ändert kein Pixel; keine Ursache. Nächster Schritt: an der
    Glasstelle mit der Debug-Schicht laufen lassen.
 6. Freecam, Sichtfeld.
-7. Arcade und Challenge im Spiel prüfen (bisher nur die Menüs).
+7. Arcade und Challenge: per Skript geprüft (Arcade-Custom-Match `l_42_AR` mit
+   Bots, Challenge „Glass Smash“ mit richtiger Uhr bei 60 und 120 Hz); offen
+   nur ganze Durchgänge von Hand.
 8. Lokalisierung: Texte (und ggf. Sprachausgabe) aus dem Xbox-Image
    lesen; TS2 hat eine Texttabelle je Sprache (`0x1424E2430`, Sprache
    `0x142EE39C0`), im PC-Port ist nur Englisch belegt. Auswahl im Launcher.
