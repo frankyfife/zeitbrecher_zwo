@@ -55,8 +55,10 @@ Funktionen von außen erreicht. Daraus:
    (eigener letzter Schritt, neutral aus). Ursache noch offen (der ungesetzte
    Sampler in Slot 1 ist es nicht, geprüft); nächste Spur: Gamma-Kodierung
    der Swapchain bzw. eine Nachbearbeitung, die Homefront anwandte.
-   Erster Verdacht: Die Swapchain ist `R8G8B8A8_UNORM` ohne sRGB, also eine
-   mögliche Gamma-Abweichung zu dem, was TS2 schreibt. Außerdem fehlt
+   Verdacht sRGB ausgeräumt: `TS2_BLENDPROBE=1` protokolliert auch die
+   Texturformate; alle 724 Texturen im Glass-Smash-Start (Inhalte, eigene
+   Ziele, 1920×1080-Kopien) sind `R8G8B8A8_UNORM`, keine sRGB-Form. TS2
+   rechnet also im Gamma-Raum, die UNORM-Swapchain passt dazu. Womöglich fehlt
    womöglich eine Nachbearbeitung (Gamma, Tonemapping), die Homefront nach
    TS2s Render-Aufruf angewandt hat. Zuerst messen: Bild gegen die
    Homefront-Fassung und die Xbox-Fassung vergleichen.

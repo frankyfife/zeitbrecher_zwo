@@ -211,6 +211,28 @@ HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_
     return hr;
 }
 
+// Formate der Texturen, die TS2 anlegt (sRGB oder nicht: Belichtung)
+using CreateTex2DFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const D3D11_TEXTURE2D_DESC*,
+                                                   const D3D11_SUBRESOURCE_DATA*, ID3D11Texture2D**);
+using CreateRtvFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, ID3D11Resource*, const D3D11_RENDER_TARGET_VIEW_DESC*,
+                                                 ID3D11RenderTargetView**);
+CreateTex2DFn g_create_tex2d = nullptr;
+CreateRtvFn g_create_rtv = nullptr;
+
+HRESULT STDMETHODCALLTYPE probe_create_tex2d(ID3D11Device* d, const D3D11_TEXTURE2D_DESC* td,
+                                             const D3D11_SUBRESOURCE_DATA* init, ID3D11Texture2D** out) {
+    if (td)
+        log("[textur] %ux%u Format %d Bind %X Mips %u\n", td->Width, td->Height, int(td->Format), td->BindFlags,
+            td->MipLevels);
+    return g_create_tex2d(d, td, init, out);
+}
+
+HRESULT STDMETHODCALLTYPE probe_create_rtv(ID3D11Device* d, ID3D11Resource* r, const D3D11_RENDER_TARGET_VIEW_DESC* vd,
+                                           ID3D11RenderTargetView** out) {
+    log("[rtv] Format %d\n", vd ? int(vd->Format) : -1);
+    return g_create_rtv(d, r, vd, out);
+}
+
 void STDMETHODCALLTYPE probe_clear_rtv(ID3D11DeviceContext* c, ID3D11RenderTargetView* v, const FLOAT* col) {
     if (g_clear_n++ < 40) log("[loeschen] %p: %.3f %.3f %.3f %.3f\n", static_cast<void*>(v), col[0], col[1], col[2], col[3]);
     g_clear_rtv(c, v, col);
@@ -316,6 +338,9 @@ bool make_gfx(Gfx* g, int width, int height) {
         // ClearRenderTargetView Methode 50 (+0x190)
         patch_vtable(g->dev, 20, reinterpret_cast<void*>(&probe_create_blend), reinterpret_cast<void**>(&g_create_blend));
         patch_vtable(g->ctx, 50, reinterpret_cast<void*>(&probe_clear_rtv), reinterpret_cast<void**>(&g_clear_rtv));
+        // CreateTexture2D Methode 5, CreateRenderTargetView Methode 9
+        patch_vtable(g->dev, 5, reinterpret_cast<void*>(&probe_create_tex2d), reinterpret_cast<void**>(&g_create_tex2d));
+        patch_vtable(g->dev, 9, reinterpret_cast<void*>(&probe_create_rtv), reinterpret_cast<void**>(&g_create_rtv));
         log("Blend-Probe an\n");
     }
     IDXGIDevice* xd = nullptr;
