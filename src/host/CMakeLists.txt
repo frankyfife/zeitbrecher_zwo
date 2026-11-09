@@ -1,4 +1,4 @@
-add_executable(ts2 main.cpp ts2bin.cpp ts2bin.h replace.cpp replace.h input.cpp input.h fake.cpp fake.h features.cpp features.h menu.cpp menu.h hooks.cpp hooks.h menumouse.cpp menumouse.h timing.cpp timing.h inifile.cpp inifile.h audio.cpp audio.h mixer.cpp mixer.h vorbis.cpp
+add_executable(ts2 main.cpp ts2bin.cpp ts2bin.h replace.cpp replace.h input.cpp input.h fake.cpp fake.h features.cpp features.h menu.cpp menu.h hooks.cpp hooks.h menumouse.cpp menumouse.h timing.cpp timing.h audio.cpp audio.h mixer.cpp mixer.h vorbis.cpp
                log.h hf2.h ts2_manifest.inc)
 target_compile_features(ts2 PRIVATE cxx_std_17)
 target_compile_definitions(ts2 PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -9,4 +9,4 @@ endif()
 
 # stb_vorbis (Ogg-Dekoder an Stelle von libvorbisfile)
 target_include_directories(ts2 PRIVATE ${stb_SOURCE_DIR})
-target_link_libraries(ts2 PRIVATE xaudio2 ole32)
+target_link_libraries(ts2 PRIVATE xaudio2 ole32 ts2options)

@@ -40,4 +40,5 @@ FetchContent_MakeAvailable(stb)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_subdirectory(tools/hfpak)
+add_subdirectory(src/common)
 add_subdirectory(src/host)

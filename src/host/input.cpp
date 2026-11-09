@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "log.h"
+#include "ts2options.h"
 #include "menumouse.h"
 
 #pragma comment(lib, "xinput.lib")
@@ -43,42 +44,40 @@ enum : uint32_t {
 struct KeyBind {
     const wchar_t* name;  // Schlüssel in ts2.ini [tasten]
     uint32_t bit;
-    int vk[3];            // bis zu drei Tasten; Vorgabe
+    int vk[3];            // bis zu drei Tasten; Vorgabe aus ts2opt::key_defaults()
 };
-// Vorgaben Tastatur/Maus wie die PC-Belegung des Xbox-Forks
-// (split2-recomp_ff, launcher/src/bindings.cpp: TS2s Belegung "Standard"):
-// links feuern, rechts zielen/Zoom, Mitte oder F Zweitfunktion, Mausrad
-// und Q die Waffe, Strg oder C ducken. Virtuelle Tastencodes (VK_*),
-// Maustasten 1 links, 2 rechts, 4 Mitte.
+// Aktion -> TS2-Bit. Die Vorgaben (wie die PC-Belegung des Xbox-Forks)
+// stehen in src/common/ts2options.cpp, gemeinsam mit dem Launcher.
 KeyBind g_keys[] = {
-    {L"feuer", kFire, {VK_LBUTTON}},
-    {L"alt_feuer", kFireAlt, {VK_MBUTTON, 'F'}},
-    {L"zoom", kZoom, {VK_RBUTTON}},
-    {L"benutzen", kActivate, {'E'}},
-    {L"nachladen", kReload, {'R'}},
-    {L"ducken", kCrouch, {VK_LCONTROL, 'C'}},
+    {L"feuer", kFire, {}},          {L"alt_feuer", kFireAlt, {}},     {L"zoom", kZoom, {}},
+    {L"benutzen", kActivate, {}},   {L"nachladen", kReload, {}},     {L"ducken", kCrouch, {}},
     {L"naechste_waffe", kNextWeapon, {}},  // dazu Mausrad nach unten
-    {L"vorige_waffe", kPrevWeapon, {'Q'}},  // dazu Mausrad nach oben
-    {L"zoom_rein", kZoomIn, {VK_ADD}},
-    {L"zoom_raus", kZoomOut, {VK_SUBTRACT}},
-    {L"pause", kStart, {VK_ESCAPE}},
-    {L"ok", kCross, {VK_RETURN}},
-    {L"zurueck", kCircle, {VK_BACK}},
-    {L"dreieck", kTriangle, {VK_TAB}},
-    {L"quadrat", kSquare, {'X'}},
-    {L"menue_hoch", kUp, {VK_UP}},
-    {L"menue_runter", kDown, {VK_DOWN}},
-    {L"menue_links", kLeft, {VK_LEFT}},
-    {L"menue_rechts", kRight, {VK_RIGHT}},
+    {L"vorige_waffe", kPrevWeapon, {}},    // dazu Mausrad nach oben
+    {L"zoom_rein", kZoomIn, {}},    {L"zoom_raus", kZoomOut, {}},    {L"pause", kStart, {}},
+    {L"ok", kCross, {}},            {L"zurueck", kCircle, {}},       {L"dreieck", kTriangle, {}},
+    {L"quadrat", kSquare, {}},      {L"menue_hoch", kUp, {}},        {L"menue_runter", kDown, {}},
+    {L"menue_links", kLeft, {}},    {L"menue_rechts", kRight, {}},
 };
-constexpr int kBindingVersion = 2;  // [tasten] belegung; ältere Abschnitte werden ersetzt
+constexpr int kBindingVersion = ts2opt::kBindingVersion;
+
+// Vorgabe einer Taste aus der gemeinsamen Tabelle
+const int* default_vk(const wchar_t* name) {
+    for (const auto& d : ts2opt::key_defaults()) {
+        const char* a = d.key;
+        const wchar_t* b = name;
+        while (*a && wchar_t(*a) == *b) ++a, ++b;
+        if (!*a && !*b) return d.vk;
+    }
+    static const int none[3] = {};
+    return none;
+}
 
 std::wstring vk_list(const int* vk) {
     std::wstring s;
     for (int i = 0; i < 3 && vk[i]; ++i) s += (s.empty() ? L"" : L",") + std::to_wstring(vk[i]);
     return s.empty() ? L"0" : s;
 }
-int g_fwd = 'W', g_back = 'S', g_left = 'A', g_right = 'D';
+int g_fwd = 0, g_back = 0, g_left = 0, g_right = 0;  // Vorgaben aus ts2opt (input_init)
 float g_mouse_sens = 1.0f;
 bool g_mouse_invert = false;
 
@@ -136,6 +135,11 @@ void input_init(HWND wnd, void* obj, const std::filesystem::path& ini) {
     g_wnd = wnd;
     g_obj = obj;
     const std::wstring p = ini.wstring();
+    g_fwd = default_vk(L"vorwaerts")[0];
+    g_back = default_vk(L"rueckwaerts")[0];
+    g_left = default_vk(L"links")[0];
+    g_right = default_vk(L"rechts")[0];
+    for (auto& k : g_keys) std::copy(default_vk(k.name), default_vk(k.name) + 3, k.vk);
     const bool have_keys = GetPrivateProfileIntW(L"tasten", L"vorwaerts", -1, p.c_str()) != UINT(-1);
     if (have_keys && int(GetPrivateProfileIntW(L"tasten", L"belegung", 1, p.c_str())) < kBindingVersion) {
         // Abschnitt aus einer früheren Fassung: durch die neue Belegung
@@ -309,21 +313,6 @@ void input_frame() {
 }
 
 uint32_t input_host_bits() { return g_host_bits; }
-
-void input_default_keys(std::vector<std::pair<std::string, std::string>>* out) {
-    auto narrow = [](const std::wstring& w) {  // Schlüssel und Zahlen sind ASCII
-        std::string n;
-        for (wchar_t c : w) n.push_back(static_cast<char>(c));
-        return n;
-    };
-    out->push_back({"vorwaerts", std::to_string(g_fwd)});
-    out->push_back({"rueckwaerts", std::to_string(g_back)});
-    out->push_back({"links", std::to_string(g_left)});
-    out->push_back({"rechts", std::to_string(g_right)});
-    for (auto& k : g_keys) out->push_back({narrow(k.name), narrow(vk_list(k.vk))});
-}
-
-std::string input_binding_version() { return std::to_string(kBindingVersion); }
 bool input_uses_mouse() { return g_mode == 1; }
 
 }  // namespace host

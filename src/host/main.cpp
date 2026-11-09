@@ -30,7 +30,7 @@
 #include "input.h"
 #include "menu.h"
 #include "menumouse.h"
-#include "inifile.h"
+#include "ts2options.h"
 #include "timing.h"
 #include "audio.h"
 #include "hf2.h"
@@ -350,7 +350,7 @@ int wmain(int argc, wchar_t** argv) {
     // TS2 wartet mit Sleep(ms) auf seinen nächsten Takt; ohne feinere
     // Zeitgeber-Auflösung schläft Windows dabei bis zu 15,6 ms zu lange.
     timeBeginPeriod(1);
-    if (const int n = ini_complete(self_dir() / L"ts2.ini", ini_options()))
+    if (const int n = ts2opt::ini_complete(self_dir() / L"ts2.ini"))
         log("ts2.ini: %d Option(en) ergänzt\n", n);
     const Settings settings = load_settings(self_dir() / L"ts2.ini");
     features_install(g_img, settings);

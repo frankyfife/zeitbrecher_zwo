@@ -31,8 +31,6 @@ constexpr uint32_t kHostJump = 0x80000000u, kHostForward = 0x40000000u, kHostRun
 uint32_t input_host_bits();
 // true, solange Tastatur+Maus das Gerät ist (Mausmodus, Port 6)
 bool input_uses_mouse();
-// Vorgaben für ts2.ini [tasten] (vor input_init: die eingebauten Werte)
-void input_default_keys(std::vector<std::pair<std::string, std::string>>* out);
-std::string input_binding_version();
+
 
 }  // namespace host
