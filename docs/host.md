@@ -188,6 +188,32 @@ Options (Spieler, Ton, Abspann, Zwischensequenzen, Cheats) öffnen sich,
 "Zurück" führt ins Hauptmenü; die Story-Levelwahl zeigt mehr als zwei
 Level.
 
+## Sprache (`src/host/menu.cpp`, `tools/re/xbox_text.py`)
+
+Der PC-Port hat nur die englischen Texte: eine Tabelle von 2770
+`char*` ab dem Zeiger `0x1424E2430`. Die Xbox-PAL-Fassung (En, Fr, De, Es,
+It) hat in `default.xbe` fünf Tabellen mit je 2770 32-Bit-Zeigern in
+derselben Reihenfolge (2386 Einträge wörtlich gleich mit dem PC-Port, der
+Rest britische Schreibweise oder Plattformwörter). Gefunden werden sie über
+den gemeinsamen Text "Arcade" an Eintrag 422, die Sprache über Eintrag 2142
+("Quit", "Beenden", …).
+
+Einmalig aus dem eigenen Image holen (nur lesend; `tools/re/xiso.py` liest
+XISO und Redump-Abbilder):
+
+```bash
+python -I tools/re/xbox_text.py "<TimeSplitters 2 (Europe).iso>" game
+```
+
+Das schreibt `game/sprache/{de,en,es,fr,it}.bin` (je 2770 nullterminierte
+Latin-1-Texte). `ts2.ini` `[sprache] text=de` lässt ts2.exe beim Start den
+Tabellenzeiger auf die geladene Tabelle umbiegen; leere Einträge behalten
+den PC-Text. Geprüft: Hauptmenü ("Herausforderung", "Optionen",
+"Beenden", "Zurück" mit Umlaut) und Optionsmenü auf Deutsch, 2752 von 2770
+Texten ersetzt. Die Sprachausgabe bleibt englisch.
+
+Die Dateien aus `game/sprache` gehören nie ins Repository.
+
 ## Ton (`src/host/audio.cpp`, `mixer.cpp`, `vorbis.cpp`)
 
 TS2 mischt selbst. Beim Start meldet ce_sound (`0x14122829C`) seinen Mixer

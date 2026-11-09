@@ -21,5 +21,8 @@ struct UnlockConfig {
 UnlockConfig load_unlock_config(const std::filesystem::path& ini);
 // vor dem Start von TS2 aufrufen
 void unlock_install(const Ts2Image& img, const UnlockConfig& c);
+// Spieltexte aus <game>/sprache/<code>.bin (aus dem eigenen Xbox-Image,
+// tools/re/xbox_text.py); "pc" oder leer: unverändert
+void language_install(const Ts2Image& img, const std::filesystem::path& game, const std::wstring& code);
 
 }  // namespace host

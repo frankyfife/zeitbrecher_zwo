@@ -436,6 +436,11 @@ int wmain(int argc, wchar_t** argv) {
     features_install(g_img, settings);
     timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
+    {
+        wchar_t code[16] = {};
+        GetPrivateProfileStringW(L"sprache", L"text", L"pc", code, 16, (self_dir() / L"ts2.ini").c_str());
+        language_install(g_img, game, code);
+    }
     menumouse_install(g_img, GetPrivateProfileIntW(L"maus", L"menue", 1, (self_dir() / L"ts2.ini").c_str()) != 0);
 
     // gEnv füllen

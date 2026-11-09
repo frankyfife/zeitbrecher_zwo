@@ -4,6 +4,10 @@
 
 #include <cstring>
 #include <fstream>
+#include <iterator>
+#include <string>
+#include <vector>
+#include <fstream>
 
 #include "hf2.h"
 #include "log.h"
@@ -118,6 +122,39 @@ void build_main_menu(uint8_t* page) {
 }
 
 }  // namespace
+
+// Die Xbox-PAL-Fassung hat fünf Texttabellen mit je 2770 Einträgen in
+// derselben Reihenfolge wie die eine Tabelle des PC-Ports (2386 Einträge
+// wörtlich gleich, der Rest britische Schreibweise oder Plattformwörter).
+// Die gewählte Sprache ersetzt den Zeiger auf die PC-Tabelle
+// (0x1424E2430, Sprache 0); leere Einträge behalten den PC-Text.
+void language_install(const Ts2Image& img, const std::filesystem::path& game, const std::wstring& code) {
+    if (code.empty() || code == L"pc") return;
+    const auto file = game / L"sprache" / (code + L".bin");
+    std::ifstream f(file, std::ios::binary);
+    if (!f) {
+        log("Sprache %ls: %ls fehlt (tools/re/xbox_text.py)\n", code.c_str(), file.c_str());
+        return;
+    }
+    static std::string blob;
+    blob.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    constexpr int kEntries = 2770;
+    static std::vector<const char*> table(kEntries, nullptr);
+    auto** pc_slot = img.va<const char* const*>(hf2::kStringTables);
+    const char* const* pc = *pc_slot;
+    int replaced = 0;
+    size_t pos = 0;
+    for (int i = 0; i < kEntries; ++i) {
+        const char* s = pos < blob.size() ? blob.c_str() + pos : "";
+        const size_t len = pos < blob.size() ? std::strlen(s) : 0;
+        pos += len + 1;
+        const auto* pv = reinterpret_cast<const uint8_t*>(pc[i]);
+        table[i] = (pv >= img.base && pv < img.base + img.size) ? pc[i] : "";  // nur gültige PC-Zeiger
+        if (len) table[i] = s, ++replaced;
+    }
+    *const_cast<const char* const**>(pc_slot) = table.data();
+    log("Sprache %ls: %d von %d Texten\n", code.c_str(), replaced, kEntries);
+}
 
 void unlock_install(const Ts2Image& img, const UnlockConfig& c) {
     char* flags = img.va<char>(hf2::kUnlockFlags);
