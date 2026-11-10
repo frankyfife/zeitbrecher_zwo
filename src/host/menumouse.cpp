@@ -54,17 +54,19 @@ int hit_row(uint8_t* m, float gx, float gy) {
         const int ix = at<int32_t>(it, 0x9C), iy = at<int32_t>(it, 0xA0);
         const int iw = at<int32_t>(it, 0xA4), ih = at<int32_t>(it, 0xA8);
         const uint32_t flags = at<uint32_t>(it, 0x44);
-        if (iw <= 0) continue;
         if (ih <= 0) {
-            // Pausenmenü: Einträge ohne Höhe, ihre Lage ein Float bei +0x98
-            // (Xbox +0x60). Am Bild gemessen (OPTIONS 0,49 → 278, Continue
-            // 0,22 → 446, Quit 0,04 → 543): y = 571 − 593 · v, ±6 px.
+            // 3D-Menüs (Pause, Beenden?, Tod, Levelende): Einträge ohne Höhe,
+            // ihre Lage ein Float bei +0x98 (Xbox +0x60). Ihre Breite ist 1920
+            // oder 0 (z. B. "Beenden?"); früher schied 0 hier aus, und die Maus
+            // ging in diesen Menüs nicht. Am Bild gemessen (OPTIONS 0,49 → 278, Continue 0,22 → 446,
+            // Quit 0,04 → 543): y = 571 − 593 · v, ±6 px.
             const float v = at<float>(it, 0x98);
             const float cy = 571.0f - 593.0f * v;
             if (v > -2.0f && v < 2.0f && gy >= cy - 45.0f && gy < cy + 45.0f && gx >= 280.0f && gx < 1640.0f)
                 return (flags & 8) ? -1 : row;
             continue;
         }
+        if (iw <= 0) continue;
         const float x = float(x0 + ix);
         float y;
         bool hit;
