@@ -34,9 +34,11 @@
 #include "input.h"
 #include "ctxproxy.h"
 #include "shadowfix.h"
+#include "alphafix.h"
 #include "fixes.h"
 #include "menu.h"
 #include "menumouse.h"
+#include "subtitles.h"
 #include "ts2options.h"
 #include "timing.h"
 #include "postfx.h"
@@ -206,6 +208,7 @@ int g_clear_n = 0;
 
 bool g_blend_log = false, g_blend_revsub = false;
 std::map<ID3D11BlendState*, int> g_blend_kind;  // 1 = SRC_ALPHA/INV_SRC_ALPHA (TS2_DRAWDUMP)
+std::map<ID3D11BlendState*, D3D11_RENDER_TARGET_BLEND_DESC> g_blend_desc;  // Ziel 0 (Proben)
 
 HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_DESC* in, ID3D11BlendState** out) {
     D3D11_BLEND_DESC fixed;
@@ -236,6 +239,7 @@ HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_
     if (bd && out && *out && SUCCEEDED(hr)) {
         const auto& r0 = bd->RenderTarget[0];
         g_blend_kind[*out] = (r0.SrcBlend == D3D11_BLEND_SRC_ALPHA && r0.DestBlend == D3D11_BLEND_INV_SRC_ALPHA) ? 1 : 0;
+        g_blend_desc[*out] = r0;
     }
     if (bd && g_blend_log) {
         const auto& r = bd->RenderTarget[0];
@@ -254,6 +258,7 @@ using CreateRtvFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, ID3D11Resource*, 
                                                  ID3D11RenderTargetView**);
 CreateTex2DFn g_create_tex2d = nullptr;
 CreateRtvFn g_create_rtv = nullptr;
+std::map<ID3D11Texture2D*, uint32_t> g_tex_hash;  // Inhalt (Proben), beim ersten Zeichnen gelesen
 
 HRESULT STDMETHODCALLTYPE probe_create_tex2d(ID3D11Device* d, const D3D11_TEXTURE2D_DESC* td,
                                              const D3D11_SUBRESOURCE_DATA* init, ID3D11Texture2D** out) {
@@ -261,7 +266,11 @@ HRESULT STDMETHODCALLTYPE probe_create_tex2d(ID3D11Device* d, const D3D11_TEXTUR
         log("[textur] %ux%u Format %d Bind %X Mips %u\n", td->Width, td->Height, int(td->Format), td->BindFlags,
             td->MipLevels);
     const HRESULT hr = g_create_tex2d(d, td, init, out);
-    if (SUCCEEDED(hr) && out && *out) shadowfix_forget(*out);
+    if (SUCCEEDED(hr) && out && *out) {
+        shadowfix_forget(*out);
+        alphafix_forget(*out);
+        g_tex_hash.erase(*out);
+    }
     return hr;
 }
 
@@ -283,6 +292,43 @@ void STDMETHODCALLTYPE probe_clear_rtv(ID3D11DeviceContext* c, ID3D11RenderTarge
 ID3D11BlendState* g_cur_blend = nullptr;
 int g_tick_now = -1, g_dump_tick = -2;
 std::filesystem::path g_dump_dir;
+
+// Inhalt der obersten Stufe einer RGBA8-Textur: FNV-1a über Breite·4 Byte je
+// Zeile (oben nach unten). Gleich dem Hash der SGI-Datei, von Pillow gelesen.
+uint32_t texture_hash(ID3D11DeviceContext* c, ID3D11Texture2D* tex) {
+    auto it = g_tex_hash.find(tex);
+    if (it != g_tex_hash.end()) return it->second;
+    D3D11_TEXTURE2D_DESC d;
+    tex->GetDesc(&d);
+    uint32_t h = 0;
+    if (d.Format == DXGI_FORMAT_R8G8B8A8_UNORM && d.SampleDesc.Count == 1) {
+        d.Usage = D3D11_USAGE_STAGING;
+        d.BindFlags = 0;
+        d.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        d.MiscFlags = 0;
+        d.MipLevels = 1;
+        d.ArraySize = 1;
+        ID3D11Device* dev = nullptr;
+        c->GetDevice(&dev);
+        ID3D11Texture2D* st = nullptr;
+        if (SUCCEEDED(dev->CreateTexture2D(&d, nullptr, &st))) {
+            c->CopySubresourceRegion(st, 0, 0, 0, 0, tex, 0, nullptr);
+            D3D11_MAPPED_SUBRESOURCE m;
+            if (SUCCEEDED(c->Map(st, 0, D3D11_MAP_READ, 0, &m))) {
+                h = 2166136261u;
+                for (UINT y = 0; y < d.Height; ++y) {
+                    const uint8_t* row = static_cast<const uint8_t*>(m.pData) + size_t(y) * m.RowPitch;
+                    for (UINT x = 0; x < d.Width * 4; ++x) h = (h ^ row[x]) * 16777619u;
+                }
+                c->Unmap(st, 0);
+            }
+            st->Release();
+        }
+        dev->Release();
+    }
+    g_tex_hash[tex] = h;
+    return h;
+}
 
 void dump_texture(ID3D11DeviceContext* c, ID3D11Texture2D* tex, int n) {
     D3D11_TEXTURE2D_DESC d;
@@ -445,67 +491,119 @@ void log_vertices(ID3D11DeviceContext* c, UINT start, INT base) {
     if (ib) ib->Release();
 }
 
+// Mischart eines Blend-Zustands als Text: "aus" (keine Mischung) oder
+// "<quelle>*<ziel>" (D3D11_BLEND-Werte, z. B. 5*6 = SRC_ALPHA/INV_SRC_ALPHA)
+std::string blend_name(ID3D11BlendState* st) {
+    auto it = g_blend_desc.find(st);
+    if (!st || it == g_blend_desc.end() || !it->second.BlendEnable) return "aus";
+    return std::to_string(int(it->second.SrcBlend)) + "*" + std::to_string(int(it->second.DestBlend));
+}
+
+ID3D11Texture2D* bound_texture(ID3D11DeviceContext* c) {
+    ID3D11ShaderResourceView* srv = nullptr;
+    c->PSGetShaderResources(0, 1, &srv);
+    ID3D11Texture2D* tex = nullptr;
+    if (srv) {
+        ID3D11Resource* r = nullptr;
+        srv->GetResource(&r);
+        if (r) r->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex)), r->Release();
+        srv->Release();
+    }
+    return tex;
+}
+
+// Liste aus der Umgebung: durch Komma getrennte Einträge
+std::set<std::wstring> env_list(const wchar_t* name, const wchar_t* fallback) {
+    wchar_t v[512] = {};
+    std::wstring s = GetEnvironmentVariableW(name, v, 512) > 0 ? v : fallback;
+    std::set<std::wstring> out;
+    for (size_t p = 0; p <= s.size();) {
+        const size_t q = std::min(s.find(L',', p), s.size());
+        if (q > p) out.insert(s.substr(p, q - p));
+        p = q + 1;
+    }
+    return out;
+}
+
 // über die Kontext-Hülle (ctxproxy.h) vor jeder Zeichnung
+//   TS2_DRAWDUMP=<takt>: in diesem Bild die Zeichnungen der Mischarten aus
+//     TS2_DRAWARTEN (z. B. "5*6,5*2,aus" oder "alle"; Vorgabe 5*6)
+//     protokollieren und ihre Texturen nach drawdump_<n>_<b>x<h>.rgba schreiben
+//   TS2_TEXWATCH=<inhalt>,...: in jedem Takt melden, wenn eine Textur mit
+//     diesem Inhalt (Hash wie im Protokoll von TS2_DRAWDUMP) gezeichnet wird,
+//     mit Kameralage; beim ersten Mal Shader und Ecken
 bool draw_probe(ID3D11DeviceContext* c, UINT count, UINT start, INT base) {
     static std::map<ID3D11Texture2D*, int> dumped;
-    static int draws = 0, all = 0;
-    if (g_tick_now == g_dump_tick && all++ < 5)
-        log("[zeichnung] alle: Mischung %p Art %d\n", static_cast<void*>(g_cur_blend),
-            g_blend_kind.count(g_cur_blend) ? g_blend_kind[g_cur_blend] : -1);
-    if (g_tick_now == g_dump_tick && g_blend_kind.count(g_cur_blend) && g_blend_kind[g_cur_blend] == 1) {
-        ID3D11ShaderResourceView* srv = nullptr;
-        c->PSGetShaderResources(0, 1, &srv);
-        ID3D11Texture2D* tex = nullptr;
-        if (srv) {
-            ID3D11Resource* r = nullptr;
-            srv->GetResource(&r);
-            if (r) r->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex)), r->Release();
-            srv->Release();
-        }
-        int id = -1;
-        if (tex) {
-            auto it = dumped.find(tex);
-            if (it == dumped.end()) {
-                id = int(dumped.size());
-                dumped[tex] = id;
-                dump_texture(c, tex, id);
-            } else {
-                id = it->second;
+    static int draws = 0;
+    static const std::set<std::wstring> kinds = env_list(L"TS2_DRAWARTEN", L"5*6");
+    static const std::set<uint32_t> watch = [] {
+        std::set<uint32_t> out;
+        for (const auto& w : env_list(L"TS2_TEXWATCH", L"")) out.insert(uint32_t(wcstoul(w.c_str(), nullptr, 16)));
+        return out;
+    }();
+    const bool dump_now = g_tick_now == g_dump_tick;
+    if (!dump_now && watch.empty()) return true;
+    ID3D11Texture2D* tex = bound_texture(c);
+    const uint32_t hash = tex ? texture_hash(c, tex) : 0;
+    const std::string bn = blend_name(g_cur_blend);
+    if (!watch.empty() && hash && watch.count(hash)) {
+        static std::map<uint32_t, int> last_tick;
+        static std::set<uint32_t> detailed;
+        if (last_tick[hash] != g_tick_now) {
+            last_tick[hash] = g_tick_now;
+            const float* cp = nullptr;
+            if (uint8_t* cam = *g_img.va<uint8_t*>(hf2::kCamera)) cp = reinterpret_cast<const float*>(cam + hf2::kCamPos);
+            const auto d = g_blend_desc.count(g_cur_blend) ? g_blend_desc[g_cur_blend] : D3D11_RENDER_TARGET_BLEND_DESC{};
+            log("[watch] Takt %d Kamera %.1f %.1f %.1f: Textur %08X, Mischung %s op %d, Alpha %d*%d op %d, Maske %X, "
+                "Indizes %u\n",
+                g_tick_now, cp ? cp[0] : 0.f, cp ? cp[1] : 0.f, cp ? cp[2] : 0.f, hash, bn.c_str(), int(d.BlendOp),
+                int(d.SrcBlendAlpha), int(d.DestBlendAlpha), int(d.BlendOpAlpha), d.RenderTargetWriteMask, count);
+            if (detailed.insert(hash).second) {
+                log_pixel_shader(c);
+                log_vertices(c, start, base);
             }
         }
-        float cb[8] = {};
-        ID3D11Buffer* b = nullptr;
-        c->PSGetConstantBuffers(0, 1, &b);
-        if (b) b->Release();
-        log("[zeichnung] %d: Indizes %u, Textur %d\n", draws++, count, id);
+    }
+    if (!dump_now || !(kinds.count(L"alle") || kinds.count(std::wstring(bn.begin(), bn.end())))) {
         if (tex) tex->Release();
-        (void)cb;
-        // TS2_DRAWSKIP=<Texturnummer>: diese Zeichnungen auslassen
-        static const int skip_tex = [] {
-            wchar_t v[16] = {};
-            return GetEnvironmentVariableW(L"TS2_DRAWSKIP", v, 16) > 0 ? _wtoi(v) : -2;
-        }();
-        if (id == skip_tex) return false;
-        // TS2_DRAWSKIPN=a,b,...: diese Zeichnungsnummern auslassen
-        static const std::set<int> skip_n = [] {
-            std::set<int> out;
-            wchar_t v[256] = {};
-            if (GetEnvironmentVariableW(L"TS2_DRAWSKIPN", v, 256) > 0)
-                for (wchar_t* p = v; *p;) {
-                    out.insert(int(wcstol(p, &p, 10)));
-                    while (*p == L',') ++p;
-                }
-            return out;
-        }();
-        if (skip_n.count(draws - 1)) return false;
-        static const int shader_tex = [] {
-            wchar_t v[16] = {};
-            return GetEnvironmentVariableW(L"TS2_DRAWSHADER", v, 16) > 0 ? _wtoi(v) : -2;
-        }();
-        if (id == shader_tex) {
-            log_pixel_shader(c);
-            log_vertices(c, start, base);
+        return true;
+    }
+    int id = -1;
+    if (tex) {
+        auto it = dumped.find(tex);
+        if (it == dumped.end()) {
+            id = int(dumped.size());
+            dumped[tex] = id;
+            dump_texture(c, tex, id);
+        } else {
+            id = it->second;
         }
+    }
+    D3D11_TEXTURE2D_DESC td{};
+    if (tex) tex->GetDesc(&td), tex->Release();
+    log("[zeichnung] %d: Indizes %u, Mischung %s, Textur %d (%ux%u F%d, Inhalt %08X)\n", draws++, count, bn.c_str(), id,
+        td.Width, td.Height, int(td.Format), hash);
+    // TS2_DRAWSKIP=<Texturnummer>: diese Zeichnungen auslassen
+    static const int skip_tex = [] {
+        wchar_t v[16] = {};
+        return GetEnvironmentVariableW(L"TS2_DRAWSKIP", v, 16) > 0 ? _wtoi(v) : -2;
+    }();
+    if (id == skip_tex) return false;
+    // TS2_DRAWSKIPN=a,b,...: diese Zeichnungsnummern auslassen
+    static const std::set<int> skip_n = [] {
+        std::set<int> out;
+        for (const auto& w : env_list(L"TS2_DRAWSKIPN", L"")) out.insert(_wtoi(w.c_str()));
+        return out;
+    }();
+    if (skip_n.count(draws - 1)) return false;
+    // TS2_DRAWSHADER=<Texturnummer>: Pixel-Shader, Eingabe-Layout und Ecken
+    static const int shader_tex = [] {
+        wchar_t v[16] = {};
+        return GetEnvironmentVariableW(L"TS2_DRAWSHADER", v, 16) > 0 ? _wtoi(v) : -2;
+    }();
+    if (id == shader_tex) {
+        log_pixel_shader(c);
+        log_vertices(c, start, base);
     }
     return true;
 }
@@ -610,8 +708,9 @@ bool make_gfx(Gfx* g, int width, int height, bool want_hdr) {
     g_blend_revsub = GetEnvironmentVariableW(L"TS2_REVSUB", nullptr, 0) > 0;
     {
         wchar_t v[16] = {};
-        if (GetEnvironmentVariableW(L"TS2_DRAWDUMP", v, 16) > 0) {
-            g_dump_tick = _wtoi(v);
+        const bool watch = GetEnvironmentVariableW(L"TS2_TEXWATCH", nullptr, 0) > 0;
+        if (GetEnvironmentVariableW(L"TS2_DRAWDUMP", v, 16) > 0 || watch) {
+            g_dump_tick = v[0] ? _wtoi(v) : INT_MAX;  // nur TS2_TEXWATCH: kein Bild
             g_dump_dir = self_dir();
             patch_vtable(g->dev, 15, reinterpret_cast<void*>(&probe_create_ps), reinterpret_cast<void**>(&g_create_ps));
             patch_vtable(g->dev, 11, reinterpret_cast<void*>(&probe_create_il), reinterpret_cast<void**>(&g_create_il));
@@ -834,6 +933,8 @@ int wmain(int argc, wchar_t** argv) {
     features_install(g_img, settings);
     timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
+    subtitles_install(g_img, self_dir() / L"ts2.ini");
+    profile_install(g_img, self_dir() / L"profil.bin");
     {
         wchar_t code[16] = {};
         GetPrivateProfileStringW(L"sprache", L"text", L"pc", code, 16, (self_dir() / L"ts2.ini").c_str());
@@ -864,26 +965,32 @@ int wmain(int argc, wchar_t** argv) {
     if (settings.fullscreen) set_fullscreen(gfx.wnd, true);
     static DeviceHolder devh{gfx.dev, {}};
     // TS2 bekommt die Kontext-Hülle (ctxproxy.h) statt des Kontexts: für die
-    // Schattenkorrektur ([grafik] schatten, shadowfix.h) und TS2_DRAWDUMP
+    // Schattenkorrektur ([grafik] schatten, shadowfix.h), Transparenz der
+    // Leuchttexturen ([grafik] transparenz, alphafix.h) und TS2_DRAWDUMP
     static CtxProxy proxy(gfx.ctx);
-    static bool shadow_on = false;
+    static bool shadow_on = false, alpha_on = false;
     {
         wchar_t buf[32];
         GetPrivateProfileStringW(L"grafik", L"schatten", L"0.35", buf, 32, (self_dir() / L"ts2.ini").c_str());
         shadow_on = shadowfix_init(gfx.dev, std::clamp(float(_wtof(buf)), 0.0f, 1.0f));
+        alpha_on = alphafix_init(
+            gfx.dev, GetPrivateProfileIntW(L"grafik", L"transparenz", 1, (self_dir() / L"ts2.ini").c_str()) != 0);
     }
-    const bool use_proxy = g_dump_tick >= 0 || shadow_on;
+    const bool use_proxy = g_dump_tick >= 0 || shadow_on || alpha_on;
     if (use_proxy) {
-        static bool shadow_drawn = false;
+        static bool shadow_drawn = false, alpha_drawn = false;
         proxy.on_blend = [](ID3D11BlendState* st, const FLOAT*) { g_cur_blend = st; };
         proxy.on_draw = [](ID3D11DeviceContext* real, UINT n, UINT st, INT b) {
             if (g_dump_tick >= 0 && !draw_probe(real, n, st, b)) return false;
             auto k = g_blend_kind.find(g_cur_blend);
-            shadow_drawn = shadow_on && k != g_blend_kind.end() && k->second == 1 && shadowfix_before(real);
+            const bool alpha_blend = k != g_blend_kind.end() && k->second == 1;  // SRC_ALPHA/INV_SRC_ALPHA
+            shadow_drawn = shadow_on && alpha_blend && shadowfix_before(real);
+            alpha_drawn = alpha_on && alpha_blend && !shadow_drawn && alphafix_before(real);
             return true;
         };
         proxy.after_draw = [](ID3D11DeviceContext* real) {
             if (shadow_drawn) shadowfix_after(real), shadow_drawn = false;
+            if (alpha_drawn) alphafix_after(real), alpha_drawn = false;
         };
         proxy.on_clear = [](ID3D11RenderTargetView* v, const FLOAT* c) {
             if (g_tick_now == g_dump_tick)

@@ -12,6 +12,7 @@
 #include "hf2.h"
 #include "hooks.h"
 #include "log.h"
+#include "profile.h"
 
 namespace host {
 
@@ -24,6 +25,7 @@ UnlockConfig load_unlock_config(const std::filesystem::path& ini) {
     c.story = get(L"story", c.story);
     c.arcade = get(L"arcade", c.arcade);
     c.challenge = get(L"challenge", c.challenge);
+    c.characters = get(L"figuren", c.characters);
     c.cheats = get(L"cheats", c.cheats);
     c.invincible = get(L"unverwundbar", c.invincible);
     c.all = get(L"alles", c.all);
@@ -60,6 +62,7 @@ struct MenuApi {
     void* options_page;
     const int32_t* main_y_imm;  // imm32 in der Original-Aufbaufunktion
     const int32_t* main_h_imm;
+    bool options_entry;
 } g_api;
 
 const char* text(uint32_t id) {
@@ -83,9 +86,12 @@ void disable(uint8_t* entry) { *reinterpret_cast<uint32_t*>(entry + 0x44) |= 1; 
 
 void goto_options() { g_api.set_next_page(g_api.options_page); }
 
-// Hauptmenü: Story, Arcade, Challenge (je nach Flag), Options, Quit.
-// Maße, Texte und Ablauf wie die Aufbau-Funktion der Homefront-Fassung.
+// Hauptmenü wie auf der Xbox: Story, Arcade, Challenge (immer), Options
+// (laut [freischalten] optionen), Quit. Maße, Texte und Ablauf wie die
+// Aufbau-Funktion der Homefront-Fassung. Zurück im Hauptmenü wird das
+// Profil gespeichert (wie die Konsole nach dem Level/den Optionen).
 void build_main_menu(uint8_t* page) {
+    profile_save();
     *reinterpret_cast<uint64_t*>(page + 0x650) = 0;  // kein Titel
     *reinterpret_cast<int32_t*>(page + 0x660) = 0xB;
     // Werte aus den Befehlen der Original-Aufbaufunktion (mov dword [rcx+0x658],
@@ -98,12 +104,10 @@ void build_main_menu(uint8_t* page) {
     const int32_t players = *g_api.players;
     uint8_t* story = add_entry(menu, text(players == 2 ? hf2::kStrStoryCoop : hf2::kStrStory), g_api.story);
     if (players > 2) disable(story);
-    if (g_api.flags[hf2::kUnlockArcade]) add_entry(menu, text(hf2::kStrArcade), g_api.arcade);
-    if (g_api.flags[hf2::kUnlockChallenge]) {
-        uint8_t* challenge = add_entry(menu, text(hf2::kStrChallenge), g_api.challenge);
-        if (players > 1) disable(challenge);
-    }
-    add_entry(menu, text(hf2::kStrOptions), goto_options);
+    add_entry(menu, text(hf2::kStrArcade), g_api.arcade);
+    uint8_t* challenge = add_entry(menu, text(hf2::kStrChallenge), g_api.challenge);
+    if (players > 1) disable(challenge);
+    if (g_api.options_entry) add_entry(menu, text(hf2::kStrOptions), goto_options);
     add_entry(menu, text(hf2::kStrQuit), g_api.quit);
 
     const int32_t first = *reinterpret_cast<int32_t*>(menu + 0x1C);
@@ -198,13 +202,16 @@ void unlock_install(const Ts2Image& img, const UnlockConfig& c) {
     flags[hf2::kUnlockStory] = c.story;
     flags[hf2::kUnlockArcade] = c.arcade;
     flags[hf2::kUnlockChallenge] = c.challenge;
+    flags[hf2::kUnlockChars] = c.characters;
     flags[hf2::kUnlockCheats] = c.cheats;
     flags[hf2::kUnlockInvincible] = c.invincible;
     *img.va<int32_t>(hf2::kUnlockAll) = c.all;
-    log("Freischaltungen: story=%d arcade=%d challenge=%d cheats=%d unverwundbar=%d alles=%d\n", c.story,
-        c.arcade, c.challenge, c.cheats, c.invincible, c.all);
+    log("Freischaltungen: story=%d arcade=%d challenge=%d figuren=%d cheats=%d unverwundbar=%d alles=%d\n",
+        c.story, c.arcade, c.challenge, c.characters, c.cheats, c.invincible, c.all);
 
-    if (!c.options_entry) return;
+    // Das eigene Hauptmenü zeigt Arcade und Challenge immer (wie die Xbox);
+    // die Flags schalten nur noch alles darin frei
+    g_api.options_entry = c.options_entry;
     auto fn = [&](uint64_t va) { return img.va<void>(va); };
     g_api.create = reinterpret_cast<MenuCreateFn>(fn(hf2::kMenuCreate));
     g_api.add_entry = reinterpret_cast<MenuAddEntryFn>(fn(hf2::kMenuAddEntry));
@@ -236,7 +243,7 @@ void unlock_install(const Ts2Image& img, const UnlockConfig& c) {
         return;
     }
     *slot = reinterpret_cast<void*>(&build_main_menu);
-    log("Hauptmenü mit \"Options\"\n");
+    log("Hauptmenü wie auf der Xbox%s\n", c.options_entry ? ", mit \"Options\"" : "");
 }
 
 }  // namespace host

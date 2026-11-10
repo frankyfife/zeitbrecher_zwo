@@ -343,14 +343,17 @@ QWidget* MainWindow::page_game() {
 
     QGroupBox* box;
     auto f = form_group(QStringLiteral("Freischalten"), &box);
-    f.span(hint(QStringLiteral("Wie die Konsolen-Codes der Homefront-Fassung.")));
-    f.span(check(QStringLiteral("Alle Story-Level"), "freischalten", "story"));
-    f.span(check(QStringLiteral("Arcade"), "freischalten", "arcade"));
-    f.span(check(QStringLiteral("Challenge"), "freischalten", "challenge"));
+    f.span(hint(QStringLiteral("Ohne Haken: Fortschritt wie auf der Konsole – Level, Karten, Figuren und "
+                               "Challenges werden nacheinander frei und in profil.bin gespeichert. "
+                               "Die Haken schalten sofort alles frei (wie die Konsolen-Codes, Schummeln).")));
+    f.span(check(QStringLiteral("Alle Story-Level (Schummeln)"), "freischalten", "story"));
+    f.span(check(QStringLiteral("Alle Arcade-Karten und -Spielarten (Schummeln)"), "freischalten", "arcade"));
+    f.span(check(QStringLiteral("Alle Challenges (Schummeln)"), "freischalten", "challenge"));
+    f.span(check(QStringLiteral("Alle Figuren (Schummeln)"), "freischalten", "figuren"));
     f.span(check(QStringLiteral("Hauptmenü mit „Options“"), "freischalten", "optionen"));
     f.span(check(QStringLiteral("Alle Cheats/Extras"), "freischalten", "cheats"));
     f.span(check(QStringLiteral("Unverwundbar"), "freischalten", "unverwundbar"));
-    f.span(check(QStringLiteral("Alles (Figuren, Level, Extras)"), "freischalten", "alles"));
+    f.span(check(QStringLiteral("Alles (Figuren, Level, Extras; Schummeln)"), "freischalten", "alles"));
     v->addWidget(box);
     return scroll_page(content, v);
 }
@@ -667,6 +670,7 @@ QWidget* MainWindow::page_sound() {
     f.add(QStringLiteral("Musik"), percent_slider("ton", "musik"));
     f.add(QStringLiteral("Effekte"), percent_slider("ton", "effekte"));
     f.add(QString(), check(QStringLiteral("5.1 ausgeben, wenn das Gerät es kann"), "ton", "surround"));
+    f.add(QString(), check(QStringLiteral("Raum-Hall für Geräusche im Level"), "ton", "hall"));
     v->addWidget(box);
     return scroll_page(content, v);
 }

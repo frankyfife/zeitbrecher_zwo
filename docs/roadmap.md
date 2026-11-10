@@ -52,13 +52,16 @@ Funktionen von außen erreicht. Daraus:
 | Überlagerte Meldungen (Aufsammeln, Waffen) | vermutlich mit den Redux-Anzeigefixes behoben: sie ändern in der HUD-Meldungsliste `0x1411B08EC` Zeilenabstand (`lea ebx,[rsi+0x13B]` → `0x24B`) und Schrift; im Spiel noch zu bestätigen |
 | Maus im Menü nach Rundenende (Pause 2. Ebene, Tod, Levelende) | behoben: Einträge der 3D-Menüs mit Breite 0 schieden aus; geprüft: Pause → Beenden → "Beenden?" → Beenden per Maus. Tod/Levelende nutzen dieselben 3D-Menüs, dort nicht eigens nachgestellt |
 | Kistenschatten schwarz statt weich (Xbox: schwache Abdunklung) | behoben: Eckenfarbe des Flecks ist im PC-Port Unsinn (Floats statt Farbe), eigener Shader mit fester Deckkraft (`[grafik] schatten`), siehe host.md "Schatten" |
-| Transparenz (Laserfenster schwarz, wenn aus) | offen, siehe Punkt 5; Werkzeug jetzt `TS2_DRAWDUMP` an der Stelle |
+| Transparenz (Laserschranken in Siberia schwarz) | behoben: PC-Textur 2452 (und weitere Leuchttexturen) ohne Alpha, ts2.exe leitet das Alpha aus der Helligkeit ab (`[grafik] transparenz`), siehe host.md "Transparenz" |
 | Überstrahlt in Siberia mit Windows-HDR | erste Abhilfe: eigene HDR-Ausgabe (`[grafik] hdr`, `hdr_weiss`) |
 | Waffengeräusche anders als auf der Xbox | Proben gleich benannt (22 kHz); der PC-Port liest die Hall-Skripte `ts2/sound/reverb/levelNN_reverb.s` (Raum → Effektnummer) nie, die Xbox hallt je Raum. Nachbau: Raum verfolgen, Effektnummer → I3DL2-Voreinstellung der XBE, XAudio2-Hall |
 | Launcher schwarz, Reiter, Titel "Zeitbrecher Zwo" | erledigt |
 | Fehlerbehebungen aus TS2 Redux | im eigenen Code (`fixes.inc`, immer an), HD-Texturen unter `game/hd/`; eigene HD-Texturen (`tools/hd/make_hd.py`, docs/hd-texturen.md): Fadenkreuze, HUD-Bögen, Banner, Ladebild eigen, Kiste/Riffelblech/Zaun/Baum/Symbole noch von Redux |
 | Chicago (Level 2) startet nicht (Absturz nach Überspringen) | behoben: TS2s Spielspeicher-Arena (58 MB, `0x1424E23D8`) lief mit den HD-Texturen über, `0x1411A9A10` rief exit(1); jetzt 192 MB. Geprüft: Chicago läuft mit HD-Texturen. Nebenbei: `ts2/data/cs_l_int.pak` fehlt im PC-Port (Xbox hat es) |
 | Echte Schatten (Lampen, Sonne) | bewertet (docs/schatten-bewertung.md), vom Nutzer verworfen: keine Umsetzung |
+| Level nach und nach freischalten wie auf der Xbox, Spielstand | erledigt: Xbox-Regeln aus der PAL-XBE, `profil.bin` (host.md "Fortschritt") |
+| Untertitel fehlen | behoben: Zwischensequenz-Untertitel waren im PC-Port aus (nur bei nicht-englischer Sprache an), `[sprache] untertitel` |
+| Hall für Umgebung und Waffen | erledigt: XAudio2-Hall nach Dambusters Raumtabellen, übrige Räume mit der häufigsten Voreinstellung (`[ton] hall`) |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret
@@ -85,23 +88,14 @@ Funktionen von außen erreicht. Daraus:
    einstellbar), als Option im Launcher.
 4. Vollbild: erledigt (randlos, Alt+Enter, `[grafik] vollbild`, DPI-bewusst);
    offen nur exklusives Vollbild, falls G-Sync es auf einem System braucht.
-5. Grafikfehler: Glasflächen (z. B. die Fenster mit Laserschranken in
-   Siberias Innenräumen) erscheinen schwarz statt durchsichtig. Vermutlich
-   ein Blend- oder Alpha-Zustand, den der Render-Pfad ohne Homefront anders
-   setzt; mit einer Aufnahme des Bildes und den D3D11-Zuständen prüfen.
-   Werkzeug: `TS2_D3DDEBUG=1` (D3D11-Debug-Schicht, Meldungen ins Log). Im
-   Siberia-Start meldet sie keinen Kopierfehler, aber dauerhaft einen
-   ungesetzten Sampler in Slot 1 (2 Mio. Mal). Geprüft: ein eigener
-   Sampler dort (anisotrop, wiederholend) ändert kein Pixel; keine Ursache.
-   Glass-Smash (Challenge) mit Debug-Schicht: keine Fehler; es fehlen keine
-   Texturen. `TS2_BLENDPROBE=1`: TS2 legt Blend-Zustände mit Ziel-Alpha an
-   (DEST_ALPHA/INV_DEST_ALPHA, DEST_ALPHA·ONE, wie auf der PS2) und löscht
-   das Ziel nie selbst; im Flip-Modell ist dessen Alpha am Bildanfang also
-   unbestimmt. Homefront übergab ein von CryEngine vorbereitetes Ziel.
-   Nächster Schritt an der Glasstelle: `TS2_ALPHALOESCHEN=0` und `=1`
-   (löscht das Ziel vor jedem Bild auf Alpha 0 bzw. 1) vergleichen; ändert
-   sich das Glas, ist das die Ursache und die Lösung ein festes Löschen.
-   Im Glass-Smash-Start ändern beide kein Pixel.
+5. Grafikfehler "schwarze Laserfenster": erledigt. Es sind die
+   Laserschranken der Zellen in Siberia; ihre PC-Textur 2452 hat kein Alpha
+   (Xbox: DXT3 mit Alpha). ts2.exe leitet für solche Leuchttexturen das Alpha
+   aus der Helligkeit ab (`[grafik] transparenz`, host.md "Transparenz").
+   Offen: andere Leuchttexturen der Liste (Mündungsfeuer u. a.) im Spiel
+   ansehen, sobald sie mit SRC_ALPHA/INV_SRC_ALPHA gezeichnet werden; die
+   Menüs nutzen auch Ziel-Alpha-Mischungen (7*8, 7*2) und 14*15, dort ist
+   kein Fehler bekannt.
 6. Freecam: erledigt (`[kamera] freecam`, Taste F6; WASD, Maus,
    Leertaste/C, Umschalt), geprüft im Glass-Smash-Start (über die Mauer
    geflogen, Level bleibt gezeichnet; zurück steht der Spieler unverändert).

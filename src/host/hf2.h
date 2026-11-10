@@ -137,4 +137,59 @@ constexpr uint64_t kEffectsVolume = 0x14259CF90;    // float, übrige Stimmen
 constexpr uint64_t kSoundListenerDir = 0x142479550; // float[2] = (0, 1), Bezugsrichtung des Stereo-Pannings
 constexpr uint64_t kPlayersInGame = 0x143F35188;    // int; 2 = Koop ("Story Co-op")
 
+// Profile und Fortschritt (docs/host.md "Fortschritt"). Tabelle: Zeiger
+// 0x143F2F468 auf 16 Profile je 0x20E4 Byte (+0 Name, +0x20 Einstellungen,
+// +0xF0 Tasten, +0xD30 Fortschritt/Statistik 0x133C Byte, +0x1950… eigene
+// Figuren). Profil von Spieler i: 0x142F2D6F0[i] (−1 = keins). Im
+// Fortschritt (P = Profil + 0xD30): Story geschafft P+0xBC8 + Koop*0xC +
+// Schwierigkeit*4 (Bit = Story-Index 0–9, beim Levelende für alle
+// Schwierigkeiten bis zur gespielten gesetzt, 0x14110B520), Medaillen
+// P+0xBD0 + Stufe*0x10 (128 Bit, 0x14111130C).
+constexpr uint64_t kProfileTable = 0x143F2F468;     // uint8_t* (16 × 0x20E4)
+constexpr uint32_t kProfileSize = 0x20E4, kProfileCount = 16;
+constexpr uint32_t kProfileProgress = 0xD30;        // P
+constexpr uint32_t kProgressStory = 0xBC8;
+constexpr uint64_t kPlayerProfile = 0x142F2D6F0;    // int32[4]
+constexpr uint64_t kProfileCreate = 0x14110E7C4;    // int (const char* name), neues Profil
+constexpr uint64_t kProfileCreateCall = 0x14106A0D8; // beim Start von TS2 (ein Spieler)
+constexpr uint64_t kLevelEnd = 0x14110B520;         // Levelende: Fortschritt eintragen
+constexpr uint64_t kLevelEndCalls[] = {0x14110B956, 0x1411B0100, 0x1411C7A70};
+// Freischalt-Bedingung {Art, a, b, _, Liste*, c, _} (0x20 Byte; Xbox 0x14)
+constexpr uint64_t kCondEval = 0x141111408;         // int (cond*, int)
+constexpr uint64_t kMedalAny = 0x14111130C;         // int (challenge, −1): eine Medaille
+constexpr uint64_t kChallengeSetOpen = 0x1411116CC; // int (satz)
+constexpr uint64_t kChallengeSet = 0x141106D48;     // satz* {_, anzahl, ids[]}
+constexpr uint64_t kCharEntry = 0x1410B42D4;        // figur* (id), Bedingung +0x10, nullptr wenn unbekannt
+constexpr uint64_t kCharTable = 0x1424EFF50;        // je 0x30 Byte
+constexpr uint64_t kModeConds = 0x142508100;        // Arcade-Spielarten, je 0x20 (Xbox 0x2BD828)
+constexpr uint64_t kMapConds = 0x142508380;         // Arcade-Karten, je 0x40 (Xbox 0x2BD9C4, je 0x30)
+constexpr uint32_t kMapStride = 0x40;
+constexpr uint64_t kArcadeMode = 0x142F1270C;       // gewählte Spielart (0x10: eigene Kartenliste)
+constexpr uint64_t kMode16Map5 = 0x1425091D0, kMode16Map8 = 0x1425091F0;  // Xbox 0x348D18/0x348D2C
+// Freischalt-Abfragen, die Dambuster vereinfacht hat (Xbox-Fassung daneben):
+constexpr uint64_t kUnlockModeFn = 0x1411112C8;       // Spielart x: Flag 1      (Xbox 0x1AED90)
+constexpr uint64_t kUnlockStoryLevelFn = 0x1411112E4; // (level, schw., koop): Flag 0 oder level<2 (Xbox 0x1AECD0)
+constexpr uint64_t kUnlockMapFn = 0x141111618;        // Karte x: Flag 1, x 0 oder 3 (Xbox 0x1AEEB0/0x1AEDB0)
+constexpr uint64_t kUnlockCharFn = 0x14111169C;       // Figur: immer        (Xbox 0x1AEE50, Flag 3)
+constexpr uint64_t kUnlockChallengeFn = 0x141111718;  // (challenge, satz): immer (Xbox 0x1AEF30)
+constexpr int kUnlockChars = 3;                     // Flag 3 (Figuren), im PC-Port ohne Leser
+// Aufrufe: Kartenliste blendet Gesperrtes aus (Xbox: ausgegraut), Levelwahl ebenso
+constexpr uint64_t kMapListShowCalls[] = {0x1410C1A67, 0x1410C1A6E};
+constexpr uint64_t kMapMode16Calls[] = {0x1410C1AEE, 0x1410C2DDC, 0x1410C2DEC, 0x1410C31B3, 0x1410C31F0};
+constexpr uint64_t kStoryListShowCall = 0x1410C24FF;
+
+// ---- Untertitel der Zwischensequenzen (src/host/subtitles.cpp)
+// Einstellung "Subtitles" (Optionen → Audio/Video, Eintrag 4): 0x142F153FC,
+// im Profil Einstellungen +0xF0 (= Profil +0x1E0). Einziger Leser im Spiel
+// 0x14110A380 (in 0x141146C80, Zwischensequenz zeichnen: Balken, dann je
+// Untertitel {Beginn s, Dauer s, Farbe, Art, Text-Nr.} aus 0x142F3C5F8
+// (Anzahl 0x142F3C678, je Sequenz eine feste Tabelle, z. B. Siberia
+// 0x142515E50) über 0x14121D740). Vorgabe im neuen Profil (0x1410BD218):
+// an nur bei Sprache 0x142EE39C0 ≠ 0, im PC-Port also aus.
+constexpr uint64_t kSubtitlesOn = 0x142F153FC;
+constexpr uint32_t kSettingsSubtitles = 0xF0;      // in den Einstellungen (Profil +0xF0)
+constexpr uint64_t kProfileSettings = 0x14110E7A4; // uint8_t* (): Einstellungen von Spieler 1
+constexpr uint64_t kSettingsApply = 0x1410CC994;   // Profil → Einstellungs-Globale
+constexpr uint64_t kSettingsApplyStart = 0x14106A159; // Endsprung dorthin beim Start von TS2
+
 }  // namespace hf2

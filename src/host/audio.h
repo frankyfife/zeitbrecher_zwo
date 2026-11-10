@@ -6,7 +6,8 @@
 // (+0x08 freigeben, +0x10 Abtastrate, +0x18 drei Floats). Musik und Sprache
 // laufen über dieselben Stimmen; die Ogg-Dateien dekodiert vorbisfile
 // (ersetzt durch stb_vorbis, vorbis.cpp). ts2.exe ruft den Mixer aus einem
-// eigenen Thread (bei 5.1 den eigenen, mixer.h) und gibt über XAudio2 aus.
+// eigenen Thread (bei 5.1 oder Hall den eigenen, mixer.h) und gibt über
+// XAudio2 aus.
 #pragma once
 #include <filesystem>
 
@@ -18,6 +19,7 @@ struct AudioConfig {
     bool enabled = true;
     float master = 1.0f, music = 1.0f, effects = 1.0f;
     bool surround = true;  // 5.1-Ausgabe, wenn das Gerät sie hat
+    bool hall = true;      // Raum-Hall für Stimmen aus der Spielwelt (reverb.h)
 };
 
 AudioConfig load_audio_config(const std::filesystem::path& ini);

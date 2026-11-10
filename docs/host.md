@@ -178,15 +178,49 @@ Challenge nur, wenn ihr Flag gesetzt ist; "Options" fehlt darin ganz, die
 Seite (`0x1424F1D78`) ist aber vollständig.
 
 `ts2.exe` setzt die Flags vor dem Start laut `ts2.ini` [freischalten]
-(Vorgabe: Story, Arcade, Challenge an; Cheats, Unverwundbarkeit, alles aus)
-und trägt mit `optionen=1` einen eigenen Aufbau des Hauptmenüs in die
-Seitenbeschreibung ein (`0x1424F2DB0`, wie TS2Redux): Story, Arcade,
-Challenge, Options, Quit, mit den Maßen und Texten des Originals.
+(Vorgabe: alles aus, also Fortschritt wie auf der Xbox, siehe
+"Fortschritt"; die Schalter wirken wie die Konsolen-Codes) und trägt
+immer einen eigenen Aufbau des Hauptmenüs in die Seitenbeschreibung ein
+(`0x1424F2DB0`, wie TS2Redux): Story, Arcade, Challenge (wie auf der Xbox
+immer sichtbar), Options (mit `optionen=1`), Quit, mit den Maßen und
+Texten des Originals.
 
 Geprüft per Skript: Arcade (League/Custom), Challenge (Challenge-Sets),
 Options (Spieler, Ton, Abspann, Zwischensequenzen, Cheats) öffnen sich,
 "Zurück" führt ins Hauptmenü; die Story-Levelwahl zeigt mehr als zwei
 Level.
+
+## Fortschritt (`src/host/profile.cpp`)
+
+TS2 führt den Fortschritt im Profil: 16 Profile je 0x20E4 Byte ab
+`*0x143F2F468` (+0 Name, +0x20 Einstellungen, +0xF0 Tasten, +0xD30
+Fortschritt), Profil von Spieler i in `0x142F2D6F0[i]`. Das Levelende
+(`0x14110B520`) setzt im Fortschritt P (= Profil + 0xD30) bei
+P+0xBC8 + Koop·0xC + Schwierigkeit·4 das Bit des Story-Levels (0–9), für
+alle Schwierigkeiten bis zur gespielten; Medaillen stehen ab P+0xBD0.
+Die Homefront-Fassung legt das Profil bei jedem Start neu an
+(`0x14110E7C4`) und speichert nichts; außerdem hat Dambuster fünf
+Freischalt-Abfragen durch Flags ersetzt (Story: nur Siberia/Chicago,
+Karten: zwei, Figuren und Challenges: alle). ts2.exe setzt die Regeln der
+Xbox-Fassung wieder ein (gefunden in der PAL-XBE): Story-Level n auf
+Schwierigkeit d, wenn n−1 auf d oder höher geschafft ist (Xbox 0x1AECD0);
+Spielarten, Karten und Figuren nach ihren Bedingungen (0x1AED90,
+0x1AEEB0/0x1AEDB0, 0x1AEE50); eine Challenge, wenn alle davor im Satz eine
+Medaille haben (0x1AEF30). Gesperrtes steht wie auf der Xbox ausgegraut in
+den Listen, das Hauptmenü zeigt Arcade und Challenge immer.
+
+Das Profil von Spieler 1 liegt als `profil.bin` neben ts2.exe (0x20E4 Byte,
+dasselbe Format wie `TS2Save.bin` von TS2 Redux). Geladen wird es, sobald
+TS2 beim Start sein Profil anlegt (den Namen vergibt TS2), gespeichert,
+wenn es sich geändert hat: nach jedem Levelende, beim Aufbau des
+Hauptmenüs und beim Beenden.
+
+`ts2.ini` [freischalten]: `story`, `arcade`, `challenge`, `figuren`
+(Vorgabe 0) schalten wie die Konsolen-Codes sofort alles im Bereich frei
+(Schummeln). Test: `TS2_STORY_GESCHAFFT=<index>[:<schwierigkeit>]` trägt
+ein Level als geschafft ein. Geprüft: neues Profil → nur Siberia offen;
+mit Siberia geschafft → Chicago offen (nur "Leicht"), nach Neustart
+weiterhin; Challenge-Sätze schalten der Reihe nach frei.
 
 ## Sprache (`src/host/menu.cpp`, `tools/re/xbox_text.py`)
 
@@ -216,6 +250,33 @@ den PC-Text. Geprüft: Hauptmenü ("Herausforderung", "Optionen",
 Texten ersetzt (ab Eintrag 2425 hat die Xbox-Tabelle einen Eintrag mehr; ts2.exe gleicht das aus, sonst stand am Container in Siberia "%d/%d Spieler"). Die Sprachausgabe bleibt englisch.
 
 Die Dateien aus `game/sprache` gehören nie ins Repository.
+
+## Untertitel (`src/host/subtitles.cpp`)
+
+TS2 untertitelt die Story-Zwischensequenzen selbst: 0x141146C80 zeichnet
+die Balken und, wenn 0x14110A380 (liest 0x142F153FC) an meldet, jeden
+Untertitel aus der Tabelle der laufenden Sequenz (0x142F3C5F8, Anzahl
+0x142F3C678; je Eintrag Beginn s, Dauer s, Farbe grau/rot, Art, Text-Nr.;
+13 feste Tabellen, z. B. Siberia 0x142515E50 mit "Nikolai!!!" = Text 2502,
+das Spiel-Intro mit 32 Zeilen) mit TS2s Schrift (0x14121D740), mittig an
+der Oberkante des unteren Balkens wie auf der Xbox. Die Texte kommen aus
+der Texttabelle, folgen also `[sprache] text`. Sprachzeilen im Level
+(Big Tony 1150–1163, Durchsagen 1144–1147) sind Skript-Meldungen und hängen
+nicht an dieser Einstellung; die Tannoy-Durchsagen in Siberia haben keinen
+Text.
+
+Die Einstellung ist "Subtitles" im Optionsmenü Audio/Video (Eintrag 4,
+im Profil Einstellungen +0xF0). Ein neues Profil (0x1410BD218) bekommt sie
+nur, wenn die Sprache 0x142EE39C0 nicht Englisch ist; der PC-Port kennt nur
+Englisch, deshalb fehlten die Untertitel. ts2.exe lenkt den Endsprung
+0x14106A159 (Profil → Einstellungen beim Start, 0x1410CC994) um und setzt
+danach Profil und 0x142F153FC laut `ts2.ini` `[sprache] untertitel`
+(Vorgabe 1). Im Menü umgeschaltet gilt bis zum Beenden.
+
+Geprüft: Siberia-Intro (Skript ohne die OKs bei 1700/1900, Ton an; ohne Ton
+steht die Sequenz, ihre Uhr läuft mit der Musik), Takt 2700: "Ohne die
+nötige Sicherheitsfreigabe" (text=de) bzw. "We shouldn't be in the research
+center" (text=pc), mit untertitel=0 kein Text.
 
 ## Fehlerbehebungen nach TS2 Redux (`src/host/fixes.cpp`, `fixes.inc`)
 
@@ -324,6 +385,46 @@ eigene dabei im Stereomodus.
 `ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
 `ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
 
+### Raum-Hall (`src/host/reverb.cpp`, `[ton] hall`)
+
+**Xbox:** Beim Raumwechsel der Kamera (PAL `0x1C6BA0`, Raum an Kamera +0x294)
+setzt sie mit `IDirectSound_SetI3DL2Listener` einen von 90 I3DL2-Sätzen
+(`0x3491C8`, Index 9·Gruppe + Effektnummer 0…8). Die Effektnummer je Raum
+kommt beim Levelstart (`0x1C71C0`) aus `sound/reverb/levelNN_reverb.s`
+("Raumname, Effektnummer") und `bg/levelNN/levelNN.h` (Raumnummern), die
+Gruppe aus `0x345108[Index des Levels in 0x2D1390]`. In den PAL-Daten hat
+nur Gruppe 1 echte Sätze (2/3 SMALLROOM, 4/5 MEDIUMROOM, 6/7 LARGEROOM,
+8 MEDIUMHALL), und nur Level 34 benutzt sie; alle anderen Level, auch
+Siberia (Level 35), bleiben auf der Xbox trocken.
+
+**PC-Port:** Kein Code liest die .s-Dateien. Dambuster hat aber
+`ts2/sound/reverb/overrides/levelNN.reverb` (26 Level, Zeilen
+"Raum : k_rvb_REVERB_PRESET_<Name>") und die Namensliste der 113
+EAX-Voreinstellungen (`0x14259CFD0`, ohne Verweis im Code) mitgeliefert.
+
+**ts2.exe:** verfolgt Level (`0x143F27F54`) und Kameraraum
+(`*0x143F3A870` +0x2B8) im Ton-Thread, lädt beim Levelwechsel die
+Overrides-Tabelle und stellt einen XAudio2-Hall (Submix, I3DL2-Werte der
+EFX-Voreinstellungen, `ReverbConvertI3DL2ToNative`, Hallpegel nach I3DL2)
+auf die Voreinstellung des Raums. Räume ohne Eintrag bekommen die häufigste
+Voreinstellung des Levels (Siberia: STONEROOM, auch für den Starttunnel),
+damit Umgebung und Waffen überall hallen. Der eigene Mixer (bei Hall auch in
+Stereo) schickt positionierte Stimmen ohne Flag 0x1000 (Musik) und 0x4
+(Menügeräusche) zusätzlich in zwei Hall-Kanäle der Quelle, mit dem
+Stereo-Panning des Originals und der Wurzel der Abstandsdämpfung.
+Unpositionierte Stimmen (Zwischensequenzen, Menü) bleiben trocken.
+
+Proben: `TS2_HALLPROBE=1` (jede neue Stimme mit Flags/Abstand),
+`TS2_HALLTEST=<Name>` (eine Voreinstellung in jedem Raum),
+`TS2_TONAUFNAHME=<datei.wav>` (Endmischung nach dem Hall als Float-WAV,
+relativ zur EXE). `ts2.log` zeigt Raumwechsel ("Hall: Level 35, Raum 5 ->
+CITY_STREETS") und im Pegel den Hall-Anteil.
+
+Gemessen (Siberia-Tunnel, Musik 0, Scharfschützengewehr, mit
+STONEROOM): Nachklang 0,6–1,0 s nach dem Schuss −23,0 dB statt −27,2 dB
+trocken. `TS2_TONPRUEFUNG` mit Hall in Stereo: größte Abweichung 2,4·10⁻⁷.
+CPU-Last nicht messbar höher.
+
 ## Arcade und Challenge im Spiel
 
 Geprüft per Menümaus-Skript (`--menuemaus`, Koordinaten aus `TS2_MENUSPUR`):
@@ -385,6 +486,42 @@ mit Pixel-Shader, Eingabe-Layout und Ecken):
   löscht nie" war deshalb falsch: es löscht auf 0,0,0,0). Deshalb bekommt TS2
   eine Hülle um den Kontext (`ctxproxy.h`, Weiterleitungen aus d3d11.h
   erzeugt mit `tools/gen_ctxproxy.py`).
+
+## Transparenz (`src/host/alphafix.cpp`)
+
+Die Laserschranken der Zellen in Siberia (Raum 74, unteres Geschoss)
+erschienen als schwarze Rechtecke mit dünnen roten Linien, im Licht als
+rote Flächen. Befund:
+
+- Die Schranke ist `ob/dam/damlaserdoor.xbr`, ein Viereck mit Textur 2452
+  (roter Strahl auf Schwarz, Eckenfarbe 0x7F00007F), gezeichnet mit
+  SRC_ALPHA/INV_SRC_ALPHA.
+- Auf der Xbox (`2452.xbt` im Pak, DXT3) trägt der Alphakanal Strahl und
+  Schein, sonst ist Alpha 0. In den PC-Daten (`textures/2452.rgb`) ist
+  Alpha überall 255. Das Schwarz deckt so den Raum ab; mit Licht wird die
+  Fläche rot.
+- Ein Vergleich aller Paks findet mehr solcher Texturen: deckende `.rgb`,
+  deren `.xbt` ein Alpha hat, das der Helligkeit folgt. Das sind Leuchten,
+  Mündungsfeuer und Funken (z. B. 1442, 1465, 1487, 2543, 3037).
+- Abhilfe (`[grafik] transparenz=1`, Vorgabe): Bei Zeichnungen mit
+  SRC_ALPHA/INV_SRC_ALPHA prüft ts2.exe die Textur einmal am Inhalt. In
+  Frage kommen Texturen von 4×4 bis 64×64, deren Alpha überall 255 ist, mit
+  schwarzen Ecken, mindestens einem Viertel schwarzer Fläche und hellen
+  Stellen. Solche Texturen bekommen für die Zeichnung eine Kopie, deren
+  Alpha der größte Farbkanal ist. Für 2452 ist das genau das Xbox-Alpha. TS2s
+  Shader (Licht, Eckenfarbe, Alphatest) bleibt unverändert.
+- Ganz schwarze Texturen (`misc/black1x1`, Abblenden) und größere Texturen
+  (Figuren, Schilder) bleiben, wie sie sind.
+- Geprüft: Laserzellen in Siberia, vorher und nachher, bei gleichem Takt
+  (freie Kamera). Ohne Änderung: Siberia-Tunnel mit Schüssen, Glass Smash,
+  Hauptmenü, Levelwahl. Dort hat keine weitere Textur die Bedingung
+  erfüllt.
+- Proben dazu: `TS2_DRAWARTEN=5*6,5*2,aus|alle` wählt die Mischarten für
+  `TS2_DRAWDUMP`. Das Protokoll nennt je Zeichnung Mischart, Größe und
+  Inhalts-Hash der Textur (FNV-1a der obersten Stufe, Zeilen wie in der
+  `.rgb` von unten nach oben). `TS2_TEXWATCH=<hash>,...` meldet in jedem
+  Takt Kameralage und Mischung, sobald eine solche Textur gezeichnet wird;
+  beim ersten Mal kommen Shader und Ecken dazu.
 
 ## Fenster und Vollbild
 

@@ -16,8 +16,9 @@ namespace host {
 
 void mixer_init(const Ts2Image& img);
 // out: frames × channels Floats, verschränkt; channels 2 (L R) oder
-// 6 (FL FR FC LFE SL SR).
-void mixer_mix(float* out, uint32_t frames, int rate, int channels);
+// 6 (FL FR FC LFE SL SR). send: nullptr oder frames × 2 Floats (L R), der
+// Anteil der Stimmen aus der Spielwelt für den Raum-Hall (reverb.h).
+void mixer_mix(float* out, uint32_t frames, int rate, int channels, float* send = nullptr);
 // Vergleicht einen Block dieses Mixers (Stereo) mit TS2s Mixer auf
 // demselben Stimmenzustand; liefert die größte Abweichung.
 float mixer_compare(void* ts2_mixer, uint32_t frames, int rate);

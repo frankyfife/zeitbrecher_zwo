@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "hf2.h"
+#include "log.h"
 
 namespace host {
 
@@ -99,17 +100,50 @@ void direction(const Voice& v, float* nx, float* nz) {
     }
 }
 
-// Verstärkung je Ausgabekanal (bis 6), für Mono- und Stereoquellen.
+// Verstärkung je Ausgabekanal (bis 6), für Mono- und Stereoquellen, dazu
+// der Anteil für den Hall (Stereo, reverb.h).
 struct Gains {
     float mono[6];
     float st[2][6];  // [Quellkanal][Ausgabekanal]
+    bool hall;
+    float send_mono[2];
+    float send_st[2];  // Stereoquelle: L -> L, R -> R
 };
 
-Gains voice_gains(const Voice& v, int channels) {
+// Stimmen aus der Spielwelt: positionierte Stimmen ohne Flag 0x1000 (Musik)
+// und ohne 0x4 (Menügeräusche: am Hörer, min = max = 1).
+// Unpositionierte Stimmen (Zwischensequenz-Ton in Blöcken zu vier Puffern,
+// Menü) bleiben trocken. Gemessen mit TS2_HALLPROBE in Menü und Siberia.
+bool in_world(const Voice& v) { return v.positional && (v.flags & 0x1004) == 0; }
+
+// Original-Stereopanning (0x141227D99…0x141227F17): Faktor links/rechts
+void stereo_pan(const Voice& v, float* pl, float* pr) {
+    float nx, nz;
+    direction(v, &nx, &nz);
+    const float a = nz * g_listener[1] + nx * g_listener[0];
+    const float b = nx * g_listener[1] + (-nz) * g_listener[0];
+    const float ang = std::atan2(a, b);
+    const float s = std::sin(float(double(ang) - 1.5707963267948966));
+    *pl = clamp01(0.75f + s);
+    *pr = clamp01(0.75f - s);
+}
+
+Gains voice_gains(const Voice& v, int channels, bool hall) {
     Gains out{};
     const float cat = (v.flags & 0x1000) ? *g_music : *g_effects;
     float gl = *g_master * v.vol_left;
     float gr = *g_master * v.vol_right;
+    if (hall && in_world(v)) {
+        // Hall-Anteil: wie Stereo, aber nur mit der Wurzel der
+        // Abstandsdämpfung (ferne Quellen klingen halliger, verstummen aber
+        // trotzdem; I3DL2 dämpft den Hall mit RoomRolloffFactor 0 gar nicht).
+        out.hall = true;
+        float pl, pr;
+        stereo_pan(v, &pl, &pr);
+        const float dg = std::sqrt(distance_gain(v));
+        out.send_mono[0] = out.send_st[0] = gl * pl * dg * cat;
+        out.send_mono[1] = out.send_st[1] = gr * pr * dg * cat;
+    }
     if (v.positional && channels == 6) {
         float nx, nz;
         direction(v, &nx, &nz);
@@ -133,15 +167,11 @@ Gains voice_gains(const Voice& v, int channels) {
     }
     if (v.positional) {
         // Original (0x141227D99…0x141227F17)
-        float nx, nz;
-        direction(v, &nx, &nz);
-        const float a = nz * g_listener[1] + nx * g_listener[0];
-        const float b = nx * g_listener[1] + (-nz) * g_listener[0];
-        const float ang = std::atan2(a, b);
-        const float s = std::sin(float(double(ang) - 1.5707963267948966));
+        float pl, pr;
+        stereo_pan(v, &pl, &pr);
         const float dg = distance_gain(v);
-        gl *= clamp01(0.75f + s) * dg;
-        gr *= clamp01(0.75f - s) * dg;
+        gl *= pl * dg;
+        gr *= pr * dg;
     }
     gl *= cat;
     gr *= cat;
@@ -154,7 +184,7 @@ Gains voice_gains(const Voice& v, int channels) {
 }
 
 // Eine Stimme in `out` mischen; Zustandsfortschreibung wie das Original.
-void mix_voice(Voice& v, float* out, uint32_t frames, int channels, float dt, const Gains& G) {
+void mix_voice(Voice& v, float* out, float* send, uint32_t frames, int channels, float dt, const Gains& G) {
     if (v.loop_to == v.end) return;
     int32_t cur = v.current;
     uint32_t i = 0;
@@ -194,12 +224,20 @@ void mix_voice(Voice& v, float* out, uint32_t frames, int channels, float dt, co
             const float l = float(double(b.data[i0 * 2]) * kSampleScale);
             const float r = float(double(b.data[i0 * 2 + 1]) * kSampleScale);
             for (int c = 0; c < channels; ++c) o[c] += l * G.st[0][c] + r * G.st[1][c];
+            if (G.hall) {
+                send[size_t(i) * 2] += l * G.send_st[0];
+                send[size_t(i) * 2 + 1] += r * G.send_st[1];
+            }
         } else {
             const float frac = fpos - float(i0);
             const float s0 = float(double(b.data[i0 * b.channels]) * kSampleScale);
             const float s1 = float(double(b.data[i1 * b.channels]) * kSampleScale);
             const float s = s0 * (1.0f - frac) + s1 * frac;
             for (int c = 0; c < channels; ++c) o[c] += s * G.mono[c];
+            if (G.hall) {
+                send[size_t(i) * 2] += s * G.send_mono[0];
+                send[size_t(i) * 2 + 1] += s * G.send_mono[1];
+            }
         }
         v.pos += dt;
         ++i;
@@ -207,9 +245,24 @@ void mix_voice(Voice& v, float* out, uint32_t frames, int channels, float dt, co
     v.time += float(frames) * dt;
 }
 
+// TS2_HALLPROBE=1: jede neu gestartete Stimme einmal protokollieren (Flags,
+// positioniert, Abstand), um Spielwelt und Menü zu unterscheiden.
+bool g_probe = false;
+int32_t g_probe_seen[kVoices];
+void probe_voice(int k, const Voice& v) {
+    const int32_t key = v.queue[v.loop_to & 31];
+    if (g_probe_seen[k] == key) return;
+    g_probe_seen[k] = key;
+    log("[ton] Stimme %d: Puffer %d, Flags 0x%X, Schleife %d, positioniert %d, Abstand %.1f (min %.1f max %.1f), "
+        "Lautstärke %.2f/%.2f\n",
+        k, key, v.flags, v.loop, v.positional, std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z), v.min_dist, v.max_dist,
+        v.vol_left, v.vol_right);
+}
+
 }  // namespace
 
 void mixer_init(const Ts2Image& img) {
+    g_probe = GetEnvironmentVariableW(L"TS2_HALLPROBE", nullptr, 0) > 0;
     g_voices = img.va<Voice>(hf2::kSoundVoices);
     g_buffers = img.va<Buffer>(hf2::kSoundBuffers);
     g_master = img.va<float>(hf2::kMasterVolume);
@@ -218,14 +271,18 @@ void mixer_init(const Ts2Image& img) {
     g_listener = img.va<float>(hf2::kSoundListenerDir);
 }
 
-void mixer_mix(float* out, uint32_t frames, int rate, int channels) {
+void mixer_mix(float* out, uint32_t frames, int rate, int channels, float* send) {
     std::memset(out, 0, size_t(frames) * channels * sizeof(float));
+    if (send) std::memset(send, 0, size_t(frames) * 2 * sizeof(float));
     const float dt = 1.0f / float(rate);
     for (int k = 0; k < kVoices; ++k) {
         Voice& v = g_voices[k];
         if (!v.lock) continue;
         EnterCriticalSection(v.lock);
-        if (v.active && v.state == 2) mix_voice(v, out, frames, channels, dt, voice_gains(v, channels));
+        if (v.active && v.state == 2) {
+            if (g_probe) probe_voice(k, v);
+            mix_voice(v, out, send, frames, channels, dt, voice_gains(v, channels, send != nullptr));
+        }
         LeaveCriticalSection(v.lock);
     }
 }
@@ -247,7 +304,7 @@ float mixer_compare(void* ts2_mixer, uint32_t frames, int rate) {
     std::vector<uint8_t> after_ts2(snap.size());
     std::memcpy(after_ts2.data(), g_voices, snap.size());
     std::memcpy(g_voices, snap.data(), snap.size());
-    mixer_mix(b.data(), frames, rate, 2);
+    mixer_mix(b.data(), frames, rate, 2, nullptr);
     float diff = 0.0f;
     for (size_t i = 0; i < a.size(); ++i) diff = std::max(diff, std::fabs(a[i] - b[i]));
     if (std::memcmp(after_ts2.data(), g_voices, snap.size()) != 0) diff = std::max(diff, 1000.0f);  // Zustand weicht ab

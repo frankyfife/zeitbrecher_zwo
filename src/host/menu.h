@@ -4,16 +4,20 @@
 // und Challenge erscheinen erst, wenn die Flags der Konsolen-Codes gesetzt
 // sind (hf2.h, "Freischaltungen"), und "Options" hat Dambuster ganz
 // gestrichen. ts2.exe setzt die Flags laut ts2.ini [freischalten] und baut
-// das Hauptmenü auf Wunsch selbst, mit "Options".
+// das Hauptmenü selbst wie auf der Xbox (Arcade und Challenge immer, auf
+// Wunsch mit "Options"). Die Flags schalten wie dort alles im jeweiligen
+// Bereich frei; ohne sie gilt der Fortschritt im Profil (profile.h).
 #pragma once
 #include <filesystem>
 
+#include "profile.h"
 #include "ts2bin.h"
 
 namespace host {
 
 struct UnlockConfig {
-    bool story = true, arcade = true, challenge = true;
+    // Vorgabe: Fortschritt wie auf der Konsole; an = alles frei (Schummeln)
+    bool story = false, arcade = false, challenge = false, characters = false;
     bool cheats = false, invincible = false, all = false;
     bool options_entry = true;  // eigenes Hauptmenü mit "Options"
 };
