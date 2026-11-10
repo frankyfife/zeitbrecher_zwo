@@ -604,6 +604,24 @@ wie TS2s Vertex-Shader) ein; spec liest es aus 0x142FE3828. Ohne Licht
 bildgleich. `TS2_LICHTFIX=0|1|2` (aus/Level/Figuren), `TS2_EFFEKTFIX=0` alles
 aus. Geprüft: Wild West mit Schüssen.
 
+**Rote Figuren in Chicago (Raumhelligkeit).** Figuren und die eigene Waffe
+nehmen als Umgebungslicht (cb0 ambient) die Farbe ihres Raums aus der Tabelle
+0x143F33CC0 (float[3] je Raumnummer, gelesen von 0x1411CA054; < 0: grau 0,3).
+Die Xbox kopiert dafür beim Levelstart `bg/ambient/level<n>_ambient.raw`
+hinein. Der PC-Code (0x1410F6B74, Aufruf 0x1410F7A96 in 0x1410F78A4) liest
+stattdessen die Textfassung `bg/level<n>/level<n>.h` (Raumname → Nummer) und
+`level<n>_ambient.s` in zwei feste, aufeinanderfolgende Puffer zu 0x2800 Byte
+(0x142F197B0, 0x142F1BFB0). Die Chicago-.h hat 10 469 Byte: Der Puffer endet
+in `ROOMNUM_ak8 15` ohne Nullbyte, die Suche läuft in die .s weiter, und Raum
+15 (Ziegelraum am Lager) bekommt die rotbraune Farbe von ak8 (0,231/0,088/0,082
+statt olivgrau 0,2375/0,2321/0,1222); die Räume dahinter fehlen (grau).
+Ebenso betroffen: Level 41 (Robot Factory, 46 Räume). ts2.exe lenkt den
+Aufruf um und legt nach der Textfassung die .raw darüber (wie die Xbox);
+`TS2_RAUMLICHT=0` schaltet das ab. Proben: `TS2_LICHTPROBE=1`,
+`TS2_SPRUNG=x,y,z[,raum]`, `TS2_RAUMSUCHE=<raum>`. Geprüft: Chicago Raum 15
+(Waffe vorher rot, jetzt olivgrau wie xemu); Wild West: Mündungsfeuer weiter
+nur örtlich.
+
 **Kamera (Redux-Issue #21, Sichtart 7, 0x141139844).** Der Sucher mischt die
 Kopie des vorigen Bilds (0x14122B74C(3), kopiert von 0x14122B524 am Anfang
 von Render) mit DEST_ALPHA in den Rand (absichtliche Zoom-Unschärfe, Xbox

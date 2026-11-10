@@ -70,6 +70,7 @@ Funktionen von außen erreicht. Daraus:
 | Redux-Issue #20: Boss-Lebensbalken schlecht lesbar | behoben (Farbe halbiert wie Konsole 0x80 = voll) |
 | Redux-Issue #5: Absturz in der Figurenauswahl | behoben: Texturverwaltung gibt wiederverwendete Texturen frei, Liste begrenzt; 1500 Figurenwechsel ohne Absturz |
 | Schatten im ganzen Spiel schwarz (Chicago: Tische, Stühle, Kisten) | behoben: Eckenalpha der Schattenzeichnungen falsch (Licht zählt je Lampe 1 dazu), eigener Shader mit Textur-Alpha wie Xbox (`[grafik] schatten` = 0,62); Alpha-Texturen gegen das Xbox-Image verglichen (docs/alpha-texturen.md) |
+| Rote Figuren/Waffe in Chicago | behoben: Raumhelligkeit aus der .raw wie Xbox (PC-Textleser lief über einen festen Puffer); betrifft auch Level 41 |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret

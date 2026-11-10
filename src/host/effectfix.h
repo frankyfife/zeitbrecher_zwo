@@ -16,7 +16,15 @@
 // richtigen Lagen und der Dämpfung aus falloffs ein (effectfix.cpp).
 // TS2_LICHTFIX=0 aus, 1 nur Level, 2 nur Figuren; TS2_EFFEKTFIX=0 alles aus.
 //
-// Proben: TS2_KOPIEPROBE=1 (Bildschirmkopien), TS2_SICHTART=<n> (Sichtart
+// Raumhelligkeit der Figuren: die Tabelle der Raumfarben kommt wie auf der
+// Xbox aus bg/ambient/level<n>_ambient.raw statt aus der Textfassung, die der
+// PC-Code wegen eines zu kleinen Puffers falsch zuordnet (Chicago: rote
+// Figuren und Waffe). TS2_RAUMLICHT=0 aus.
+//
+// Proben: TS2_LICHTPROBE=1 (Umgebung/Lichter jeder Figurenzeichnung, Raum
+// von Spieler 1), dazu TS2_SPRUNG=x,y,z[,raum] (Spieler 3 s nach Levelstart
+// versetzen) und TS2_RAUMSUCHE=<raum> (Lage eines Raums suchen);
+// TS2_KOPIEPROBE=1 (Bildschirmkopien), TS2_SICHTART=<n> (Sichtart
 // erzwingen, 7 = Kamera-Sucher), mit TS2_DRAWDUMP die Mischart und Lichter.
 #pragma once
 #include <d3d11.h>

@@ -6,8 +6,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <vector>
 
+#include "hooks.h"
 #include "log.h"
 
 namespace host {
@@ -230,6 +233,54 @@ void light_after(ID3D11DeviceContext* c) {
 
 bool g_light_drawn = false;
 
+// ---- Raumhelligkeit der Figuren
+//
+// Figuren und die eigene Waffe nehmen als Umgebungslicht die Farbe ihres
+// Raums aus der Tabelle 0x143F33CC0 (float[3] je Raumnummer, gelesen von
+// 0x1411CA054; < 0: grau 0,3). Die Xbox kopiert dafür beim Levelstart
+// bg/ambient/level<n>_ambient.raw (Raum 1 an 0x143F33CCC). Der PC-Code
+// (0x1410F6B74, gerufen von 0x1410F78A4) liest stattdessen die Textfassung:
+// bg/level<n>/level<n>.h (Raumnamen -> Nummern) und level<n>_ambient.s
+// (Raumname, r, g, b), beide in feste Puffer zu 0x2800 Byte, die
+// hintereinander liegen (0x142F197B0, 0x142F1BFB0). Ist die .h länger
+// (Chicago 10 469, Level 41 12 346 Byte), fehlt ihr Ende und die Suche
+// läuft ohne Nullbyte in die .s weiter: in Chicago endet der Puffer mit
+// "ROOMNUM_ak8 15", atoi liest 15, und Raum 15 (b11, Lagerhalle, olivgrau)
+// bekommt die rotbraune Farbe von ak8; die Räume dahinter fehlen (grau).
+// Abhilfe wie auf der Xbox: nach dem Lesen der Textfassung die .raw darüber.
+constexpr uint64_t kAmbientParseCall = 0x1410F7A96;  // in 0x1410F78A4
+constexpr uint64_t kAmbientParse = 0x1410F6B74;
+constexpr uint64_t kAmbientTable = 0x143F33CCC;      // Raum 1
+constexpr size_t kAmbientTableBytes = 0x143F3472C - 0x143F33CC4;
+constexpr uint64_t kLevelNumber = 0x143F27F54;
+constexpr uint64_t kFileRead = 0x1410B2460;  // (name, Ziel, Höchstgröße) -> gelesene Bytes
+using VoidFn = void (*)();
+using FileReadFn = int (*)(const char* name, void* dst, int max);
+VoidFn g_ambient_parse = nullptr;
+
+void ambient_load() {
+    g_ambient_parse();
+    char name[96];
+    const int level = *g_img->va<int32_t>(kLevelNumber);
+    snprintf(name, sizeof name, "host0:bg/ambient/level%d_ambient.raw", level);
+    static uint8_t buf[0x1000];
+    const int n = reinterpret_cast<FileReadFn>(g_img->va<uint8_t>(kFileRead))(name, buf, int(sizeof buf));
+    if (n <= 0 || n % 12 != 0) {
+        log("Raumhelligkeit: %s fehlt, Textfassung bleibt\n", name);
+        return;
+    }
+    const size_t bytes = std::min<size_t>(size_t(n), kAmbientTableBytes);
+    float* tab = g_img->va<float>(kAmbientTable);
+    int changed = 0;
+    for (size_t i = 0; i < bytes / 4; i += 3) {
+        float v[3];
+        memcpy(v, buf + i * 4, 12);
+        if (v[0] != tab[i] || v[1] != tab[i + 1] || v[2] != tab[i + 2]) ++changed;
+    }
+    memcpy(tab, buf, bytes);
+    log("Raumhelligkeit: Level %d aus .raw (%d Räume, %d anders als die Textfassung)\n", level, n / 12, changed);
+}
+
 }  // namespace
 
 bool effectfix_install(const Ts2Image& img, ID3D11Device* dev) {
@@ -239,6 +290,12 @@ bool effectfix_install(const Ts2Image& img, ID3D11Device* dev) {
     if (GetEnvironmentVariableW(L"TS2_EFFEKTFIX", v, 8) > 0 && v[0] == L'0') {
         log("Effekte: Korrekturen aus (TS2_EFFEKTFIX=0)\n");
         return false;
+    }
+    // TS2_RAUMLICHT=0: Raumhelligkeit wie bisher aus der Textfassung
+    if (!(GetEnvironmentVariableW(L"TS2_RAUMLICHT", v, 8) > 0 && v[0] == L'0')) {
+        g_ambient_parse = reinterpret_cast<VoidFn>(
+            hook_call(img, kAmbientParseCall, kAmbientParse, reinterpret_cast<const void*>(&ambient_load)));
+        if (!g_ambient_parse) log("Raumhelligkeit: Aufruf 0x1410F7A96 unerwartet, aus\n");
     }
     light_init();
     return true;
@@ -270,9 +327,96 @@ static void copy_probe() {
         s.v[3], s.v[4], int(s.v[5]), s.v[6], s.v[7], static_cast<unsigned long long>(cur));
 }
 
+// TS2_LICHTPROBE=1: Umgebung und Lichter jeder Figurenzeichnung (spec 0x200)
+// aus TS2s Vorlage (0x142FE38E0, 0x142FE3850: je Licht Lage, Farbe, min/max),
+// gemeldet bei jeder neuen Kombination
+static void light_probe() {
+    static const bool on = GetEnvironmentVariableW(L"TS2_LICHTPROBE", nullptr, 0) > 0;
+    if (!on) return;
+    // Raum von Spieler 1 (Spieler +0xD78, wie 0x1411CA054) bei jeder Änderung
+    if (uint8_t* p1 = *g_img->va<uint8_t*>(0x142F5EAD8)) {
+        static int last_room = -1;
+        const int room = *reinterpret_cast<int32_t*>(p1 + 0xD78);
+        if (room != last_room) {
+            last_room = room;
+            const float* pp = reinterpret_cast<const float*>(p1 + 0xFC);
+            const float* a = g_img->va<float>(0x143F33CC0) + room * 3;
+            log("[lichtprobe] Spieler in Raum %d bei %.1f %.1f %.1f, Umgebung %.3f %.3f %.3f\n", room, pp[0], pp[1],
+                pp[2], a[0], a[1], a[2]);
+        }
+        // TS2_SPRUNG=x,y,z[,raum]: 3 s nach dem Levelstart Spieler 1 dorthin
+        // setzen (nur Probe: Raum +0xD78 mitsetzen)
+        static float jump[4] = {};
+        static int jump_state = [] {
+            wchar_t s[64] = {};
+            if (GetEnvironmentVariableW(L"TS2_SPRUNG", s, 64) <= 0) return -1;
+            jump[3] = -1;
+            return swscanf_s(s, L"%f,%f,%f,%f", &jump[0], &jump[1], &jump[2], &jump[3]) >= 3 ? 0 : -1;
+        }();
+        static ULONGLONG jump_at = 0;
+        if (jump_state == 0 && *reinterpret_cast<int32_t*>(p1 + 0xD78) > 2) jump_state = 1, jump_at = GetTickCount64() + 3000;
+        if (jump_state == 1 && GetTickCount64() >= jump_at) {
+            float* pp = reinterpret_cast<float*>(p1 + 0xFC);
+            pp[0] = jump[0], pp[1] = jump[1], pp[2] = jump[2];
+            if (jump[3] >= 0) *reinterpret_cast<int32_t*>(p1 + 0xD78) = int32_t(jump[3]);
+            log("[lichtprobe] Sprung nach %.1f %.1f %.1f\n", jump[0], jump[1], jump[2]);
+            jump_state = 2;
+        }
+        // TS2_RAUMSUCHE=<raum>: einmal ein Gitter mit der Raumsuche
+        // 0x1411BFA08 abtasten und melden, wo dieser Raum liegt
+        static int search = [] {
+            wchar_t s[16] = {};
+            return GetEnvironmentVariableW(L"TS2_RAUMSUCHE", s, 16) > 0 ? _wtoi(s) : -1;
+        }();
+        if (search >= 0 && *reinterpret_cast<int32_t*>(p1 + 0xD78) > 2) {
+            using FindRoomFn = int32_t (*)(const float*, float, float);
+            const auto find = reinterpret_cast<FindRoomFn>(g_img->va<uint8_t>(0x1411BFA08));
+            const float arg = *reinterpret_cast<float*>(p1 + 0xF4);
+            float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+            int hits = 0;
+            for (float y = -20; y <= 30; y += 2.5f)
+                for (float x = -150; x <= 150; x += 2)
+                    for (float z = -150; z <= 150; z += 2) {
+                        const float p[3] = {x, y, z};
+                        if (find(p, 1.0f, arg) != search) continue;
+                        if (hits++ < 12) log("[lichtprobe] Raum %d bei %.0f %.0f %.0f\n", search, x, y, z);
+                        for (int k = 0; k < 3; ++k) lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
+                    }
+            log("[lichtprobe] Raum %d: %d Treffer, %.0f..%.0f %.0f..%.0f %.0f..%.0f\n", search, hits, lo[0], hi[0], lo[1],
+                hi[1], lo[2], hi[2]);
+            search = -1;
+        }
+    }
+    const uint32_t f = *g_img->va<uint32_t>(kCurSpec);
+    if (!(f & 0x200u)) return;
+    float v[4 + 36];
+    memcpy(v, g_img->va<float>(0x142FE38E0), 16);
+    memcpy(v + 4, g_img->va<float>(0x142FE3850), 0x90);
+    static std::vector<std::vector<float>> seen;
+    // Schlüssel: Umgebung und Farben (die Lagen ändern sich mit der Kamera)
+    std::vector<float> k(v, v + 4);
+    for (int i = 0; i < 3; ++i) k.insert(k.end(), v + 8 + i * 12, v + 11 + i * 12);
+    for (float& x : k) x = float(int(x * 20.f));
+    for (auto& s : seen)
+        if (s == k) return;
+    if (seen.size() > 4000) return;
+    seen.push_back(k);
+    const float* cp = nullptr;
+    if (uint8_t* cam = *g_img->va<uint8_t*>(0x143F3A870)) cp = reinterpret_cast<const float*>(cam + 0x2A0);
+    log("[lichtprobe] spec %08X amb %.2f %.2f %.2f %.2f Kamera %.1f %.1f %.1f", f, v[0], v[1], v[2], v[3],
+        cp ? cp[0] : 0.f, cp ? cp[1] : 0.f, cp ? cp[2] : 0.f);
+    for (int i = 0; i < 3; ++i) {
+        const float* l = v + 4 + i * 12;
+        log(" | L%d %.1f %.1f %.1f col %.2f %.2f %.2f %.2f f %.1f %.1f", i, l[0], l[1], l[2], l[4], l[5], l[6], l[7],
+            l[8], l[9]);
+    }
+    log("\n");
+}
+
 bool effectfix_before(ID3D11DeviceContext* c) {
     fix_rain_blend();
     copy_probe();
+    light_probe();
     // TS2_SICHTART=<n>: Sichtart des Spielers erzwingen (0x143F28880 +
     // Spieler·0x12D8; 7 = Kamera-Sucher 0x141139844), nur Probe
     static const int force_view = [] {
