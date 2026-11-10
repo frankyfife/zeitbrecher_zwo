@@ -204,8 +204,12 @@ MainWindow::MainWindow(QWidget* parent)
                                fontMetrics().height() * 6);
     play_btn_->setToolTip(QStringLiteral("ts2.exe starten und den Launcher schließen"));
     connect(play_btn_, &QPushButton::clicked, this, &MainWindow::play);
+    // wie FuturamaPC: Zurücksetzen rechts in eigener Zeile über dem Fuß
+    auto* reset_row = new QHBoxLayout;
+    reset_row->addStretch(1);
+    reset_row->addWidget(reset_btn_);
+    root->addLayout(reset_row);
     footer->addWidget(status_, 1);
-    footer->addWidget(reset_btn_, 0, Qt::AlignVCenter);
     footer->addSpacing(gap);
     footer->addWidget(play_btn_, 0, Qt::AlignVCenter);
     root->addLayout(footer);
