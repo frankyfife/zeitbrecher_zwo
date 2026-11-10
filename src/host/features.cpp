@@ -248,6 +248,16 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
         if (probe && g_frame_no % 120 == 0) {
             const int32_t* v = *img.va<int32_t*>(0x143F0F508);
             uint8_t* cam = *img.va<uint8_t*>(hf2::kCamera);
+            if (uint8_t* g = *img.va<uint8_t*>(0x143F359D0)) {
+                for (uint32_t off : {0x60u, 0x230u}) {
+                    const float* m = reinterpret_cast<const float*>(g + off);
+                    log("[matrix +0x%X] %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f\n",
+                        off, m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13],
+                        m[14], m[15]);
+                }
+                const float* z = reinterpret_cast<const float*>(g + 0x2F0);
+                log("[menue3d] +0x2F0: %.3f %.3f %.3f %.3f %.3f\n", z[0], z[1], z[2], z[3], z[4]);
+            }
             if (v)
                 log("[ausschnitt] %d %d %d %d %d | %d %d %d %d %d | Kamera tan %.4f %.4f fov %.2f\n", v[0], v[1], v[2],
                     v[3], v[4], v[5], v[6], v[7], v[8], v[9], cam ? *reinterpret_cast<float*>(cam + 0x348) : 0.0f,

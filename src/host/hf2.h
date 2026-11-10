@@ -113,6 +113,9 @@ constexpr uint64_t kMenuFinish = 0x1410DD97C;       // void (menu*)
 constexpr uint64_t kPageShow = 0x1410B3CCC;         // void (page*, int)
 constexpr uint64_t kMenuUpdate = 0x1410DFE4C;      // Menü je Takt aktualisieren (Xbox FUN_000F1D30)
 constexpr uint64_t kMenuUpdateCall = 0x1410E05AB;  // sein einziger Aufruf (Schleife über die Menüs einer Seite)
+// Text eines 3D-Menüeintrags ausgeben (Lage float2* in rdx); einziger Aufruf
+constexpr uint64_t kMenuText3d = 0x14121DA7C;
+constexpr uint64_t kMenuText3dCall = 0x1410DAC81;
 constexpr uint64_t kSetNextPage = 0x1410B4948;      // void (page-Beschreibung*)
 constexpr uint64_t kGotoStory = 0x1410C817C, kGotoArcade = 0x1410C8194,
                    kGotoChallenge = 0x1410C81A0, kQuit = 0x1410C0D80;

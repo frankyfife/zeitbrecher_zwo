@@ -10,6 +10,7 @@
 #include <fstream>
 
 #include "hf2.h"
+#include "hooks.h"
 #include "log.h"
 
 namespace host {
@@ -172,7 +173,27 @@ void language_install(const Ts2Image& img, const std::filesystem::path& game, co
     log("Sprache %ls: %d von %d Texten\n", code.c_str(), replaced, kEntries);
 }
 
+// 3D-Menüs (Pause, "Beenden?", Tod, Levelende): Die Texte zeichnet
+// 0x1410DAA74 über 0x14121DA7C an (x, v) mit v = Eintrag +0x98; die Balken
+// liegen anders. Am Bild gemessen (1920×1080, Pausenmenü Siberia): Texte
+// y = 571 − 593·v, Balkenmitten y ≈ 562,6 − 739·v. Die Texte saßen dadurch
+// unter bzw. neben ihren Balken. v wird für die Textausgabe so umgerechnet,
+// dass die Texte auf den Balkenmitten liegen: v' = 0,0142 + 1,2462·v.
+using Text3dFn = void (*)(void*, float*, void*, void*, void*, void*);
+Text3dFn g_text3d = nullptr;
+void text3d_hook(void* a, float* pos, void* c, void* d, void* e, void* f) {
+    if (pos) {
+        float moved[2] = {pos[0], 0.0142f + 1.2462f * pos[1]};
+        g_text3d(a, moved, c, d, e, f);
+        return;
+    }
+    g_text3d(a, pos, c, d, e, f);
+}
+
 void unlock_install(const Ts2Image& img, const UnlockConfig& c) {
+    g_text3d = reinterpret_cast<Text3dFn>(
+        hook_call(img, hf2::kMenuText3dCall, hf2::kMenuText3d, reinterpret_cast<const void*>(&text3d_hook)));
+    if (!g_text3d) log("3D-Menütexte: Aufruf 0x1410DAC81 nicht gefunden\n");
     char* flags = img.va<char>(hf2::kUnlockFlags);
     flags[hf2::kUnlockStory] = c.story;
     flags[hf2::kUnlockArcade] = c.arcade;

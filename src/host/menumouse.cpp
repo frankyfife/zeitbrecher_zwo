@@ -58,10 +58,10 @@ int hit_row(uint8_t* m, float gx, float gy) {
             // 3D-Menüs (Pause, Beenden?, Tod, Levelende): Einträge ohne Höhe,
             // ihre Lage ein Float bei +0x98 (Xbox +0x60). Ihre Breite ist 1920
             // oder 0 (z. B. "Beenden?"); früher schied 0 hier aus, und die Maus
-            // ging in diesen Menüs nicht. Am Bild gemessen (OPTIONS 0,49 → 278, Continue 0,22 → 446,
-            // Quit 0,04 → 543): y = 571 − 593 · v, ±6 px.
+            // ging in diesen Menüs nicht. Die Texte liegen auf den Balkenmitten
+            // (menu.cpp, text3d_hook), am Bild gemessen: y ≈ 562,6 − 739 · v.
             const float v = at<float>(it, 0x98);
-            const float cy = 571.0f - 593.0f * v;
+            const float cy = 562.6f - 739.0f * v;
             if (v > -2.0f && v < 2.0f && gy >= cy - 45.0f && gy < cy + 45.0f && gx >= 280.0f && gx < 1640.0f)
                 return (flags & 8) ? -1 : row;
             continue;

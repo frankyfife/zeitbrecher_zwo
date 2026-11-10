@@ -48,7 +48,7 @@ Funktionen von außen erreicht. Daraus:
 | Befund | Stand |
 |---|---|
 | "%d/%d Spieler" am Container (Siberia) | behoben: Xbox-Texttabelle hat ab 2425 einen Eintrag mehr |
-| Menütexte nicht in ihren Balken (Pausen-/Game-over-Menü, 3D) | offen; mit TS2 Redux rücken Ring und Fußzeile an den Rand, der Versatz der Texte bleibt. Die Texte zeichnet `0x1410DAA74` in 3D: Punkt (−Breite/2, Eintrag +0x98) über `0x14121DA7C` mit der Matrix `*0x143F359D0`+0x60 transformiert, durch w geteilt und mit dem Bildausschnitt `*0x143F0F508` (Ursprung +0x00/+0x14, halbe Breite/Höhe +0x10/+0x24) abgebildet; die Balken gehen über die GPU-Projektion aus `camera_setup`. Gemessen liegen die Texte um den Faktor ≈0,8 enger als die Balken: Matrix oder Bildausschnitt passen nicht zur Projektion (Seitenverhältnis?) |
+| Menütexte nicht in ihren Balken (Pausen-/Game-over-Menü, 3D) | behoben: Textausgabe 0x14121DA7C bekommt v umgerechnet (am Bild gemessen), Texte liegen auf den Balkenmitten; Maus folgt |
 | Überlagerte Meldungen (Aufsammeln, Waffen) | offen; nachgestellt nur eine Meldung je Mal, Ursache noch nicht gefunden |
 | Maus im Menü nach Rundenende (Pause 2. Ebene, Tod, Levelende) | behoben: Einträge der 3D-Menüs haben dort Breite 0 und schieden aus; geprüft: Pause → Beenden → "Beenden?" → Beenden per Maus |
 | Kistenschatten schwarz statt weich (Xbox: schwache Abdunklung) | behoben: Eckenfarbe des Flecks ist im PC-Port Unsinn (Floats statt Farbe), eigener Shader mit fester Deckkraft (`[grafik] schatten`), siehe host.md "Schatten" |
@@ -56,7 +56,7 @@ Funktionen von außen erreicht. Daraus:
 | Überstrahlt in Siberia mit Windows-HDR | erste Abhilfe: eigene HDR-Ausgabe (`[grafik] hdr`, `hdr_weiss`) |
 | Waffengeräusche anders als auf der Xbox | Proben gleich benannt (22 kHz); der PC-Port liest die Hall-Skripte `ts2/sound/reverb/levelNN_reverb.s` (Raum → Effektnummer) nie, die Xbox hallt je Raum. Nachbau: Raum verfolgen, Effektnummer → I3DL2-Voreinstellung der XBE, XAudio2-Hall |
 | Launcher schwarz, Reiter, Titel "Zeitbrecher Zwo" | erledigt |
-| Fehlerbehebungen aus TS2 Redux | im eigenen Code (`fixes.inc`, immer an), HD-Texturen unter `game/hd/`, siehe host.md |
+| Fehlerbehebungen aus TS2 Redux | im eigenen Code (`fixes.inc`, immer an), HD-Texturen unter `game/hd/`; eigene HD-Texturen (`tools/hd/make_hd.py`, docs/hd-texturen.md): Fadenkreuze, HUD-Bögen, Banner, Ladebild eigen, Kiste/Riffelblech/Zaun/Baum/Symbole noch von Redux |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret
