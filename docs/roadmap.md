@@ -62,13 +62,13 @@ Funktionen von außen erreicht. Daraus:
 | Level nach und nach freischalten wie auf der Xbox, Spielstand | erledigt: Xbox-Regeln aus der PAL-XBE, `profil.bin` (host.md "Fortschritt") |
 | Untertitel fehlen | behoben: Zwischensequenz-Untertitel waren im PC-Port aus (nur bei nicht-englischer Sprache an), `[sprache] untertitel` |
 | Hall für Umgebung und Waffen | erledigt: XAudio2-Hall nach Dambusters Raumtabellen, übrige Räume mit der häufigsten Voreinstellung (`[ton] hall`) |
-| Redux-Issue #12/#25: Robot Factory hängt nach dem 2. Energieknoten (Fortschritt blockiert) | in Arbeit |
-| Redux-Issue #3: Regen auf der Kamera (schwarze Quadrate, von Redux nur abgeschaltet) | in Arbeit |
-| Redux-Issue #21: Fotokamera-Bild weiß/verschmiert | in Arbeit |
-| Redux-Issue #4: Lichtflackern bei Mündungsfeuer/Feuer | in Arbeit |
-| Redux-Issue #23: Computeranzeigen abgeschnitten | in Arbeit |
-| Redux-Issue #20: Boss-Lebensbalken schlecht lesbar | in Arbeit |
-| Redux-Issue #5: Absturz in der Figurenauswahl | in Arbeit |
+| Redux-Issue #12/#25: Robot Factory hängt nach dem 2. Energieknoten (Fortschritt blockiert) | in ts2.exe nicht nachstellbar (Pfad wie Xbox, alle Varianten getestet); Wachhund `TS2_WACHHUND=1` für den Fall, dass es doch hängt |
+| Redux-Issue #3: Regen auf der Kamera (schwarze Quadrate, von Redux nur abgeschaltet) | behoben: Mischart 9 SUBTRACT → REV_SUBTRACT, Regen wieder an |
+| Redux-Issue #21: Fotokamera-Bild weiß/verschmiert | Sucher in ts2.exe richtig (erzwungen geprüft); Weißbild nach dem Foto ungeprüft (Kamera erst spät in NeoTokyo) |
+| Redux-Issue #4: Lichtflackern bei Mündungsfeuer/Feuer | behoben: Lichtschleifen der Shader mit richtigen Lagen und Dämpfung |
+| Redux-Issue #23: Computeranzeigen abgeschnitten | behoben (Schriften der Bildschirm-Rückrufe auf Konsolengröße), mit Testzeichnung geprüft, echte Anzeige im Level noch nicht |
+| Redux-Issue #20: Boss-Lebensbalken schlecht lesbar | behoben (Farbe halbiert wie Konsole 0x80 = voll) |
+| Redux-Issue #5: Absturz in der Figurenauswahl | behoben: Texturverwaltung gibt wiederverwendete Texturen frei, Liste begrenzt; 1500 Figurenwechsel ohne Absturz |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret

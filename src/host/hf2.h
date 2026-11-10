@@ -192,4 +192,66 @@ constexpr uint64_t kProfileSettings = 0x14110E7A4; // uint8_t* (): Einstellungen
 constexpr uint64_t kSettingsApply = 0x1410CC994;   // Profil → Einstellungs-Globale
 constexpr uint64_t kSettingsApplyStart = 0x14106A159; // Endsprung dorthin beim Start von TS2
 
+// ---- Wachhund (src/host/watchdog.cpp, TS2_WACHHUND=1)
+constexpr uint64_t kWatchTickCounter = 0x142EE3DE8;  // uint32, Begrenzer 0x14107CC64 addiert die Takte je Bild
+constexpr uint64_t kWatchCodeLo = 0x141069000, kWatchCodeHi = 0x141C60000;  // TS2-Code (Stapelsuche)
+
+// ---- Robot Factory, l_41 (src/host/levelfix.cpp)
+constexpr uint64_t kRfLevelTickSlot = 0x14255AAB0;  // Level-Tabelle: Aktualisierung 0x14116F78C
+constexpr uint64_t kRfNodes = 0x143F273C0;          // Objekt*[] Energieknoten (0x14116FEE0 trägt ein)
+constexpr uint64_t kRfNodeCount = 0x143F273F0;      // int
+constexpr uint64_t kRfObjTable = 0x143F27B40;       // {int id; Objekt*} je 16 Byte (0x14114DC18)
+constexpr uint64_t kRfObjCount = 0x142F3CB10;       // int
+constexpr uint64_t kRfPads = 0x142F5EA70;           // Pad* (je 0x20: +0 id, +0xC Lage)
+constexpr uint64_t kRfPadCount = 0x143F1A480;       // int
+
+// ---- HUD, Menüanzeigen, Figurenwahl (src/host/hudfix.cpp)
+// Texturen (dx11.cpp des Ports): D3D-Tabelle 0x142FE59A0 (4096 × 0x18: Textur,
+// SRV, Sampler), Zähler 0x143020A80, davon System 0x143020A84; Anlegen
+// 0x141229FD0. Beschreiber-Bank *0x14259D5E0 (= 0x143020AE8: Tabelle je 0x38,
+// Bytes, nächster freier absteigend, Anzahl 1024), angelegt je Level in
+// 0x14122C430; Laden nach Texturnummer mit Zwischenspeicher 0x14122C700.
+constexpr uint64_t kTexListAdd = 0x14122B41C;      // (D3D-Nummer) an die Liste hängen
+constexpr uint64_t kTexList = 0x142FFDB60;         // int32[1024], nirgends gelesen
+constexpr uint64_t kTexListCount = 0x143020A90;    // int
+constexpr uint32_t kTexListCap = 1024;             // dahinter Zustände, ab 0x142FFEB90 Upload-Warteschlange
+constexpr uint64_t kD3DSlots = 0x142FE59A0;        // {Textur*, SRV*, Sampler*}[4096]
+constexpr uint64_t kD3DTexCount = 0x143020A80;     // int, wächst nur (Levelwechsel: 0x14122B2B4)
+constexpr uint64_t kD3DTexSystem = 0x143020A84;    // int, Plätze darunter bleiben
+constexpr uint64_t kD3DCreate = 0x141229FD0;       // int (b, h, ?, ?, Daten, ?) → D3D-Nummer
+constexpr uint64_t kD3DCreateCalls[] = {0x14122B35A, 0x14122B44E};
+constexpr uint64_t kUploadQueue = 0x142FFEB90;     // {Ziel, SRV, Daten, Zeilenlänge, Mip}[], geleert 0x14122A1D0
+constexpr uint64_t kUploadCount = 0x143020A8C;
+constexpr uint64_t kRtList = 0x14301FA10;          // int32[]: D3D-Nummern der Render-Ziele (0x14122B334)
+constexpr uint64_t kRtListCount = 0x143020A94;
+constexpr uint64_t kTexBank = 0x14259D5E0;         // TexBank* (= 0x143020AE8)
+constexpr uint64_t kTexDescAlloc = 0x14122C33C;    // int (): Beschreiber holen (leer: frei markierte, Flag 0x800000)
+constexpr uint64_t kTexDescFree = 0x14122C918;     // (Beschreiber): nur Flag 0x800000 setzen
+constexpr uint64_t kCharModelLoad = 0x1410CE6E0;   // (Spieler, Figur) Figurenwahl: Modell laden
+constexpr uint64_t kCharModelLoadCall = 0x1410D06A7;
+// HUD 0x141140A00 (einziger Aufruf 0x14114D22B); Spieler *0x143F1A388, sein
+// Ziel +0xE48 bekommt im Story-Modus (0x143F2F94C == 4) bei bestimmten Typen
+// (+0xC, z. B. 0x2C9) den Gegnerbalken 0x141140590 (20 Segmente, Farben
+// 0x142514F18, voll ×1,4, leer ×1,4×0,7; Alpha voll 0x7F, leer 0x6E).
+constexpr uint64_t kHudDraw = 0x141140A00;
+constexpr uint64_t kHudDrawCall = 0x14114D22B;
+constexpr uint64_t kHudPlayer = 0x143F1A388;
+constexpr uint32_t kPlayerTarget = 0xE48;
+constexpr uint64_t kGameMode = 0x143F2F94C;        // 4 = Story
+constexpr uint64_t kEnemyBar = 0x141140590;       // (Gegner, Text, x0, y0, x1, y1, Alpha voll, Alpha leer)
+constexpr uint64_t kHudQuad = 0x141088D98;        // (x0, y0, x1, y1, 4 Eckenfarben 0xAARRGGBB)
+constexpr uint64_t kEnemyBarQuadCall = 0x141140906;
+// Bildschirme mit Text (Rückrufe über 0x1411F3E50, zeichnen oben links in
+// Konsolen-Pixeln, dann 0x14122C5D0 → 0x14122B384 kopiert Texturgröße heraus):
+// 0x141153FA8, Tastenfeld "Enter code:" 0x141160FD4 (128×64), 0x141161530,
+// 0x141170A68. Schriftstile 0x14259C020 (24 × 0x28: Schrift, Maßstab x/y +8/+0xC).
+constexpr uint64_t kFontStyles = 0x14259C020;
+constexpr uint64_t kScreenCallbacks[] = {0x141153FA8, 0x141160FD4, 0x141161530, 0x141170A68};
+struct ScreenCallbackRef { uint64_t lea; int k; };   // lea r8, [rip+Rückruf]
+constexpr ScreenCallbackRef kScreenCallbackRefs[] = {
+    {0x141158811, 0}, {0x141162ED4, 1}, {0x141162C0C, 2}, {0x141173151, 3}, {0x141173249, 3}};
+constexpr uint32_t kHudThunkRva = 0x00048000;      // eigene Seite für Sprünge (in ts2.bin nur reserviert)
+constexpr uint64_t kHudRect = 0x143F0F508;         // int32*: +0 links, +4 rechts, +0x14 oben
+constexpr uint64_t kHudMarginL = 0x143F28860, kHudMarginT = 0x143F28864, kHudMarginR = 0x143F28868;
+
 }  // namespace hf2

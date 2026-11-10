@@ -35,10 +35,14 @@
 #include "ctxproxy.h"
 #include "shadowfix.h"
 #include "alphafix.h"
+#include "effectfix.h"
 #include "fixes.h"
 #include "menu.h"
 #include "menumouse.h"
 #include "subtitles.h"
+#include "watchdog.h"
+#include "levelfix.h"
+#include "hudfix.h"
 #include "ts2options.h"
 #include "timing.h"
 #include "postfx.h"
@@ -581,8 +585,11 @@ bool draw_probe(ID3D11DeviceContext* c, UINT count, UINT start, INT base) {
     }
     D3D11_TEXTURE2D_DESC td{};
     if (tex) tex->GetDesc(&td), tex->Release();
-    log("[zeichnung] %d: Indizes %u, Mischung %s, Textur %d (%ux%u F%d, Inhalt %08X)\n", draws++, count, bn.c_str(), id,
-        td.Width, td.Height, int(td.Format), hash);
+    static bool modes_logged = false;
+    if (!modes_logged) modes_logged = true, effectfix_log_blend_modes();
+    log("[zeichnung] %d: Indizes %u, Mischung %s (Art %d), Textur %d (%ux%u F%d, Inhalt %08X)\n", draws++, count,
+        bn.c_str(), effectfix_blend_mode(), id, td.Width, td.Height, int(td.Format), hash);
+    effectfix_log_draw(c);
     // TS2_DRAWSKIP=<Texturnummer>: diese Zeichnungen auslassen
     static const int skip_tex = [] {
         wchar_t v[16] = {};
@@ -934,6 +941,9 @@ int wmain(int argc, wchar_t** argv) {
     timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
     subtitles_install(g_img, self_dir() / L"ts2.ini");
+    watchdog_install(g_img);
+    levelfix_install(g_img);
+    hudfix_install(g_img, self_dir() / L"ts2.ini");
     profile_install(g_img, self_dir() / L"profil.bin");
     {
         wchar_t code[16] = {};
@@ -976,9 +986,11 @@ int wmain(int argc, wchar_t** argv) {
         alpha_on = alphafix_init(
             gfx.dev, GetPrivateProfileIntW(L"grafik", L"transparenz", 1, (self_dir() / L"ts2.ini").c_str()) != 0);
     }
-    const bool use_proxy = g_dump_tick >= 0 || shadow_on || alpha_on;
+    // Bildschirmeffekte (Regentropfen, Kamera, Licht; effectfix.h)
+    static const bool effect_on = effectfix_install(g_img, gfx.dev);
+    const bool use_proxy = g_dump_tick >= 0 || shadow_on || alpha_on || effect_on;
     if (use_proxy) {
-        static bool shadow_drawn = false, alpha_drawn = false;
+        static bool shadow_drawn = false, alpha_drawn = false, effect_drawn = false;
         proxy.on_blend = [](ID3D11BlendState* st, const FLOAT*) { g_cur_blend = st; };
         proxy.on_draw = [](ID3D11DeviceContext* real, UINT n, UINT st, INT b) {
             if (g_dump_tick >= 0 && !draw_probe(real, n, st, b)) return false;
@@ -986,11 +998,13 @@ int wmain(int argc, wchar_t** argv) {
             const bool alpha_blend = k != g_blend_kind.end() && k->second == 1;  // SRC_ALPHA/INV_SRC_ALPHA
             shadow_drawn = shadow_on && alpha_blend && shadowfix_before(real);
             alpha_drawn = alpha_on && alpha_blend && !shadow_drawn && alphafix_before(real);
+            effect_drawn = effect_on && !shadow_drawn && effectfix_before(real);
             return true;
         };
         proxy.after_draw = [](ID3D11DeviceContext* real) {
             if (shadow_drawn) shadowfix_after(real), shadow_drawn = false;
             if (alpha_drawn) alphafix_after(real), alpha_drawn = false;
+            if (effect_drawn) effectfix_after(real), effect_drawn = false;
         };
         proxy.on_clear = [](ID3D11RenderTargetView* v, const FLOAT* c) {
             if (g_tick_now == g_dump_tick)

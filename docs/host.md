@@ -288,7 +288,7 @@ dessen Dateien:
 
 | Gruppe | Inhalt |
 |---|---|
-| spielfehler | Reaper-Spawn-Absturz (`0x1411004E4`), Regen auf der Kamera (`0x14122A7AE`, ein `int3`) |
+| spielfehler | Redux nennt sie Reaper-Spawn- und Regen-Fix; tatsächlich: `0x1411004E4` schaltet die Regentropfen beim Anlegen ab (ts2.exe setzt ihn wieder auf 1, siehe "Bildschirmeffekte"), `0x14122A7AE` ist das `int3` im leeren Stub `0x14122A7AC` (Hitzeflimmern `0x1410EAD20`, Objektzeichnung `0x1411CB5E0`) |
 | unsichtbar | Unsichtbarkeitsfehler (`0x1410E4A32`) |
 | anzeige | HUD/Text: Schriften, Breiten, Lagen (28 Stellen, ein Code-Stück, 9 Konstanten) |
 | menue | Menü-Layout wie auf der Konsole (178 Stellen, vier Code-Stücke, 7 Konstanten) |
@@ -523,6 +523,127 @@ rote Flächen. Befund:
   Takt Kameralage und Mischung, sobald eine solche Textur gezeichnet wird;
   beim ersten Mal kommen Shader und Ecken dazu.
 
+## Bildschirmeffekte (`src/host/effectfix.cpp`)
+
+**Regen auf der Kamera.** Die Tropfen (0x141101158, `misc/camsplash`) zeichnet
+TS2 zweimal: mit Mischart 8 (DEST_COLOR·Quelle + Ziel, aufhellen), dann versetzt
+mit Mischart 9. Der PC-Port legt Art 9 als DEST_COLOR/ONE mit SUBTRACT an:
+Quelle·Ziel − Ziel ist überall negativ, wo die Textur nicht weiß ist – die
+schwarzen Quadrate (TS2-Redux-Issue #3). ts2.exe ersetzt die 16 Zustände von
+Art 9 in TS2s Tabelle (0x14301ECE0) durch REV_SUBTRACT (Ziel·(1 − Quelle),
+abdunkeln; nur der Regen benutzt Art 9) und schaltet die Tropfen wieder ein
+(0x1411004E4 = 1, Redux setzt 0; `TS2_REGENAUS=1` lässt das). Geprüft:
+NeoTokyo-Start, Tropfen statt Quadrate.
+
+**Licht von Mündungsfeuer und Feuer** (Redux-Issue #4). TS2 hat ein
+Shader-Paar (ts.vp/ts.pp). Der Pixel-Shader (Levelgeometrie, spec
+0x20000000) rechnet die Lichter gegen SV_POSITION (Bildschirmpixel) und
+dämpft mit lightpos.w/lightcol.w, die TS2 als 0/1 übergibt: ein Schuss
+erhellte Wände im ganzen Bild. Die Lichter liegen dort im Modellraum (Level =
+Welt; gemessen: Mündungsfeuer 1,6 vor der Kamera, falloff 0/4/0,25). Der
+Vertex-Shader (Figuren, spec 0x200) zieht die projizierte statt der
+Sichtraum-Lage ab. ts2.exe setzt für diese Zeichnungen ein nachgebautes Paar
+mit richtigen Lagen und der Dämpfung aus `falloffs` (min, max, 1/(max−min),
+wie TS2s Vertex-Shader) ein; spec liest es aus 0x142FE3828. Ohne Licht
+bildgleich. `TS2_LICHTFIX=0|1|2` (aus/Level/Figuren), `TS2_EFFEKTFIX=0` alles
+aus. Geprüft: Wild West mit Schüssen.
+
+**Kamera (Redux-Issue #21, Sichtart 7, 0x141139844).** Der Sucher mischt die
+Kopie des vorigen Bilds (0x14122B74C(3), kopiert von 0x14122B524 am Anfang
+von Render) mit DEST_ALPHA in den Rand (absichtliche Zoom-Unschärfe, Xbox
+gleich). In ts2.exe (erzwungen mit `TS2_SICHTART=7`) bleibt das Innere live;
+das Weißbild nach dem Foto ist ungeprüft (Kamera erst spät in NeoTokyo).
+Proben: `TS2_KOPIEPROBE=1`, TS2_DRAWDUMP zeigt Mischart und Lichter.
+Nebenbefund: 0x14122AA90 (Scissor) begrenzt fest auf 1920×1080.
+
+## HUD, Bildschirme und Figurenwahl (`src/host/hudfix.cpp`)
+
+### Figurenwahl: Absturz nach vielen Figuren (Redux-Issue #5)
+
+**Befund.** Wer in Arcade → Eigen → Figurenwahl lange blättert, bringt
+ts2.exe nach rund 90 Figurwechseln zum Absturz in `d3d11.dll`
+(`UpdateSubresource` aus 0x14122A21F, Ziel z. B. 0x1580000040E). Ursache
+ist die Texturverwaltung des Ports (dx11.cpp):
+
+- TS2 führt Texturen über Beschreiber (Bank `*0x14259D5E0`, je Level 1024
+  zu 0x38 Byte; +0x18 Flags, +0x1C Texturnummer, +0x34 D3D-Nummer). Ein
+  entladenes Modell gibt seine Beschreiber frei (0x14107387C → 0x14122C918
+  setzt Flag 0x800000), und sie werden wiederverwendet, sobald die Bank leer
+  ist (0x14122C33C).
+- Der Port legt je Beschreiber eine D3D-Textur an (0x141229FD0, Tabelle
+  0x142FE59A0 mit 4096 Plätzen, Zähler 0x143020A80 wächst nur bis zum
+  Levelwechsel) und hängt die Nummer an eine Liste 0x142FFDB60 (1024
+  Plätze, Zähler 0x143020A90, von niemandem gelesen). Die alte D3D-Textur
+  eines wiederverwendeten Beschreibers gibt er nie frei.
+- Jede neue Figur lädt 8–10 Texturen. Nach rund 90 Figuren läuft die Liste
+  über; dahinter liegen Zeichenzustände und die Upload-Warteschlange
+  (0x142FFEB90), deren erstes Ziel überschrieben wird. Mehr Spielspeicher
+  hilft nicht. Die Redux-Umgehung (nop bei 0x1410D068B) unterdrückt nur das
+  Laden der Modelle.
+
+**Abhilfe.** ts2.exe ersetzt 0x14122C33C (gleiche Logik) und gibt beim
+Wiederverwenden eines Beschreibers dessen alte D3D-Textur frei (nicht, wenn
+sie ein Render-Ziel ist oder noch in der Upload-Warteschlange steht). Das
+Anlegen einer D3D-Textur (Aufrufe 0x14122B35A, 0x14122B44E) nimmt zuerst
+einen so frei gewordenen Platz. Die Liste 0x14122B41C bekommt eine Grenze.
+
+**Geprüft.** Skript Arcade → Eigen → Figurenwahl, alle 12 Takte "runter":
+vorher Absturz nach 45 s (Takt ~2750, 93 Modelle), jetzt 20 100 Takte
+(~1500 Figurwechsel, 10 361 D3D-Texturen wiederverwendet) ohne Absturz,
+D3D-Zähler bleibt bei 1026. Nach 3800 Wechseln zeigen die Modelle richtige
+Texturen, das Match danach (Mexiko) startet. Probe: `TS2_HUDPROBE=1`
+(Zähler je Figur, bei Abstürzen Modul und Abwicklung bis in den TS2-Code).
+
+### Gegnerbalken der Endgegner (Redux-Issue #20)
+
+**Befund.** 0x141140590 zeichnet den Balken "ENEMY" (im HUD 0x141140A00
+nur im Story-Modus für Ziele bestimmter Typen, z. B. 0x2C9) als 20
+Vierecke (0x141088D98). Volle Segmente: Tabellenfarbe (0x142514F18) × 1,4,
+leere × 1,4 × 0,7, Alpha 0x7F bzw. 0x6E – Werte für die Konsolen-Regel
+"0x80 = voll": volles Gelb 177/255, leeres 124/255. Der Vertex-Shader des
+Ports (`ts.vp`) multipliziert jede Eckenfarbe mit 255/127; voll und leer
+sättigen beide bei 255, nur das Alpha unterscheidet sich (100 % zu 86 %).
+Die Xbox-Fassung hat dieselbe Logik und dieselben Konstanten (PAL
+0xC8F60, Tabelle 0x2CC300).
+
+**Abhilfe.** Für die Vierecke des Balkens (Aufruf 0x141140906) halbiert
+ts2.exe die Farbanteile; das Alpha bleibt (dort entspricht die Verdopplung
+der Konsole). Gemessen bei 12 von 20 Segmenten: vorher voll (255,255,0) /
+leer (224,75,5), jetzt voll (177,177,0) / leer (114,40,6), wie auf den
+Konsolen-Bildern im Issue. Ohne Endgegner erscheint kein Balken.
+
+Test: `TS2_BOSSTEST=<n>` zeichnet im Story-Modus nach dem HUD einen Balken
+mit n vollen Segmenten von links (−n: von rechts), `TS2_BALKEN_ALT=1`
+zeigt ihn wie vorher. Ohne diese Variablen ändert sich am HUD nichts.
+
+### Bildschirme mit Text (Redux-Issue #23)
+
+**Befund.** Computer-Bildschirme sind Rückrufe eines Objekts (Anmeldung
+0x1411F3E50), die ihren Inhalt in Konsolen-Pixeln oben links in den
+Bildpuffer zeichnen; 0x14122C5D0 → 0x14122B384 kopiert dann ein Rechteck
+in Texturgröße heraus (z. B. Tastenfeld "Enter code:" 0x141160FD4,
+128×64). Rechtecke und Linien passen (die Oberfläche des Ports hat
+Pixel-Koordinaten 1920×1080), die Schriften sind aber für 1080 Zeilen
+gemacht, also 2,25-mal so groß wie auf der Konsole. "Code eingeben:" in
+Schrift 4 ist 321 Pixel breit (Textur 128); auf dem Bildschirm steht nur
+der Anfang, stark vergrößert. Die Handkarte (nur Linien) ist nicht
+betroffen.
+
+**Abhilfe.** Die vier Rückrufe mit Text (0x141153FA8, 0x141160FD4,
+0x141161530, 0x141170A68; fünf Anmeldungen mit `lea r8`) gehen über
+Sprünge in einer eigenen Seite (RVA 0x48000); für ihre Dauer sind alle 24
+Schriftstile (0x14259C020, Maßstab +8/+0xC) um 480/Höhe der Oberfläche
+verkleinert. "Code eingeben:" ist dann 142 Pixel breit, TS2 wählt wie auf
+der Konsole die schmalere Schrift 0x11, und Text samt Ziffern passen in
+die Textur.
+
+**Geprüft** mit `TS2_SCHIRMTEST=1` (zeichnet dieselben Aufrufe wie das
+Tastenfeld nach dem HUD, links wie bisher, rechts verkleinert). Offen: ein
+echter Bildschirm im Level vor die Kamera bringen (in Siberia-, Chicago-
+und Notre-Dame-Start wurde keiner gezeichnet); `TS2_SCHIRM_ALT=1` schaltet
+die Verkleinerung für den Vergleich ab. Bei einer Render-Auflösung ungleich
+1920×1080 ist die Kopie (echte Pixel) nicht geprüft.
+
 ## Fenster und Vollbild
 
 - **DPI:** `ts2.exe` ist DPI-bewusst (pro Monitor, v2) und arbeitet in
@@ -644,6 +765,37 @@ geprüft.
 - **Spur:** `TS2_MENUSPUR=1`.
 - **Offen:** Raster mit Spalten (falls es sie gibt; in den geprüften Menüs
   keine), Schieberegler, ein eigener Zeiger.
+
+## Wachhund (`src/host/watchdog.cpp`)
+
+`TS2_WACHHUND=1` startet einen Thread, der TS2s Taktzähler (`0x142EE3DE8`,
+vom Begrenzer `0x14107CC64` je Bild erhöht) beobachtet. Steht er länger als
+`TS2_WACHHUND_MS` (Vorgabe 2000), hält der Thread den Spiel-Thread kurz an
+und schreibt nach `ts2.log`: RIP, Register, die möglichen Rücksprungadressen
+im TS2-Code (rohe Suche über 1024 Stapeleinträge) und eine Häufigkeitsliste
+aus 200 RIP-Stichproben (zeigt die Schleife). Höchstens sechs Meldungen je
+Stillstand; "Takt läuft wieder", sobald es weitergeht. Ladebildschirme
+können ohne echten Hänger anschlagen.
+
+## Robot Factory (Redux-Issues #12/#25, nicht nachgestellt)
+
+Level l_41 (Story-Index 8, Levelnummer 0x29). Die Level-Aktualisierung
+`0x14116F78C` (Tabelle `0x14255AAB0`) und der Todesrückruf der Energieknoten
+`0x14116F600` ("%d energy nodes remaining", Text 1168/1169) sind wie auf der
+Xbox (PAL `0x186440`). Nur die Knoten 0x7B (Normal/Schwer, hinter den
+Schilden) und 0x80 (Leicht) öffnen beim Tod das Lasertor 0x7F, schalten den
+Laservorhang (Effekt 9, Art 0xF) ab und geben die Wegverbindung der Pads
+0x444-0x445 frei; danach soll laut Berichten TS2 hängen ("vorher am Tor
+gewesen" = Laservorhang berührt). Der Wachroboter (Pult 0x195, Schalter
+`0x1411E0A8C` → `0x1411E0600`, Spieler-Bewegung 8) und der Strahl, der nach
+den Schilden 0x7B zerstört (Effekt 7, Art 0x13, Schadensart 0x18), laufen in
+ts2.exe; nachgestellt mit Torbesuch, Roboterkamera, Schilden über TS2s
+Schadensweg, bei 60 und 120 Hz und auf Leicht: kein Hänger, kein Absturz.
+Mögliche Erklärungen: unter Homefront wirkt ein Absturz in TS2 wie ein
+Einfrieren (Homefront läuft weiter); oder die Ausräum-Schleife des
+Effekt-Ringspeichers (`0x1411AA054`, 256 KB) endet nicht, wenn alle Blöcke
+frei sind. Probe: `TS2_RFTEST="takt:befehl;..."` (Befehle in
+`src/host/levelfix.h`).
 
 ## Bildtakt
 

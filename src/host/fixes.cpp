@@ -85,6 +85,18 @@ void fixes_install(const Ts2Image& img, const std::filesystem::path& game) {
         DWORD old;
         VirtualProtect(pool, 0x1000, PAGE_READONLY, &old);
     }
+    // Regentropfen auf der Kamera: Redux schaltet sie ab (0x1411004E4, das
+    // "aktiv" beim Anlegen eines Tropfens: 1 -> 0), weil sie als schwarze
+    // Quadrate erschienen. effectfix.cpp behebt die Ursache; deshalb wieder 1.
+    // TS2_REGENAUS=1 lässt Reduxs Abschaltung stehen (Vergleich).
+    {
+        auto* on = img.va<uint8_t>(0x1411004E4);
+        if (*on == 0 && GetEnvironmentVariableW(L"TS2_REGENAUS", nullptr, 0) == 0) {
+            const uint8_t one = 1;
+            write(on, &one, 1);
+            log("Regen auf der Kamera: wieder an\n");
+        }
+    }
     // Spielspeicher: TS2 legt beim Start eine Arena fester Größe an
     // (0x141069DA0 → 0x1411A98F8, Größe in 0x1424E23D8 = 58 MB wie auf der
     // Konsole) und ruft exit(1), wenn sie voll ist (0x1411A9A10). Mit
