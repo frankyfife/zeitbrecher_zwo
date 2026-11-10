@@ -213,7 +213,7 @@ Latin-1-Texte). `ts2.ini` `[sprache] text=de` lässt ts2.exe beim Start den
 Tabellenzeiger auf die geladene Tabelle umbiegen; leere Einträge behalten
 den PC-Text. Geprüft: Hauptmenü ("Herausforderung", "Optionen",
 "Beenden", "Zurück" mit Umlaut) und Optionsmenü auf Deutsch, 2752 von 2770
-Texten ersetzt. Die Sprachausgabe bleibt englisch.
+Texten ersetzt (ab Eintrag 2425 hat die Xbox-Tabelle einen Eintrag mehr; ts2.exe gleicht das aus, sonst stand am Container in Siberia "%d/%d Spieler"). Die Sprachausgabe bleibt englisch.
 
 Die Dateien aus `game/sprache` gehören nie ins Repository.
 

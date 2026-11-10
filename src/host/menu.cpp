@@ -147,15 +147,26 @@ void language_install(const Ts2Image& img, const std::filesystem::path& game, co
     static std::vector<const char*> table(kEntries, nullptr);
     auto** pc_slot = img.va<const char* const*>(hf2::kStringTables);
     const char* const* pc = *pc_slot;
-    int replaced = 0;
+    // Xbox-Einträge der Reihe nach
+    std::vector<const char*> xbox(kEntries, "");
     size_t pos = 0;
+    for (int i = 0; i < kEntries && pos < blob.size(); ++i) {
+        xbox[i] = blob.c_str() + pos;
+        pos += std::strlen(xbox[i]) + 1;
+    }
+    // Die Xbox-Tabelle hat bei 2425 einen Eintrag mehr (zweite Fassung von
+    // "A Save game of that name already exists"); ab dort ist PC-Eintrag i
+    // der Xbox-Eintrag i+1 (geprüft mit der englischen Xbox-Tabelle: bis 2424
+    // 2369 gleiche Texte ohne Versatz, danach 298 von 327 mit Versatz 1,
+    // keiner ohne). Ohne das stand am Container in Siberia "%d/%d Spieler".
+    constexpr int kXboxExtra = 2425;
+    int replaced = 0;
     for (int i = 0; i < kEntries; ++i) {
-        const char* s = pos < blob.size() ? blob.c_str() + pos : "";
-        const size_t len = pos < blob.size() ? std::strlen(s) : 0;
-        pos += len + 1;
+        const int x = i >= kXboxExtra ? i + 1 : i;
+        const char* s = x < kEntries ? xbox[x] : "";
         const auto* pv = reinterpret_cast<const uint8_t*>(pc[i]);
         table[i] = (pv >= img.base && pv < img.base + img.size) ? pc[i] : "";  // nur gültige PC-Zeiger
-        if (len) table[i] = s, ++replaced;
+        if (*s && *table[i]) table[i] = s, ++replaced;  // im PC-Port leere Einträge bleiben leer
     }
     *const_cast<const char* const**>(pc_slot) = table.data();
     log("Sprache %ls: %d von %d Texten\n", code.c_str(), replaced, kEntries);
