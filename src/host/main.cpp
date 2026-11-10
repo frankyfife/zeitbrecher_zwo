@@ -34,7 +34,7 @@
 #include "input.h"
 #include "ctxproxy.h"
 #include "shadowfix.h"
-#include "redux.h"
+#include "fixes.h"
 #include "menu.h"
 #include "menumouse.h"
 #include "ts2options.h"
@@ -828,8 +828,9 @@ int wmain(int argc, wchar_t** argv) {
     if (const int n = ts2opt::ini_complete(self_dir() / L"ts2.ini"))
         log("ts2.ini: %d Option(en) ergänzt\n", n);
     const Settings settings = load_settings(self_dir() / L"ts2.ini");
-    // Redux zuerst: die eigenen Umlenkungen prüfen danach ihre Stellen
-    redux_install(g_img, game, self_dir() / L"ts2.ini");
+    // Fehlerbehebungen (nach TS2 Redux) zuerst: die eigenen Umlenkungen
+    // prüfen danach ihre Stellen
+    fixes_install(g_img, game);
     features_install(g_img, settings);
     timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));

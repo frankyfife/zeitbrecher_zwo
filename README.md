@@ -80,12 +80,9 @@ eigenen Xbox-Image der PAL-Fassung: im Launcher unter Spiel → Sprache holen
 und wählen ([docs/host.md](docs/host.md#sprache-srchostmenucpp-toolsrexbox_textpy)).
 
 Die Fehlerbehebungen von [TS2 Redux](https://github.com/HFTSRedux/TS2Redux)
-(Reaper-Absturz, Regen auf der Kamera, Unsichtbarkeit, HUD, Menü-Layout,
-HD-Texturen) übernimmt ts2.exe aus der eigenen Redux-Kopie:
-
-```bash
-python -I tools/re/redux_patches.py <TS2Redux-Ordner> game <Homefront2_Release.exe>
-```
+(Reaper-Absturz, Regen auf der Kamera, Unsichtbarkeit, HUD, Menü-Layout) sind
+in ts2.exe eingebaut ([docs/host.md](docs/host.md)). Hochaufgelöste Texturen
+liegen unter `game/hd/` ([docs/hd-texturen.md](docs/hd-texturen.md)).
 
 Mit Windows-HDR gibt ts2.exe selbst HDR aus (`[grafik] hdr`, Weiß in
 `hdr_weiss` Nits).
@@ -99,3 +96,11 @@ Mit Windows-HDR gibt ts2.exe selbst HDR aus (`[grafik] hdr`, Weiß in
 - [OpenRadical/symbol_maps](https://github.com/OpenRadical/symbol_maps): Symbolkarte
   der GameCube-Fassung von TS2
 - [OpenRadical/tspak](https://github.com/OpenRadical/tspak): P4CK/P8CK-Paks von TS2
+
+## Dank
+
+- [TS2 Redux](https://github.com/HFTSRedux/TS2Redux) (Fanoto, DevilDwarf und
+  das Redux-Team): Fehlerbehebungen und Menü-Layout, hier als Tabelle
+  übernommen; hochaufgelöste Texturen.
+- [split2-recomp_ff](https://github.com/frankyfife/split2-recomp_ff): Vorbild
+  für Steuerung, Waffen, Menüs, freie Kamera und Sichtfeld.

@@ -56,7 +56,7 @@ Funktionen von außen erreicht. Daraus:
 | Überstrahlt in Siberia mit Windows-HDR | erste Abhilfe: eigene HDR-Ausgabe (`[grafik] hdr`, `hdr_weiss`) |
 | Waffengeräusche anders als auf der Xbox | Proben gleich benannt (22 kHz); der PC-Port liest die Hall-Skripte `ts2/sound/reverb/levelNN_reverb.s` (Raum → Effektnummer) nie, die Xbox hallt je Raum. Nachbau: Raum verfolgen, Effektnummer → I3DL2-Voreinstellung der XBE, XAudio2-Hall |
 | Launcher schwarz, Reiter, Titel "Zeitbrecher Zwo" | erledigt |
-| Fehlerbehebungen aus TS2 Redux | übernommen (`game/redux.bin`, HD-Texturen), siehe host.md |
+| Fehlerbehebungen aus TS2 Redux | im eigenen Code (`fixes.inc`, immer an), HD-Texturen unter `game/hd/`, siehe host.md |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret

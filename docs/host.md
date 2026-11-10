@@ -217,47 +217,43 @@ Texten ersetzt (ab Eintrag 2425 hat die Xbox-Tabelle einen Eintrag mehr; ts2.exe
 
 Die Dateien aus `game/sprache` gehören nie ins Repository.
 
-## TS2 Redux (`src/host/redux.cpp`, `tools/re/redux_patches.py`)
+## Fehlerbehebungen nach TS2 Redux (`src/host/fixes.cpp`, `fixes.inc`)
 
-[TS2 Redux](https://github.com/HFTSRedux/TS2Redux) (GPLv3) behebt Fehler des
-TS2-Ports mit kleinen DLLs, die beim Start Bytes in Homefronts EXE schreiben.
-`tools/re/redux_patches.py` liest diese Schreibzugriffe statisch aus den
-DLLs (capstone, die DLLs laufen nicht) und legt sie mit den Konstanten, die
-die geänderten Befehle lesen, als `game/redux.bin` ab; die Patch-Daten
-gehören den Redux-Autoren und kommen nicht ins Repository:
+[TS2 Redux](https://github.com/HFTSRedux/TS2Redux) (GPLv3, Fanoto,
+DevilDwarf und andere) behebt Fehler des TS2-Ports mit DLLs, die beim Start
+Bytes in Homefronts EXE schreiben. Diese Behebungen stehen jetzt als Tabelle
+in unserem Code und sind immer an; ts2.exe braucht dafür weder Redux noch
+dessen Dateien:
 
-```bash
-python -I tools/re/redux_patches.py <TS2Redux-Ordner> game <Homefront2_Release.exe>
-```
+| Gruppe | Inhalt |
+|---|---|
+| spielfehler | Reaper-Spawn-Absturz (`0x1411004E4`), Regen auf der Kamera (`0x14122A7AE`, ein `int3`) |
+| unsichtbar | Unsichtbarkeitsfehler (`0x1410E4A32`) |
+| anzeige | HUD/Text: Schriften, Breiten, Lagen (28 Stellen, ein Code-Stück, 9 Konstanten) |
+| menue | Menü-Layout wie auf der Konsole (178 Stellen, vier Code-Stücke, 7 Konstanten) |
 
-ts2.exe wendet sie vor allen eigenen Umlenkungen an; Gruppen in `ts2.ini`
-`[redux]`:
-
-| Gruppe | DLL | Inhalt |
-|---|---|---|
-| spielfehler | GameFixesByFanotoAndDevilDwarf | Reaper-Spawn-Absturz (`0x1411004E4`), Regen auf der Kamera (`0x14122A7AE`, ein `int3`) |
-| unsichtbar | InvisibleFixByDevilDwarf | Unsichtbarkeitsfehler (`0x1410E4A32`) |
-| anzeige | DevilDwarfUI | HUD/Text: Schriften, Breiten, Konstanten (34 Stellen, ein Code-Stück) |
-| menue | DevilDwarfMenu | Menü-Layout wie auf der Konsole (184 Stellen, vier Code-Stücke) |
-
+- `tools/re/gen_fixes.py` hat die Tabelle einmal erzeugt: es liest die
+  Schreibzugriffe statisch aus den Redux-DLLs (capstone, nichts läuft) und
+  schreibt je Stelle RVA, neue Bytes und die CRC32 der ursprünglichen Bytes;
+  ts2.exe prüft die CRC und lässt eine abweichende Stelle aus.
 - Code-Stücke liegen in Füllbereichen von Homefronts EXE (`0x140016EC8`,
   `0x1400258F3` …), die ts2.bin nicht hat; ihre Seiten werden angelegt.
 - Redux lenkt Konstanten-Ladungen (`movss xmm, [rip+x]`) auf passende Bytes
-  irgendwo in der EXE um, auch außerhalb des TS2-Teils (z. B.
-  `0x140F08693`); ohne diese Bytes stürzte die erste Zeitanzeige ab. Das
-  Skript nimmt sie deshalb aus der eigenen EXE mit.
+  irgendwo in der EXE um (z. B. 2,75 bei `0x140F08693`, außerhalb von
+  ts2.bin; ohne sie stürzte die erste Zeitanzeige ab). Die Tabelle enthält
+  stattdessen die Werte; ts2.exe legt sie in einer eigenen Seite (RVA
+  `0x40000`) ab und richtet die Befehle darauf aus. Auch Werte innerhalb von
+  ts2.bin ziehen so um, weil eigene Umlenkungen dort Bytes ändern können.
 - Das eigene Hauptmenü liest Lage und Höhe der Seite aus der (geänderten)
-  Original-Aufbaufunktion (`0x1410C81EC`/`0x1410C81F6`), so passt es zu Redux
-  (ohne Balken, Logo oben).
-- HD-Texturen (`ts2_redux.pak`, ein gewöhnliches ZIP mit SGI-`.rgb`): das
-  Skript entpackt sie nach `game/redux/`; ts2.exe liest Dateien dort zuerst
-  (`x_fopen`, `[redux] texturen`). Ausgelassen: Logo, Ladebilder und Banner
-  mit Redux-Schriftzug; übernommen: Kiste, Riffelblech, Baum, Zaun,
-  Fadenkreuze, Spielmodus-Symbole, Xbox-Tasten.
-- Geprüft: Hauptmenü, Optionen, Pausenmenü (Fußzeile an den Rand),
-  Siberia-Start. Nicht übernommen: Atemeffekt aus (andere Schreibweise),
-  eigene Menüs der Redux-DLLs (Speichern/Laden), NeoTokyo-Patch
-  (Pak-Differenz im jptch-Format).
+  Original-Aufbaufunktion (`0x1410C81EC`/`0x1410C81F6`), so passt es zum
+  Konsolen-Layout (ohne Balken, Logo oben).
+- Hochaufgelöste Texturen: ts2.exe liest Dateien unter `game/hd/` vor den
+  Originalen (`x_fopen`). `tools/re/hd_textures.py` übernimmt die von Redux
+  (`ts2_redux.pak`, ein ZIP mit SGI-`.rgb`) ohne Logo, Ladebilder und Banner
+  mit Redux-Schriftzug und ohne Xbox-Tastensymbole; eigene Texturen siehe
+  `docs/hd-texturen.md`.
+- Nicht übernommen: Atemeffekt aus (andere Schreibweise), die eigenen Menüs
+  der Redux-DLLs (Speichern/Laden), der NeoTokyo-Patch (Pak-Differenz).
 
 ## Ton (`src/host/audio.cpp`, `mixer.cpp`, `vorbis.cpp`)
 

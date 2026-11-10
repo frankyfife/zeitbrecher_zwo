@@ -1,4 +1,4 @@
-add_executable(ts2 main.cpp ts2bin.cpp ts2bin.h replace.cpp replace.h input.cpp input.h fake.cpp fake.h features.cpp features.h menu.cpp menu.h redux.cpp redux.h shadowfix.cpp shadowfix.h ctxproxy.h hooks.cpp hooks.h menumouse.cpp menumouse.h timing.cpp timing.h postfx.cpp postfx.h audio.cpp audio.h mixer.cpp mixer.h vorbis.cpp
+add_executable(ts2 main.cpp ts2bin.cpp ts2bin.h replace.cpp replace.h input.cpp input.h fake.cpp fake.h features.cpp features.h menu.cpp menu.h fixes.cpp fixes.h fixes.inc shadowfix.cpp shadowfix.h ctxproxy.h hooks.cpp hooks.h menumouse.cpp menumouse.h timing.cpp timing.h postfx.cpp postfx.h audio.cpp audio.h mixer.cpp mixer.h vorbis.cpp
                log.h hf2.h ts2_manifest.inc)
 target_compile_features(ts2 PRIVATE cxx_std_17)
 target_compile_definitions(ts2 PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
