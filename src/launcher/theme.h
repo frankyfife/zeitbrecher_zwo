@@ -1,7 +1,8 @@
 // Aussehen des Launchers wie der FuturamaPC-Launcher: Qt-Stil "windows11"
 // (folgt dem hellen oder dunklen Schema von Windows 11), sonst Fusion mit
 // dunkler Palette. Kein eigenes Stylesheet; Hinweise gedämpft, Statustexte in
-// Farben, die auf beiden Schemata lesbar sind. Das Symbol wird hier gezeichnet.
+// Farben, die auf beiden Schemata lesbar sind. Das Symbol kommt aus der
+// eigenen EXE (res/zeitbrecher.ico, erzeugt von tools/icon/make_icon.py).
 #pragma once
 #include <QColor>
 #include <QIcon>

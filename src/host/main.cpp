@@ -663,6 +663,7 @@ bool make_gfx(Gfx* g, int width, int height, bool want_hdr) {
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpszClassName = L"zeitbrecher_zwo";
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hIcon = LoadIconW(wc.hInstance, MAKEINTRESOURCEW(1));  // IDI_ICON1 aus ts2.rc
     RegisterClassW(&wc);
     // Fenster: 80 % des Bildschirms (echte Pixel), im Seitenverhältnis des Bildes
     int ww = width, wh = height;

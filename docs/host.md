@@ -700,6 +700,24 @@ und Notre-Dame-Start wurde keiner gezeichnet); `TS2_SCHIRM_ALT=1` schaltet
 die Verkleinerung für den Vergleich ab. Bei einer Render-Auflösung ungleich
 1920×1080 ist die Kopie (echte Pixel) nicht geprüft.
 
+## Launcher-Details
+
+Waffennamen im Launcher (Reiter Waffen): Spielerwaffen über die
+Gegenstandstabelle `0x142512A20` (42 Gegenstände à 0x30, +8/+0xC Zeile
+linke/rechte Hand; Namen über `0x142513200`, 42 à 0x48, +0 Text-ID);
+Doppelwaffen (x2) nutzen die Zeile der einfachen. Ohne Gegenstand:
+27 Geschützturm (Levelobjekt Typ 35, `0x1411504D8`), 29 Walzenroboter
+(Figur 16 → Klasse 3), 42 Splitter (Figuren 55/161), 43 Drohnen-Splitter
+(Figur 128), 32 Zombie-Angriff (Klasse 1, Liste `0x141085568`); Klasse
+`[chr+8]` aus `0x141088410`, angeborene Zeile `+0x6B0`/`+0x110` in
+`0x1410879C8`. Nur nach ihren Werten benannt: 28, 30, 31, 33, 38, 39, 41, 44.
+Ausgeblendet: 18 (unbenutzt), 34 (Digitalkamera), 35 (Temporal-Uplink); ihre
+Schlüssel `feuerrate_<zeile>` wirken weiter.
+
+Programmsymbol: `tools/icon/make_icon.py` erzeugt `src/launcher/res/zeitbrecher.ico`
+(eigene Zeichnung: gebrochene Uhr); beide EXEs tragen es als RT_GROUP_ICON 1
+(`src/launcher/res/launcher.rc`, `src/host/ts2.rc`).
+
 ## Fenster und Vollbild
 
 - **DPI:** `ts2.exe` ist DPI-bewusst (pro Monitor, v2) und arbeitet in

@@ -643,22 +643,63 @@ QWidget* MainWindow::page_controls() {
     return scroll_page(content, v);
 }
 
-// Waffen in der Hand des Spielers, nach ihrer Zeile in der Waffentabelle
-// (0x14250C2A8), Namen nach ihren Modelldateien wie im Xbox-Fork
-// (split2-recomp_ff, launcher); die Zeilen stimmen mit dem PC-Port überein
-// (gleiche Schussabstände je Paar, z. B. Flammenwerfer/Feuerlöscher 1 Takt).
+// Zeilen der Waffentabelle (0x14250C2A8, 46 Zeilen) mit den deutschen Namen
+// des Spiels. Spielerwaffen nach der Gegenstandstabelle 0x142512A20 (je
+// Gegenstand linke und rechte Hand); "(auch x2)": dieselbe Zeile dient auch
+// der Doppelausführung. Gegner und Geschütze nach dem Code: 29 Walzenroboter
+// (Figur 16), 42/43 Splitter (Figuren 55/161 bzw. 128), 32 Angriff der
+// Zombies, 27 Geschützturm (Levelobjekt). Die übrigen KI-Zeilen sind nach
+// ihren Werten benannt. Ausgeblendet: 18 (ohne Klang und Modell, unbenutzt),
+// 34 Digitalkamera und 35 Temporal-Uplink (keine Waffen).
 namespace {
 const struct {
     int row;
     const char* name;
+    bool ai;  // nur Gegner und Geschütze
 } kWeapons[] = {
-    {0, "Schallgedämpfte Pistole"}, {1, "Schallgedämpfte Luger"}, {2, "Luger"}, {3, "Magnum"},
-    {4, "Sturm-Schrotflinte"}, {5, "Minigun"}, {6, "Scharfschützengewehr"}, {7, "Repetiergewehr"},
-    {8, "Flammenwerfer"}, {9, "Feuerlöscher"}, {10, "AK-47"}, {11, "Elektrowaffe"},
-    {12, "Sci-Fi-Pistole"}, {13, "Raketenwerfer"}, {14, "Lenkraketenwerfer"}, {15, "Laser"},
-    {16, "Plasma-MG"}, {17, "Granatwerfer"}, {19, "Annäherungsmine"}, {20, "Fernzündermine"},
-    {21, "Zeitzündermine"}, {22, "TNT"}, {23, "Tommy Gun"}, {24, "Uzi"},
-    {25, "Doppelläufige Flinte"}, {26, "Ziegelstein"}, {36, "Armbrust"}, {37, "Pulverfass"},
+    {0, "Pistole mit Schalldämpfer (auch x2)", false},
+    {1, "Luger mit Schalldämpfer (auch x2)", false},
+    {2, "Luger-Pistole (auch x2)", false},
+    {3, "Garrett-Revolver (auch x2)", false},
+    {4, "Tactical 12-Gauge", false},
+    {5, "Minigun", false},
+    {6, "Scharfschützengewehr", false},
+    {7, "Winchester", false},
+    {8, "Flammenwerfer", false},
+    {9, "Feuerlöscher", false},
+    {10, "Russisches S47 (auch x2)", false},
+    {11, "ElectroTool", false},
+    {12, "Scifi-Pistole", false},
+    {40, "Scifi-Pistole (2. Fassung)", false},
+    {13, "Raketenwerfer", false},
+    {14, "Lenkraketen-Werfer", false},
+    {15, "Laserwaffe", false},
+    {16, "Plasma-Automatikgewehr", false},
+    {17, "Granatwerfer", false},
+    {19, "Tretmine", false},
+    {20, "Mine mit Fernzünder", false},
+    {21, "Mine mit Zeitzünder", false},
+    {22, "TNT", false},
+    {23, "Tommy Gun (auch x2)", false},
+    {24, "SBP90 MG (auch x2)", false},
+    {25, "Schrotflinte (auch x2)", false},
+    {26, "Ziegelstein", false},
+    {36, "Armbrust", false},
+    {37, "Schießpulver", false},
+    {45, "Fäuste (unbewaffnet)", false},
+    {27, "Geschützturm", true},
+    {30, "Geschützturm (Variante)", true},
+    {41, "Geschützturm (Plasma)", true},
+    {44, "Geschützturm (Salven)", true},
+    {29, "Walzenroboter", true},
+    {28, "Roboterkanone (schnell)", true},
+    {31, "Roboterkanone (endlos)", true},
+    {38, "Maschinengewehr (KI)", true},
+    {39, "Elektroschlag (KI)", true},
+    {32, "Zombie (Nahkampf)", true},
+    {33, "Nahkampf (KI)", true},
+    {42, "Splitter (Nahkampf)", true},
+    {43, "Drohnen-Splitter", true},
 };
 constexpr int kWeaponRows = 46;
 
@@ -687,27 +728,35 @@ QWidget* MainWindow::page_weapons() {
     auto* g = new QGridLayout(single);
     g->setHorizontalSpacing(fontMetrics().height());
     g->setVerticalSpacing(gap_of(this) * 2 / 3);
-    g->addWidget(hint(QStringLiteral("0 = wie oben. Zuerst die Waffen des Spielers, dann die übrigen Zeilen der "
-                                     "Waffentabelle (KI, Geschütze).")), 0, 0, 1, 6);
-    std::vector<std::pair<int, QString>> order;
-    std::vector<bool> named(kWeaponRows, false);
-    for (const auto& e : kWeapons) order.emplace_back(e.row, QString::fromUtf8(e.name)), named[e.row] = true;
-    for (int w = 0; w < kWeaponRows; ++w)
-        if (!named[w]) order.emplace_back(w, QStringLiteral("Zeile %1").arg(w));
-    for (int i = 0; i < int(order.size()); ++i) {
-        const char* key = weapon_key(order[i].first);
-        track("waffen", key);
-        g->addWidget(new QLabel(order[i].second), 1 + i / 3, (i % 3) * 2);
-        auto* s = new QSpinBox;
-        s->setRange(0, 1000);
-        s->setSuffix(QStringLiteral(" %"));
-        s->setSpecialValueText(QStringLiteral("wie oben"));
-        s->setValue(ini_.get("waffen", key).toInt());
-        connect(s, &QSpinBox::valueChanged, this, [this, key](int val) {
-            if (val == 0) ini_.set("waffen", key, QString());  // leer: wie oben
-            else ini_.set_int("waffen", key, val);
-        });
-        g->addWidget(s, 1 + i / 3, (i % 3) * 2 + 1);
+    g->addWidget(hint(QStringLiteral("0 = wie oben. „(auch x2)“: gilt auch, wenn zwei davon gleichzeitig "
+                                     "geführt werden.")),
+                 0, 0, 1, 6);
+    int line = 1;
+    for (bool ai : {false, true}) {
+        if (ai) {
+            auto* head = new QLabel(QStringLiteral("Gegner und Geschütze"));
+            theme::scale_font(head, 1.0, true);
+            g->addWidget(head, line++, 0, 1, 6);
+        }
+        int i = 0;
+        for (const auto& e : kWeapons) {
+            if (e.ai != ai) continue;
+            const char* key = weapon_key(e.row);
+            track("waffen", key);
+            g->addWidget(new QLabel(QString::fromUtf8(e.name)), line + i / 3, (i % 3) * 2);
+            auto* s = new QSpinBox;
+            s->setRange(0, 1000);
+            s->setSuffix(QStringLiteral(" %"));
+            s->setSpecialValueText(QStringLiteral("wie oben"));
+            s->setValue(ini_.get("waffen", key).toInt());
+            connect(s, &QSpinBox::valueChanged, this, [this, key](int val) {
+                if (val == 0) ini_.set("waffen", key, QString());  // leer: wie oben
+                else ini_.set_int("waffen", key, val);
+            });
+            g->addWidget(s, line + i / 3, (i % 3) * 2 + 1);
+            ++i;
+        }
+        line += (i + 2) / 3;
     }
     for (int c = 0; c < 3; ++c) g->setColumnStretch(c * 2, 1);
     v->addWidget(single);

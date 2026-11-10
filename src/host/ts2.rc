@@ -1,0 +1,5 @@
+// Windows-Ressourcen von ts2.exe: dasselbe Programmsymbol wie der Launcher
+// (src/launcher/res/zeitbrecher.ico, erzeugt von tools/icon/make_icon.py).
+// main.cpp setzt es als Symbol der Fensterklasse (MAKEINTRESOURCEW(1)).
+#define IDI_ICON1 1
+IDI_ICON1 ICON "../launcher/res/zeitbrecher.ico"

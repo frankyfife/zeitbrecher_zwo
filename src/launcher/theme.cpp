@@ -2,14 +2,15 @@
 
 #include <QApplication>
 #include <QGuiApplication>
+#include <QImage>
 #include <QOperatingSystemVersion>
-#include <QPainter>
 #include <QPalette>
-#include <QRadialGradient>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QWidget>
+
+#include <windows.h>
 
 namespace theme {
 
@@ -109,29 +110,20 @@ void scale_font(QWidget* w, qreal factor, bool bold) {
     w->setFont(f);
 }
 
-// Symbol: Planet mit Zeitring, gezeichnet (keine fremden Grafiken)
+// Symbol: das Programmsymbol aus der eigenen EXE (res/launcher.rc,
+// IDI_ICON1 = 1), jede Größe der .ico einzeln, damit Qt die passende wählt
 QIcon app_icon() {
     static const QIcon icon = [] {
-        QPixmap px(256, 256);
-        px.fill(Qt::transparent);
-        QPainter p(&px);
-        p.setRenderHint(QPainter::Antialiasing);
-        QRadialGradient pl(QPointF(100, 100), 150);
-        pl.setColorAt(0, QColor(150, 255, 190));
-        pl.setColorAt(0.6, QColor(40, 150, 120));
-        pl.setColorAt(1, QColor(10, 40, 50));
-        p.setPen(Qt::NoPen);
-        p.setBrush(pl);
-        p.drawEllipse(QPointF(128, 128), 82, 82);
-        p.translate(128, 128);
-        p.rotate(-20);
-        p.setBrush(Qt::NoBrush);
-        p.setPen(QPen(QColor(57, 243, 255), 14));
-        p.drawEllipse(QPointF(0, 0), 122, 34);
-        p.setPen(QPen(QColor(255, 79, 216), 5));
-        p.drawEllipse(QPointF(0, 0), 108, 26);
-        p.end();
-        return QIcon(px);
+        QIcon ic;
+        const HINSTANCE self = GetModuleHandleW(nullptr);
+        for (int s : {16, 20, 24, 32, 40, 48, 64, 128, 256}) {
+            auto* h = static_cast<HICON>(LoadImageW(self, MAKEINTRESOURCEW(1), IMAGE_ICON, s, s, LR_DEFAULTCOLOR));
+            if (!h) continue;
+            const QImage img = QImage::fromHICON(h);
+            DestroyIcon(h);
+            if (!img.isNull()) ic.addPixmap(QPixmap::fromImage(img));
+        }
+        return ic;
     }();
     return icon;
 }

@@ -1,0 +1,4 @@
+// Windows-Ressourcen von ts2launcher.exe: das Programmsymbol (Explorer,
+// Taskleiste, Fenster). Erzeugt von tools/icon/make_icon.py.
+#define IDI_ICON1 1
+IDI_ICON1 ICON "zeitbrecher.ico"
