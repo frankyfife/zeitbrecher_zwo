@@ -365,6 +365,31 @@ als letzten Schritt vor der Ausgabe an.
   ohne diesen Schritt. Geprüft: läuft auf einem HDR-Monitor ohne
   D3D-Meldungen; die Helligkeit am Gerät ist noch von Hand zu prüfen.
 
+## Schatten (`src/host/shadowfix.cpp`, Kontext-Hülle `ctxproxy.h`)
+
+Kisten warfen im PC-Port schwarze Flecken (Xbox: schwache, weiche
+Abdunklung). Befund mit `TS2_DRAWDUMP=<takt>` (protokolliert jede Zeichnung
+mit gewöhnlicher Alpha-Mischung, schreibt ihre Texturen roh heraus;
+`TS2_DRAWSKIP=<textur>`, `TS2_DRAWSKIPN=<nummern>`, `TS2_DRAWSHADER=<textur>`
+mit Pixel-Shader, Eingabe-Layout und Ecken):
+
+- Der Fleck ist eine 16×16-Textur (schwarz, weiches Quadrat in Alpha bis
+  0,62), gezeichnet mit SRC_ALPHA/INV_SRC_ALPHA; der Pixel-Shader rechnet
+  Textur × Eckenfarbe (COLOR0, RGBA8 bei Abstand 40).
+- In den Ecken des Kistenschattens stehen an 32..47 aber vier Floats (eine
+  Weltlage); die Deckkraft ist so das oberste Byte eines Floats (0x42 ≈ 0,26
+  bis 0xBF ≈ 0,75, je nach Lage), und der Fleck wird zweimal gezeichnet:
+  fast schwarz. Andere Flecken (Figuren) haben richtige Eckenfarben.
+- Abhilfe: Für Zeichnungen mit dieser Textur (am Inhalt erkannt) setzt
+  ts2.exe einen eigenen Pixel-Shader mit fester Deckkraft
+  (`[grafik] schatten`, Vorgabe 0,35; 0 = aus). Geprüft an der Kiste im
+  Siberia-Tunnel und draußen im Schnee.
+- Die D3D11-Laufzeit schreibt die Funktionstabelle ihres Kontexts selbst um;
+  umgelenkte Kontext-Methoden hielten nicht (auch der frühere Befund "TS2
+  löscht nie" war deshalb falsch: es löscht auf 0,0,0,0). Deshalb bekommt TS2
+  eine Hülle um den Kontext (`ctxproxy.h`, Weiterleitungen aus d3d11.h
+  erzeugt mit `tools/gen_ctxproxy.py`).
+
 ## Fenster und Vollbild
 
 - **DPI:** `ts2.exe` ist DPI-bewusst (pro Monitor, v2) und arbeitet in

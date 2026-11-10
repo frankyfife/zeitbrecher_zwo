@@ -51,8 +51,8 @@ Funktionen von außen erreicht. Daraus:
 | Menütexte nicht in ihren Balken (Pausen-/Game-over-Menü, 3D) | offen; mit TS2 Redux rücken Ring und Fußzeile an den Rand, der Versatz der Texte bleibt. Die Texte zeichnet `0x1410DAA74` in 3D: Punkt (−Breite/2, Eintrag +0x98) über `0x14121DA7C` mit der Matrix `*0x143F359D0`+0x60 transformiert, durch w geteilt und mit dem Bildausschnitt `*0x143F0F508` (Ursprung +0x00/+0x14, halbe Breite/Höhe +0x10/+0x24) abgebildet; die Balken gehen über die GPU-Projektion aus `camera_setup`. Gemessen liegen die Texte um den Faktor ≈0,8 enger als die Balken: Matrix oder Bildausschnitt passen nicht zur Projektion (Seitenverhältnis?) |
 | Überlagerte Meldungen (Aufsammeln, Waffen) | offen; nachgestellt nur eine Meldung je Mal, Ursache noch nicht gefunden |
 | Maus im Menü nach Rundenende | offen; nicht nachgestellt |
-| Kistenschatten schwarz statt weich (Xbox: schwache Abdunklung) | offen; Blend-Zustände SUBTRACT sind es nicht (Versuch REV_SUBTRACT ohne Wirkung), Suche nach dem Zustand läuft (`TS2_BLENDSKIP`) |
-| Transparenz (Laserfenster schwarz, wenn aus) | offen, siehe Punkt 5 |
+| Kistenschatten schwarz statt weich (Xbox: schwache Abdunklung) | behoben: Eckenfarbe des Flecks ist im PC-Port Unsinn (Floats statt Farbe), eigener Shader mit fester Deckkraft (`[grafik] schatten`), siehe host.md "Schatten" |
+| Transparenz (Laserfenster schwarz, wenn aus) | offen, siehe Punkt 5; Werkzeug jetzt `TS2_DRAWDUMP` an der Stelle |
 | Überstrahlt in Siberia mit Windows-HDR | erste Abhilfe: eigene HDR-Ausgabe (`[grafik] hdr`, `hdr_weiss`) |
 | Waffengeräusche anders als auf der Xbox | Proben gleich benannt (22 kHz); der PC-Port liest die Hall-Skripte `ts2/sound/reverb/levelNN_reverb.s` (Raum → Effektnummer) nie, die Xbox hallt je Raum. Nachbau: Raum verfolgen, Effektnummer → I3DL2-Voreinstellung der XBE, XAudio2-Hall |
 | Launcher schwarz, Reiter, Titel "Zeitbrecher Zwo" | erledigt |

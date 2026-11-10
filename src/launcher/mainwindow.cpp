@@ -351,6 +351,9 @@ QWidget* MainWindow::page_graphics() {
     f->addRow(hint(QStringLiteral("Helligkeit von Weiß im Spiel. Ohne HDR-Ausgabe bildet Windows das Bild selbst ab "
                                   "(wirkte überstrahlt).")));
     f->addRow(QStringLiteral("Sichtfeld"), spin("grafik", "sichtfeld", 70, 150, QStringLiteral(" %")));
+    f->addRow(QStringLiteral("Schatten"), dspin("grafik", "schatten", 0.0, 1.0, 0.05, 2));
+    f->addRow(hint(QStringLiteral("Deckkraft der Schattenflecken unter Kisten und Figuren (Xbox: schwach). 0 = wie der "
+                                  "PC-Port (oft schwarz).")));
     f->addRow(hint(QStringLiteral("In Prozent des Spiels; das Zielfernrohr zoomt im selben Verhältnis.")));
     v->addWidget(p1);
 

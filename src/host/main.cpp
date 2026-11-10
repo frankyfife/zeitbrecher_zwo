@@ -12,10 +12,12 @@
 // (replace.cpp) und gibt TS2 die Engine-Schnittstellen selbst – zunächst als
 // protokollierende Attrappen (fake.cpp) und ein eigenes D3D11-Gerät.
 #include <windows.h>
-#include <d3d11.h>
+#include <d3d11_4.h>
+#include <d3dcompiler.h>
 #include <dxgi1_6.h>
 #include <d3d11sdklayers.h>
 #include <map>
+#include <set>
 #include <timeapi.h>
 
 #include <algorithm>
@@ -30,6 +32,8 @@
 #include "fake.h"
 #include "features.h"
 #include "input.h"
+#include "ctxproxy.h"
+#include "shadowfix.h"
 #include "redux.h"
 #include "menu.h"
 #include "menumouse.h"
@@ -201,6 +205,7 @@ ClearRtvFn g_clear_rtv = nullptr;
 int g_clear_n = 0;
 
 bool g_blend_log = false, g_blend_revsub = false;
+std::map<ID3D11BlendState*, int> g_blend_kind;  // 1 = SRC_ALPHA/INV_SRC_ALPHA (TS2_DRAWDUMP)
 
 HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_DESC* in, ID3D11BlendState** out) {
     D3D11_BLEND_DESC fixed;
@@ -228,6 +233,10 @@ HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_
             if (r.SrcBlend == skip[0] && r.DestBlend == skip[1] && r.BlendOp == skip[2]) r.RenderTargetWriteMask = 0;
     }
     const HRESULT hr = g_create_blend(d, bd, out);
+    if (bd && out && *out && SUCCEEDED(hr)) {
+        const auto& r0 = bd->RenderTarget[0];
+        g_blend_kind[*out] = (r0.SrcBlend == D3D11_BLEND_SRC_ALPHA && r0.DestBlend == D3D11_BLEND_INV_SRC_ALPHA) ? 1 : 0;
+    }
     if (bd && g_blend_log) {
         const auto& r = bd->RenderTarget[0];
         log("[blend] %p: an %d, Farbe %d*%d op %d, Alpha %d*%d op %d, Maske %X, a2c %d, einzeln %d\n",
@@ -248,10 +257,12 @@ CreateRtvFn g_create_rtv = nullptr;
 
 HRESULT STDMETHODCALLTYPE probe_create_tex2d(ID3D11Device* d, const D3D11_TEXTURE2D_DESC* td,
                                              const D3D11_SUBRESOURCE_DATA* init, ID3D11Texture2D** out) {
-    if (td)
+    if (td && g_blend_log)
         log("[textur] %ux%u Format %d Bind %X Mips %u\n", td->Width, td->Height, int(td->Format), td->BindFlags,
             td->MipLevels);
-    return g_create_tex2d(d, td, init, out);
+    const HRESULT hr = g_create_tex2d(d, td, init, out);
+    if (SUCCEEDED(hr) && out && *out) shadowfix_forget(*out);
+    return hr;
 }
 
 HRESULT STDMETHODCALLTYPE probe_create_rtv(ID3D11Device* d, ID3D11Resource* r, const D3D11_RENDER_TARGET_VIEW_DESC* vd,
@@ -265,8 +276,243 @@ void STDMETHODCALLTYPE probe_clear_rtv(ID3D11DeviceContext* c, ID3D11RenderTarge
     g_clear_rtv(c, v, col);
 }
 
+// TS2_DRAWDUMP=<takt>: in diesem Bild jede Zeichnung mit gewöhnlicher
+// Alpha-Mischung (SRC_ALPHA, INV_SRC_ALPHA) protokollieren (Indexzahl, Textur,
+// erste Werte des Pixel-Konstantenpuffers) und jede dabei gebundene Textur
+// roh nach drawdump_<n>_<b>x<h>.rgba schreiben (Kistenschatten).
+ID3D11BlendState* g_cur_blend = nullptr;
+int g_tick_now = -1, g_dump_tick = -2;
+std::filesystem::path g_dump_dir;
+
+void dump_texture(ID3D11DeviceContext* c, ID3D11Texture2D* tex, int n) {
+    D3D11_TEXTURE2D_DESC d;
+    tex->GetDesc(&d);
+    d.Usage = D3D11_USAGE_STAGING;
+    d.BindFlags = 0;
+    d.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    d.MiscFlags = 0;
+    d.MipLevels = 1;
+    d.ArraySize = 1;
+    ID3D11Device* dev = nullptr;
+    c->GetDevice(&dev);
+    ID3D11Texture2D* st = nullptr;
+    if (SUCCEEDED(dev->CreateTexture2D(&d, nullptr, &st))) {
+        c->CopySubresourceRegion(st, 0, 0, 0, 0, tex, 0, nullptr);
+        D3D11_MAPPED_SUBRESOURCE m;
+        if (SUCCEEDED(c->Map(st, 0, D3D11_MAP_READ, 0, &m))) {
+            const auto p = g_dump_dir / (L"drawdump_" + std::to_wstring(n) + L"_" + std::to_wstring(d.Width) + L"x" +
+                                        std::to_wstring(d.Height) + L".rgba");
+            if (FILE* f = _wfopen(p.c_str(), L"wb")) {
+                for (UINT y = 0; y < d.Height; ++y)
+                    fwrite(static_cast<uint8_t*>(m.pData) + y * m.RowPitch, 4, d.Width, f);
+                fclose(f);
+            }
+            c->Unmap(st, 0);
+        }
+        st->Release();
+    }
+    dev->Release();
+}
+
+// Bytecode der Pixel-Shader, die TS2 anlegt (für TS2_DRAWDUMP)
+using CreatePSFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const void*, SIZE_T, ID3D11ClassLinkage*,
+                                               ID3D11PixelShader**);
+CreatePSFn g_create_ps = nullptr;
+std::map<ID3D11PixelShader*, std::string> g_ps_code;
+HRESULT STDMETHODCALLTYPE probe_create_ps(ID3D11Device* d, const void* code, SIZE_T n, ID3D11ClassLinkage* l,
+                                          ID3D11PixelShader** out) {
+    const HRESULT hr = g_create_ps(d, code, n, l, out);
+    if (SUCCEEDED(hr) && out && *out) g_ps_code[*out].assign(static_cast<const char*>(code), n);
+    return hr;
+}
+
+void log_pixel_shader(ID3D11DeviceContext* c) {
+    static std::set<ID3D11PixelShader*> shown;
+    ID3D11PixelShader* ps = nullptr;
+    c->PSGetShader(&ps, nullptr, nullptr);
+    if (!ps) return;
+    if (shown.insert(ps).second && g_ps_code.count(ps)) {
+        const std::string& code = g_ps_code[ps];
+        ID3DBlob* text = nullptr;
+        if (SUCCEEDED(D3DDisassemble(code.data(), code.size(), 0, nullptr, &text)) && text) {
+            log("[shader] %p:\n%.*s\n", static_cast<void*>(ps), int(text->GetBufferSize()),
+                static_cast<const char*>(text->GetBufferPointer()));
+            text->Release();
+        }
+    }
+    log("[zeichnung]   Pixel-Shader %p\n", static_cast<void*>(ps));
+    ps->Release();
+}
+
+// Eingabe-Layouts, die TS2 anlegt (Semantik, Format, Abstand)
+using CreateILFn = HRESULT(STDMETHODCALLTYPE*)(ID3D11Device*, const D3D11_INPUT_ELEMENT_DESC*, UINT, const void*, SIZE_T,
+                                               ID3D11InputLayout**);
+CreateILFn g_create_il = nullptr;
+std::map<ID3D11InputLayout*, std::string> g_il_desc;
+HRESULT STDMETHODCALLTYPE probe_create_il(ID3D11Device* d, const D3D11_INPUT_ELEMENT_DESC* e, UINT n, const void* code,
+                                          SIZE_T len, ID3D11InputLayout** out) {
+    const HRESULT hr = g_create_il(d, e, n, code, len, out);
+    if (SUCCEEDED(hr) && out && *out) {
+        std::string t;
+        char buf[96];
+        for (UINT i = 0; i < n; ++i) {
+            std::snprintf(buf, sizeof buf, " %s%u:F%d@%u/s%u", e[i].SemanticName, e[i].SemanticIndex, int(e[i].Format),
+                          e[i].AlignedByteOffset, e[i].InputSlot);
+            t += buf;
+        }
+        g_il_desc[*out] = t;
+    }
+    return hr;
+}
+
+// Puffer lesen (Kopie in einen Staging-Puffer)
+std::string read_buffer(ID3D11DeviceContext* c, ID3D11Buffer* b) {
+    D3D11_BUFFER_DESC d;
+    b->GetDesc(&d);
+    d.Usage = D3D11_USAGE_STAGING;
+    d.BindFlags = 0;
+    d.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    d.MiscFlags = 0;
+    d.StructureByteStride = 0;
+    ID3D11Device* dev = nullptr;
+    c->GetDevice(&dev);
+    ID3D11Buffer* st = nullptr;
+    std::string out;
+    if (SUCCEEDED(dev->CreateBuffer(&d, nullptr, &st))) {
+        c->CopyResource(st, b);
+        D3D11_MAPPED_SUBRESOURCE m;
+        if (SUCCEEDED(c->Map(st, 0, D3D11_MAP_READ, 0, &m))) {
+            out.assign(static_cast<const char*>(m.pData), d.ByteWidth);
+            c->Unmap(st, 0);
+        }
+        st->Release();
+    }
+    dev->Release();
+    return out;
+}
+
+// Ecken einer Zeichnung roh (Floats) protokollieren: Schrittweite, die
+// ersten 4 benutzten Ecken
+void log_vertices(ID3D11DeviceContext* c, UINT start, INT base) {
+    ID3D11Buffer* vb = nullptr;
+    UINT stride = 0, offset = 0;
+    c->IAGetVertexBuffers(0, 1, &vb, &stride, &offset);
+    ID3D11Buffer* ib = nullptr;
+    DXGI_FORMAT ifmt = DXGI_FORMAT_UNKNOWN;
+    UINT ioff = 0;
+    c->IAGetIndexBuffer(&ib, &ifmt, &ioff);
+    if (!vb || !stride) {
+        if (vb) vb->Release();
+        if (ib) ib->Release();
+        return;
+    }
+    const std::string v = read_buffer(c, vb);
+    std::vector<uint32_t> idx;
+    if (ib && base != INT_MIN) {
+        const std::string i = read_buffer(c, ib);
+        const size_t isz = ifmt == DXGI_FORMAT_R16_UINT ? 2 : 4;
+        for (UINT k = 0; k < 4; ++k) {
+            const size_t at = ioff + (start + k) * isz;
+            if (at + isz > i.size()) break;
+            uint32_t x = 0;
+            std::memcpy(&x, i.data() + at, isz);
+            idx.push_back(uint32_t(int64_t(x) + base));
+        }
+    } else {
+        for (UINT k = 0; k < 4; ++k) idx.push_back(start + k);
+    }
+    ID3D11InputLayout* il = nullptr;
+    c->IAGetInputLayout(&il);
+    log("[ecken] Schritt %u, Versatz %u, Layout%s\n", stride, offset,
+        il && g_il_desc.count(il) ? g_il_desc[il].c_str() : " ?");
+    if (il) il->Release();
+    for (uint32_t e : idx) {
+        const size_t at = offset + size_t(e) * stride;
+        if (at + stride > v.size()) break;
+        std::string line;
+        char buf[48];
+        for (UINT k = 0; k + 4 <= stride; k += 4) {
+            float f;
+            uint32_t u;
+            std::memcpy(&f, v.data() + at + k, 4);
+            std::memcpy(&u, v.data() + at + k, 4);
+            std::snprintf(buf, sizeof buf, " %.3g/%08X", f, u);
+            line += buf;
+        }
+        log("[ecken]   %u:%s\n", e, line.c_str());
+    }
+    vb->Release();
+    if (ib) ib->Release();
+}
+
+// über die Kontext-Hülle (ctxproxy.h) vor jeder Zeichnung
+bool draw_probe(ID3D11DeviceContext* c, UINT count, UINT start, INT base) {
+    static std::map<ID3D11Texture2D*, int> dumped;
+    static int draws = 0, all = 0;
+    if (g_tick_now == g_dump_tick && all++ < 5)
+        log("[zeichnung] alle: Mischung %p Art %d\n", static_cast<void*>(g_cur_blend),
+            g_blend_kind.count(g_cur_blend) ? g_blend_kind[g_cur_blend] : -1);
+    if (g_tick_now == g_dump_tick && g_blend_kind.count(g_cur_blend) && g_blend_kind[g_cur_blend] == 1) {
+        ID3D11ShaderResourceView* srv = nullptr;
+        c->PSGetShaderResources(0, 1, &srv);
+        ID3D11Texture2D* tex = nullptr;
+        if (srv) {
+            ID3D11Resource* r = nullptr;
+            srv->GetResource(&r);
+            if (r) r->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex)), r->Release();
+            srv->Release();
+        }
+        int id = -1;
+        if (tex) {
+            auto it = dumped.find(tex);
+            if (it == dumped.end()) {
+                id = int(dumped.size());
+                dumped[tex] = id;
+                dump_texture(c, tex, id);
+            } else {
+                id = it->second;
+            }
+        }
+        float cb[8] = {};
+        ID3D11Buffer* b = nullptr;
+        c->PSGetConstantBuffers(0, 1, &b);
+        if (b) b->Release();
+        log("[zeichnung] %d: Indizes %u, Textur %d\n", draws++, count, id);
+        if (tex) tex->Release();
+        (void)cb;
+        // TS2_DRAWSKIP=<Texturnummer>: diese Zeichnungen auslassen
+        static const int skip_tex = [] {
+            wchar_t v[16] = {};
+            return GetEnvironmentVariableW(L"TS2_DRAWSKIP", v, 16) > 0 ? _wtoi(v) : -2;
+        }();
+        if (id == skip_tex) return false;
+        // TS2_DRAWSKIPN=a,b,...: diese Zeichnungsnummern auslassen
+        static const std::set<int> skip_n = [] {
+            std::set<int> out;
+            wchar_t v[256] = {};
+            if (GetEnvironmentVariableW(L"TS2_DRAWSKIPN", v, 256) > 0)
+                for (wchar_t* p = v; *p;) {
+                    out.insert(int(wcstol(p, &p, 10)));
+                    while (*p == L',') ++p;
+                }
+            return out;
+        }();
+        if (skip_n.count(draws - 1)) return false;
+        static const int shader_tex = [] {
+            wchar_t v[16] = {};
+            return GetEnvironmentVariableW(L"TS2_DRAWSHADER", v, 16) > 0 ? _wtoi(v) : -2;
+        }();
+        if (id == shader_tex) {
+            log_pixel_shader(c);
+            log_vertices(c, start, base);
+        }
+    }
+    return true;
+}
+
 void patch_vtable(void* obj, int index, void* fn, void** orig) {
     void** vt = *reinterpret_cast<void***>(obj);
+    if (vt[index] == fn) return;  // diese vtable ist schon umgelenkt
     DWORD old;
     VirtualProtect(&vt[index], sizeof(void*), PAGE_READWRITE, &old);
     *orig = vt[index];
@@ -362,19 +608,26 @@ bool make_gfx(Gfx* g, int width, int height, bool want_hdr) {
     if (best) best->Release();
     if (FAILED(dhr)) return false;
     g_blend_revsub = GetEnvironmentVariableW(L"TS2_REVSUB", nullptr, 0) > 0;
-    if ((g_blend_revsub || GetEnvironmentVariableW(L"TS2_BLENDSKIP", nullptr, 0) > 0) &&
-        GetEnvironmentVariableW(L"TS2_BLENDPROBE", nullptr, 0) == 0) {
-        patch_vtable(g->dev, 20, reinterpret_cast<void*>(&probe_create_blend), reinterpret_cast<void**>(&g_create_blend));
-        log("Blend: SUBTRACT -> REV_SUBTRACT\n");
+    {
+        wchar_t v[16] = {};
+        if (GetEnvironmentVariableW(L"TS2_DRAWDUMP", v, 16) > 0) {
+            g_dump_tick = _wtoi(v);
+            g_dump_dir = self_dir();
+            patch_vtable(g->dev, 15, reinterpret_cast<void*>(&probe_create_ps), reinterpret_cast<void**>(&g_create_ps));
+            patch_vtable(g->dev, 11, reinterpret_cast<void*>(&probe_create_il), reinterpret_cast<void**>(&g_create_il));
+            log("Zeichnungs-Probe für Takt %d\n", g_dump_tick);
+        }
     }
+    // immer: Art jedes Blend-Zustands (Schattenkorrektur, Proben) und neue
+    // Texturen (ihre Adressen können alte wiederverwenden). Die Geräte-
+    // Tabelle hält Umlenkungen (anders als die des Kontexts).
+    // ID3D11Device: CreateBlendState Methode 20, CreateTexture2D Methode 5,
+    // CreateRenderTargetView Methode 9
+    patch_vtable(g->dev, 20, reinterpret_cast<void*>(&probe_create_blend), reinterpret_cast<void**>(&g_create_blend));
+    patch_vtable(g->dev, 5, reinterpret_cast<void*>(&probe_create_tex2d), reinterpret_cast<void**>(&g_create_tex2d));
+    if (g_blend_revsub) log("Blend: SUBTRACT -> REV_SUBTRACT\n");
     if (GetEnvironmentVariableW(L"TS2_BLENDPROBE", nullptr, 0) > 0) {
         g_blend_log = true;
-        // ID3D11Device: CreateBlendState ist Methode 20; Kontext:
-        // ClearRenderTargetView Methode 50 (+0x190)
-        patch_vtable(g->dev, 20, reinterpret_cast<void*>(&probe_create_blend), reinterpret_cast<void**>(&g_create_blend));
-        patch_vtable(g->ctx, 50, reinterpret_cast<void*>(&probe_clear_rtv), reinterpret_cast<void**>(&g_clear_rtv));
-        // CreateTexture2D Methode 5, CreateRenderTargetView Methode 9
-        patch_vtable(g->dev, 5, reinterpret_cast<void*>(&probe_create_tex2d), reinterpret_cast<void**>(&g_create_tex2d));
         patch_vtable(g->dev, 9, reinterpret_cast<void*>(&probe_create_rtv), reinterpret_cast<void**>(&g_create_rtv));
         log("Blend-Probe an\n");
     }
@@ -609,7 +862,35 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (settings.fullscreen) set_fullscreen(gfx.wnd, true);
     static DeviceHolder devh{gfx.dev, {}};
-    static ContextHolder ctxh{gfx.ctx, {}};
+    // TS2 bekommt die Kontext-Hülle (ctxproxy.h) statt des Kontexts: für die
+    // Schattenkorrektur ([grafik] schatten, shadowfix.h) und TS2_DRAWDUMP
+    static CtxProxy proxy(gfx.ctx);
+    static bool shadow_on = false;
+    {
+        wchar_t buf[32];
+        GetPrivateProfileStringW(L"grafik", L"schatten", L"0.35", buf, 32, (self_dir() / L"ts2.ini").c_str());
+        shadow_on = shadowfix_init(gfx.dev, std::clamp(float(_wtof(buf)), 0.0f, 1.0f));
+    }
+    const bool use_proxy = g_dump_tick >= 0 || shadow_on;
+    if (use_proxy) {
+        static bool shadow_drawn = false;
+        proxy.on_blend = [](ID3D11BlendState* st, const FLOAT*) { g_cur_blend = st; };
+        proxy.on_draw = [](ID3D11DeviceContext* real, UINT n, UINT st, INT b) {
+            if (g_dump_tick >= 0 && !draw_probe(real, n, st, b)) return false;
+            auto k = g_blend_kind.find(g_cur_blend);
+            shadow_drawn = shadow_on && k != g_blend_kind.end() && k->second == 1 && shadowfix_before(real);
+            return true;
+        };
+        proxy.after_draw = [](ID3D11DeviceContext* real) {
+            if (shadow_drawn) shadowfix_after(real), shadow_drawn = false;
+        };
+        proxy.on_clear = [](ID3D11RenderTargetView* v, const FLOAT* c) {
+            if (g_tick_now == g_dump_tick)
+                log("[loeschen] %p: %.3f %.3f %.3f %.3f\n", static_cast<void*>(v), c[0], c[1], c[2], c[3]);
+        };
+        log("Kontext-Hülle an\n");
+    }
+    static ContextHolder ctxh{use_proxy ? static_cast<ID3D11DeviceContext*>(&proxy) : gfx.ctx, {}};
 
     HANDLE sem = CreateSemaphoreW(nullptr, 0, 1, nullptr);
     void* obj = call_factory(genv, &sem);
@@ -681,6 +962,7 @@ int wmain(int argc, wchar_t** argv) {
     bool running = true;
     int t = 0;
     for (; running && (ticks == 0 || t < ticks); ++t) {
+        g_tick_now = t;
         MSG m;
         while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
             if (m.message == WM_QUIT) running = false;
