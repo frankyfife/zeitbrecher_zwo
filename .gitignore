@@ -22,4 +22,4 @@ __pycache__/
 .vscode/
 *.user
 .DS_Store
-build-launcher/
+build-*/
