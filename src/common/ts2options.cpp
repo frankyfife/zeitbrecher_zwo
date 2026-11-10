@@ -136,7 +136,7 @@ const std::vector<IniOption>& ini_options() {
             {"grafik", "vollbild", "0", "1: randloses Vollbild beim Start (Alt+Enter schaltet um)"},
             {"grafik", "hdr", "1", "1: HDR-Ausgabe (scRGB), wenn der Monitor im HDR-Modus laeuft; 0: immer SDR"},
             {"grafik", "hdr_weiss", "200", "HDR: Helligkeit von Weiss im Spiel in Nits (80-1000)"},
-            {"grafik", "schatten", "0.35", "Deckkraft der Schattenflecken (Kisten, Figuren), 0 = wie der PC-Port (schwarz)"},
+            {"grafik", "schatten", "0.62", "Deckkraft der Schattenflecken unter Kisten, Tischen, Figuren (0.62 = wie Xbox, 0 = wie der PC-Port: schwarz)"},
             {"grafik", "sichtfeld", "100", "Sichtfeld in Prozent des Spiels (70-150); das Zielfernrohr zoomt im selben Verhaeltnis"},
             {"grafik", "gamma", "1.0", "Bildanpassung (alle neutral = aus): Gamma (>1 heller in den Mitten)"},
             {"grafik", "kontrast", "1.0", "Kontrast (1.0 = wie das Spiel)"},

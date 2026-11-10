@@ -508,17 +508,25 @@ mit gewöhnlicher Alpha-Mischung, schreibt ihre Texturen roh heraus;
 `TS2_DRAWSKIP=<textur>`, `TS2_DRAWSKIPN=<nummern>`, `TS2_DRAWSHADER=<textur>`
 mit Pixel-Shader, Eingabe-Layout und Ecken):
 
-- Der Fleck ist eine 16×16-Textur (schwarz, weiches Quadrat in Alpha bis
-  0,62), gezeichnet mit SRC_ALPHA/INV_SRC_ALPHA; der Pixel-Shader rechnet
-  Textur × Eckenfarbe (COLOR0, RGBA8 bei Abstand 40).
-- In den Ecken des Kistenschattens stehen an 32..47 aber vier Floats (eine
-  Weltlage); die Deckkraft ist so das oberste Byte eines Floats (0x42 ≈ 0,26
-  bis 0xBF ≈ 0,75, je nach Lage), und der Fleck wird zweimal gezeichnet:
-  fast schwarz. Andere Flecken (Figuren) haben richtige Eckenfarben.
-- Abhilfe: Für Zeichnungen mit dieser Textur (am Inhalt erkannt) setzt
-  ts2.exe einen eigenen Pixel-Shader mit fester Deckkraft
-  (`[grafik] schatten`, Vorgabe 0,35; 0 = aus). Geprüft an der Kiste im
-  Siberia-Tunnel und draußen im Schnee.
+- Schattenflecken sind Vierecke knapp über dem Boden mit einer schwarzen
+  Textur, deren Alpha die Form trägt: 16×16-Klecks (1847, Alpha bis 0,62),
+  Kistenumriss 1760, Fleck unter Fässern 1875, Tisch und Stuhl (32×32) usw.
+  Gezeichnet mit SRC_ALPHA/INV_SRC_ALPHA; Deckkraft = Textur-Alpha ×
+  Eckenalpha. Die Texturen sind gleich der Xbox (docs/alpha-texturen.md).
+- Das Eckenalpha stimmt nicht: Mit Licht (spec 0x8284, Bit 0x200) zählt
+  TS2s Vertex-Shader je Lampe 1 dazu (Umgebungs-Alpha 0), also ≈ 3: alles
+  über einem Drittel Textur-Alpha wird voll schwarz (harte schwarze Flächen
+  unter Tischen, Stühlen, Kisten in Chicago). Mit Eckenfarbe (spec 0x8016)
+  liest das Layout an 40 Unsinn (oberstes Byte eines Floats, 0,26–0,75).
+  Der Klecks in Siberia wird mit beiden gezeichnet.
+- Abhilfe: Zeichnungen mit schwarzer Alpha-Textur (bis 256×256) und spec
+  mit Bit 0x3 oder 0x200, ohne Levelgeometrie (0x20000000) und 2D (0x20),
+  bekommen einen eigenen Pixel-Shader: Textur-Alpha × `[grafik] schatten`/0,62
+  (Vorgabe 0,62 = Textur-Alpha unverändert, abgeglichen mit Bildern der
+  Xbox-Fassung in xemu; 0 = aus). spec liest ts2.exe aus 0x142FE3828.
+- Geprüft: Chicago Bar (Tisch, Stühle) und Lager (Kiste) vorher/nachher bei
+  gleicher Kameralage; Siberia-Tunnel wie vorher; Zielfernrohr,
+  Einschusslöcher, HUD unverändert.
 - Die D3D11-Laufzeit schreibt die Funktionstabelle ihres Kontexts selbst um;
   umgelenkte Kontext-Methoden hielten nicht (auch der frühere Befund "TS2
   löscht nie" war deshalb falsch: es löscht auf 0,0,0,0). Deshalb bekommt TS2
@@ -560,6 +568,16 @@ rote Flächen. Befund:
   `.rgb` von unten nach oben). `TS2_TEXWATCH=<hash>,...` meldet in jedem
   Takt Kameralage und Mischung, sobald eine solche Textur gezeichnet wird;
   beim ersten Mal kommen Shader und Ecken dazu.
+
+- Vollständiger Vergleich mit dem Xbox-Image: docs/alpha-texturen.md. Alle
+  betroffenen Texturen (25 deckende, 2 fast deckende) sind Leuchttexturen,
+  deren Farbe schon mit dem Xbox-Alpha multipliziert ist; kein
+  Schattenproblem geht auf fehlendes Alpha zurück.
+- Genau statt geschätzt: `python -I tools/re/xbox_alpha.py <xbox.iso> game
+  --bin game/xbox_alpha.bin` schreibt aus dem eigenen Image je Inhalt
+  (Hash der geladenen Datei) den Xbox-Inhalt (Alpha, Farbe der Xbox); ts2.exe
+  lädt die Datei beim Start und bindet für solche Texturen (bis 256×256) eine
+  Kopie. Fehlt die Datei, bleibt die Schätzung aus der Helligkeit.
 
 ## Bildschirmeffekte (`src/host/effectfix.cpp`)
 

@@ -981,10 +981,12 @@ int wmain(int argc, wchar_t** argv) {
     static bool shadow_on = false, alpha_on = false;
     {
         wchar_t buf[32];
-        GetPrivateProfileStringW(L"grafik", L"schatten", L"0.35", buf, 32, (self_dir() / L"ts2.ini").c_str());
-        shadow_on = shadowfix_init(gfx.dev, std::clamp(float(_wtof(buf)), 0.0f, 1.0f));
+        GetPrivateProfileStringW(L"grafik", L"schatten", L"0.62", buf, 32, (self_dir() / L"ts2.ini").c_str());
+        // spec der zuletzt gesetzten Instanz (0x141229434 schreibt sie), siehe effectfix.cpp
+        shadow_on = shadowfix_init(gfx.dev, std::clamp(float(_wtof(buf)), 0.0f, 1.0f), g_img.va<uint32_t>(0x142FE3828));
         alpha_on = alphafix_init(
-            gfx.dev, GetPrivateProfileIntW(L"grafik", L"transparenz", 1, (self_dir() / L"ts2.ini").c_str()) != 0);
+            gfx.dev, GetPrivateProfileIntW(L"grafik", L"transparenz", 1, (self_dir() / L"ts2.ini").c_str()) != 0,
+            game / L"xbox_alpha.bin");
     }
     // Bildschirmeffekte (Regentropfen, Kamera, Licht; effectfix.h)
     static const bool effect_on = effectfix_install(g_img, gfx.dev);
