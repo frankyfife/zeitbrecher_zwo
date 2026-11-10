@@ -2,13 +2,15 @@
 
 #include <QKeyEvent>
 #include <QMouseEvent>
-#include <QStyle>
 
 #include <windows.h>
 
 KeySlot::KeySlot(QWidget* parent) : QPushButton(parent) {
     setObjectName("keyslot");
     setFocusPolicy(Qt::StrongFocus);
+    // Während der Aufnahme eingedrückt (Akzentfarbe des Stils) und fett
+    setCheckable(true);
+    setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("Umschalt rechts")) + fontMetrics().height() * 2);
     setToolTip(QStringLiteral("Klicken, dann Taste oder Maustaste drücken. Rechtsklick leert das Feld."));
     set_vk(0);
 }
@@ -50,17 +52,20 @@ void KeySlot::set_vk(int vk) {
     vk_ = vk;
     capturing_ = false;
     setText(vk_name(vk));
-    setProperty("capturing", false);
-    style()->unpolish(this);
-    style()->polish(this);
+    update_look();
+}
+
+void KeySlot::update_look() {
+    setChecked(capturing_);
+    QFont f = font();
+    f.setBold(capturing_);
+    setFont(f);
 }
 
 void KeySlot::start_capture() {
     capturing_ = true;
     setText(QStringLiteral("Taste drücken …"));
-    setProperty("capturing", true);
-    style()->unpolish(this);
-    style()->polish(this);
+    update_look();
     setFocus();
     grabKeyboard();
 }
@@ -116,6 +121,11 @@ void KeySlot::mousePressEvent(QMouseEvent* e) {
         return;
     }
     QPushButton::mousePressEvent(e);
+}
+
+void KeySlot::nextCheckState() {
+    if (capturing_) update_look();
+    else start_capture();
 }
 
 void KeySlot::focusOutEvent(QFocusEvent* e) {

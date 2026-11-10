@@ -19,11 +19,14 @@ protected:
     void keyPressEvent(QKeyEvent* e) override;
     void mousePressEvent(QMouseEvent* e) override;
     void focusOutEvent(QFocusEvent* e) override;
+    // click() ohne Maus (Bedienungshilfen) startet die Aufnahme statt umzuschalten
+    void nextCheckState() override;
 
 private:
     void start_capture();
     void finish(int vk);
     void cancel();
+    void update_look();
     int vk_ = 0;
     bool capturing_ = false;
 };

@@ -1,63 +1,157 @@
 #include "mainwindow.h"
 
 #include <QApplication>
-#include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
-#include <QFormLayout>
 #include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPainter>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QSettings>
 #include <QSlider>
 #include <QSpinBox>
-#include <QStackedWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 #include "keyslot.h"
 #include "theme.h"
 #include "ts2options.h"
 #include "xboxtext.h"
 
+using theme::Severity;
+
 namespace {
 
-QFrame* panel(QWidget* parent = nullptr) {
-    auto* f = new QFrame(parent);
-    f->setObjectName("panel");
+// Abstand wie im FuturamaPC-Launcher: eine halbe Zeilenhöhe
+int gap_of(const QWidget* w) { return w->fontMetrics().height() / 2; }
+
+// Umbrechendes Label: Höhe aus der tatsächlichen Breite. Die Raster rechnen
+// sonst mit der Schätzbreite von QLabel und lassen über und unter dem Text
+// große Lücken; nach jeder Breitenänderung wird neu gemessen.
+class WrapLabel : public QLabel {
+public:
+    using QLabel::QLabel;
+    QSize sizeHint() const override {
+        QSize s = QLabel::sizeHint();
+        if (width() > 0) s.setHeight(heightForWidth(width()));
+        return s;
+    }
+    QSize minimumSizeHint() const override {
+        QSize s = QLabel::minimumSizeHint();
+        s.setHeight(width() > 0 ? heightForWidth(width()) : fontMetrics().height());
+        return s;
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* e) override {
+        QLabel::resizeEvent(e);
+        if (e->size().width() != e->oldSize().width()) updateGeometry();
+    }
+};
+
+// Gedämpfter Hinweis (Platzhalterfarbe der Palette)
+QLabel* hint(const QString& t) {
+    auto* l = new WrapLabel(t);
+    l->setWordWrap(true);
+    l->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    QPalette p = l->palette();
+    p.setColor(QPalette::WindowText, theme::muted_color(l));
+    l->setPalette(p);
+    return l;
+}
+
+// Statuszeile (Rich Text mit Farben aus theme::colored)
+QLabel* status_label() {
+    auto* l = new WrapLabel;
+    l->setWordWrap(true);
+    l->setTextFormat(Qt::RichText);
+    l->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    return l;
+}
+
+// Formular in einer Gruppe: Beschriftung links, Bedienelement rechts. Ein
+// Raster statt QFormLayout, weil umbrechende Hinweise dort zu hoch werden.
+// Listen und Zahlen bleiben kompakt; Hinweise, Statuszeilen und Pfadzeilen
+// nehmen die ganze Breite.
+struct Form {
+    QGridLayout* g = nullptr;
+    int row = 0;
+
+    static bool grows(QWidget* w) {
+        auto* l = qobject_cast<QLabel*>(w);
+        return (l && l->wordWrap()) || w->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding;
+    }
+    QLabel* label(const QString& text) {
+        if (text.isEmpty()) return nullptr;
+        auto* l = new QLabel(text);
+        l->setProperty("form_label", true);
+        g->addWidget(l, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        return l;
+    }
+    void add(const QString& text, QWidget* w) {
+        if (auto* l = label(text)) l->setBuddy(w);
+        if (grows(w)) g->addWidget(w, row, 1, 1, 2);
+        else g->addWidget(w, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
+        ++row;
+    }
+    void add(const QString& text, QLayout* l) {
+        label(text);
+        g->addLayout(l, row, 1, 1, 2);
+        ++row;
+    }
+    // über die ganze Breite (Hinweise oben, Gruppen nur aus Kästchen)
+    void span(QWidget* w) {
+        g->addWidget(w, row, 0, 1, 3);
+        ++row;
+    }
+};
+
+Form form_group(const QString& title, QGroupBox** box_out) {
+    auto* box = new QGroupBox(title);
+    Form f;
+    f.g = new QGridLayout(box);
+    f.g->setHorizontalSpacing(box->fontMetrics().height());
+    f.g->setVerticalSpacing(gap_of(box) * 2 / 3);
+    f.g->setColumnStretch(2, 1);
+    *box_out = box;
     return f;
 }
 
-QLabel* heading(const QString& t) {
-    auto* l = new QLabel(t);
-    l->setObjectName("heading");
-    return l;
+// Eine Beschriftungsspalte für alle Formulare einer Seite (die Felder stehen
+// über die Gruppen hinweg untereinander)
+void align_labels(QWidget* content) {
+    QList<QLabel*> labels;
+    for (auto* l : content->findChildren<QLabel*>())
+        if (l->property("form_label").toBool()) labels << l;
+    int width = 0;
+    for (auto* l : labels) width = std::max(width, l->sizeHint().width());
+    for (auto* l : labels) l->setMinimumWidth(width);
 }
 
-QLabel* hint(const QString& t) {
-    auto* l = new QLabel(t);
-    l->setObjectName("hint");
-    l->setWordWrap(true);
-    return l;
-}
-
-// Seite mit Bildlauf und Paneelen
-QWidget* scroll_page(QWidget* content) {
+// Seite mit Bildlauf und Gruppen
+QWidget* scroll_page(QWidget* content, QVBoxLayout* v) {
+    const int gap = gap_of(content);
+    v->setContentsMargins(gap, gap, gap, gap);
+    v->setSpacing(gap);
+    v->addStretch(1);
+    align_labels(content);
     auto* sa = new QScrollArea;
     sa->setWidgetResizable(true);
     sa->setFrameShape(QFrame::NoFrame);
-    content->setObjectName("page");
     sa->setWidget(content);
     return sa;
 }
@@ -81,35 +175,44 @@ MainWindow::MainWindow(QWidget* parent)
     ts2opt::ini_complete(std::filesystem::path(ini_.path()));
     setWindowTitle(QStringLiteral("Zeitbrecher Zwo – TimeSplitters 2"));
     setWindowIcon(theme::app_icon());
-    setMinimumSize(1100, 720);
+    setMinimumSize(860, 640);
 
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(28, 96, 28, 20);
-    root->setSpacing(14);
+    const int gap = gap_of(this);
+    root->setContentsMargins(gap * 2, gap * 2, gap * 2, gap * 2);
+    root->setSpacing(gap);
+    root->addWidget(build_header());
 
-    // Reiter oben wie im Launcher des Xbox-Forks
     pages_ = new QTabWidget;
-    pages_->setDocumentMode(true);
-    const struct {
-        QString name;
-        QWidget* (MainWindow::*make)();
-    } tabs[] = {
-        {QStringLiteral("Spiel"), &MainWindow::page_game},         {QStringLiteral("Grafik"), &MainWindow::page_graphics},
-        {QStringLiteral("Steuerung"), &MainWindow::page_controls}, {QStringLiteral("Waffen"), &MainWindow::page_weapons},
-        {QStringLiteral("Ton"), &MainWindow::page_sound},          {QStringLiteral("Über"), &MainWindow::page_about},
-    };
-    for (const auto& t : tabs) pages_->addTab((this->*t.make)(), t.name.toUpper());
+    for (int i = 0; i < kTabs; ++i) pages_->addTab(build_tab(i), tab_name(i));
     root->addWidget(pages_, 1);
 
-    auto* bottom = new QHBoxLayout;
-    status_ = new QLabel;
-    status_->setObjectName("hint");
-    bottom->addWidget(status_, 1);
-    play_btn_ = new QPushButton(QStringLiteral("SPIELEN"));
-    play_btn_->setObjectName("play");
+    // Fuß: Status links, rechts Zurücksetzen und Spielen
+    auto* footer = new QHBoxLayout;
+    status_ = status_label();
+    QPalette sp = status_->palette();
+    sp.setColor(QPalette::WindowText, theme::muted_color(status_));
+    status_->setPalette(sp);
+    reset_btn_ = new QPushButton(QStringLiteral("Auf Standard zurücksetzen"));
+    reset_btn_->setToolTip(QStringLiteral("Alle Einstellungen dieses Reiters auf ihre Vorgaben setzen"));
+    connect(reset_btn_, &QPushButton::clicked, this, &MainWindow::reset_tab);
+    play_btn_ = new QPushButton(QStringLiteral("Spielen"));
+    play_btn_->setDefault(true);
+    theme::scale_font(play_btn_, 1.35, true);
+    play_btn_->setMinimumHeight(play_btn_->fontMetrics().height() * 2);
+    play_btn_->setMinimumWidth(play_btn_->fontMetrics().horizontalAdvance(play_btn_->text()) +
+                               fontMetrics().height() * 6);
+    play_btn_->setToolTip(QStringLiteral("ts2.exe starten und den Launcher schließen"));
     connect(play_btn_, &QPushButton::clicked, this, &MainWindow::play);
-    bottom->addWidget(play_btn_);
-    root->addLayout(bottom);
+    footer->addWidget(status_, 1);
+    footer->addWidget(reset_btn_, 0, Qt::AlignVCenter);
+    footer->addSpacing(gap);
+    footer->addWidget(play_btn_, 0, Qt::AlignVCenter);
+    root->addLayout(footer);
+
+    connect(pages_, &QTabWidget::currentChanged, this,
+            [this](int i) { reset_btn_->setEnabled(i >= 0 && i < kTabs && !tab_keys_[i].empty()); });
+    reset_btn_->setEnabled(!tab_keys_[0].empty());
     refresh_status();
 }
 
@@ -118,15 +221,58 @@ void MainWindow::show_page(int i) {
     pages_->setCurrentIndex(i);
 }
 
-void MainWindow::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    theme::paint_background(p, rect());
-    theme::paint_title(p, QRect(32, 18, width() - 64, 90));
+QString MainWindow::tab_name(int i) {
+    static const char* const names[kTabs] = {"Spiel", "Grafik", "Steuerung", "Waffen", "Ton", "Über"};
+    return QString::fromUtf8(names[i]);
+}
+
+QWidget* MainWindow::build_tab(int i) {
+    building_ = i;
+    tab_keys_[i].clear();
+    switch (i) {
+        case 0: return page_game();
+        case 1: return page_graphics();
+        case 2: return page_controls();
+        case 3: return page_weapons();
+        case 4: return page_sound();
+        default: return page_about();
+    }
+}
+
+// Kopf wie im FuturamaPC-Launcher: Symbol, Titel, Untertitel, darunter die Pfade
+QWidget* MainWindow::build_header() {
+    auto* header = new QWidget;
+    auto* outer = new QVBoxLayout(header);
+    outer->setContentsMargins(0, 0, 0, 0);
+    auto* row = new QHBoxLayout;
+    const int unit = fontMetrics().height();
+    auto* icon = new QLabel;
+    icon->setPixmap(theme::app_icon_pixmap(unit * 3, devicePixelRatioF()));
+    row->addWidget(icon, 0, Qt::AlignVCenter);
+    row->addSpacing(unit / 2);
+    auto* titles = new QVBoxLayout;
+    titles->setSpacing(0);
+    auto* title = new QLabel(QStringLiteral("Zeitbrecher Zwo"));
+    theme::scale_font(title, 1.9, true);
+    auto* subtitle = hint(QStringLiteral("Launcher für den PC-Port von TimeSplitters 2"));
+    subtitle->setWordWrap(false);
+    titles->addWidget(title);
+    titles->addWidget(subtitle);
+    row->addLayout(titles);
+    row->addStretch(1);
+    outer->addLayout(row);
+    info_ = hint(QString());
+    info_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    outer->addWidget(info_);
+    return header;
 }
 
 // ---- Bindungen
 
+void MainWindow::track(const char* sec, const char* key) { tab_keys_[building_].emplace_back(sec, key); }
+
 QCheckBox* MainWindow::check(const QString& text, const char* sec, const char* key) {
+    track(sec, key);
     auto* c = new QCheckBox(text);
     c->setChecked(ini_.get_bool(sec, key));
     connect(c, &QCheckBox::toggled, this, [this, sec, key](bool on) { ini_.set_bool(sec, key, on); });
@@ -134,6 +280,7 @@ QCheckBox* MainWindow::check(const QString& text, const char* sec, const char* k
 }
 
 QSpinBox* MainWindow::spin(const char* sec, const char* key, int lo, int hi, const QString& suffix) {
+    track(sec, key);
     auto* s = new QSpinBox;
     s->setRange(lo, hi);
     s->setSuffix(suffix);
@@ -143,6 +290,7 @@ QSpinBox* MainWindow::spin(const char* sec, const char* key, int lo, int hi, con
 }
 
 QDoubleSpinBox* MainWindow::dspin(const char* sec, const char* key, double lo, double hi, double step, int decimals) {
+    track(sec, key);
     auto* s = new QDoubleSpinBox;
     s->setRange(lo, hi);
     s->setSingleStep(step);
@@ -154,14 +302,16 @@ QDoubleSpinBox* MainWindow::dspin(const char* sec, const char* key, double lo, d
 }
 
 QWidget* MainWindow::percent_slider(const char* sec, const char* key) {
+    track(sec, key);
     auto* w = new QWidget;
     auto* h = new QHBoxLayout(w);
     h->setContentsMargins(0, 0, 0, 0);
     auto* sl = new QSlider(Qt::Horizontal);
     sl->setRange(0, 200);
+    sl->setMinimumWidth(fontMetrics().height() * 16);
     sl->setValue(int(ini_.get_double(sec, key) * 100.0 + 0.5));
     auto* lab = new QLabel(QStringLiteral("%1 %").arg(sl->value()));
-    lab->setMinimumWidth(56);
+    lab->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("200 %")) + fontMetrics().height() / 2);
     connect(sl, &QSlider::valueChanged, this, [this, sec, key, lab](int v) {
         lab->setText(QStringLiteral("%1 %").arg(v));
         ini_.set_double(sec, key, v / 100.0);
@@ -172,6 +322,7 @@ QWidget* MainWindow::percent_slider(const char* sec, const char* key) {
 }
 
 KeySlot* MainWindow::single_key(const char* sec, const char* key) {
+    track(sec, key);
     auto* k = new KeySlot;
     k->set_vk(ini_.get_int(sec, key));
     connect(k, &KeySlot::changed, this, [this, sec, key](int vk) { ini_.set_int(sec, key, vk); });
@@ -183,13 +334,30 @@ KeySlot* MainWindow::single_key(const char* sec, const char* key) {
 QWidget* MainWindow::page_game() {
     auto* content = new QWidget;
     auto* v = new QVBoxLayout(content);
-    auto* p1 = panel();
-    auto* f1 = new QVBoxLayout(p1);
-    f1->addWidget(heading(QStringLiteral("Einrichten")));
-    game_status_ = new QLabel;
-    game_status_->setWordWrap(true);
-    f1->addWidget(game_status_);
-    f1->addWidget(hint(QStringLiteral(
+    v->addWidget(setup_group());
+    v->addWidget(language_group());
+
+    QGroupBox* box;
+    auto f = form_group(QStringLiteral("Freischalten"), &box);
+    f.span(hint(QStringLiteral("Wie die Konsolen-Codes der Homefront-Fassung.")));
+    f.span(check(QStringLiteral("Alle Story-Level"), "freischalten", "story"));
+    f.span(check(QStringLiteral("Arcade"), "freischalten", "arcade"));
+    f.span(check(QStringLiteral("Challenge"), "freischalten", "challenge"));
+    f.span(check(QStringLiteral("Hauptmenü mit „Options“"), "freischalten", "optionen"));
+    f.span(check(QStringLiteral("Alle Cheats/Extras"), "freischalten", "cheats"));
+    f.span(check(QStringLiteral("Unverwundbar"), "freischalten", "unverwundbar"));
+    f.span(check(QStringLiteral("Alles (Figuren, Level, Extras)"), "freischalten", "alles"));
+    v->addWidget(box);
+    return scroll_page(content, v);
+}
+
+// Einrichten aus der eigenen Homefront-Installation (ts2.exe --einrichten)
+QWidget* MainWindow::setup_group() {
+    QGroupBox* box;
+    auto f = form_group(QStringLiteral("Einrichten"), &box);
+    game_status_ = status_label();
+    f.span(game_status_);
+    f.span(hint(QStringLiteral(
         "Einmalig aus der eigenen Installation von Homefront: The Revolution. Danach wird Homefront nicht mehr gebraucht.")));
     auto* row = new QHBoxLayout;
     homefront_ = new QLineEdit(guess_homefront());
@@ -204,55 +372,24 @@ QWidget* MainWindow::page_game() {
     row->addWidget(homefront_, 1);
     row->addWidget(browse);
     row->addWidget(setup_btn_);
-    f1->addLayout(row);
+    f.add(QStringLiteral("Homefront-Ordner"), row);
     setup_log_ = new QPlainTextEdit;
     setup_log_->setReadOnly(true);
-    setup_log_->setMaximumHeight(140);
+    setup_log_->setMaximumHeight(fontMetrics().height() * 8);
     setup_log_->hide();
-    f1->addWidget(setup_log_);
-    v->addWidget(p1);
-    v->addWidget(language_panel());
-
-    auto* pr = panel();
-    auto* fr = new QVBoxLayout(pr);
-    fr->addWidget(heading(QStringLiteral("Fehlerbehebungen (TS2 Redux)")));
-    const bool have_redux = QFile::exists(game_.filePath(QStringLiteral("redux.bin")));
-    fr->addWidget(hint(have_redux
-        ? QStringLiteral("Aus der eigenen Kopie von TS2 Redux (github.com/HFTSRedux/TS2Redux), game/redux.bin.")
-        : QStringLiteral("<span style='color:#ff4fd8'>game/redux.bin fehlt:</span> einmal "
-                         "tools/re/redux_patches.py mit der eigenen TS2-Redux-Kopie ausführen.")));
-    fr->addWidget(check(QStringLiteral("Spielfehler (Reaper-Absturz, Regen auf der Kamera)"), "redux", "spielfehler"));
-    fr->addWidget(check(QStringLiteral("Unsichtbarkeitsfehler"), "redux", "unsichtbar"));
-    fr->addWidget(check(QStringLiteral("HUD- und Textanzeige"), "redux", "anzeige"));
-    fr->addWidget(check(QStringLiteral("Menü-Layout wie auf der Konsole"), "redux", "menue"));
-    v->addWidget(pr);
-
-    auto* p2 = panel();
-    auto* f2 = new QVBoxLayout(p2);
-    f2->addWidget(heading(QStringLiteral("Freischalten")));
-    f2->addWidget(hint(QStringLiteral("Wie die Konsolen-Codes der Homefront-Fassung.")));
-    f2->addWidget(check(QStringLiteral("Alle Story-Level"), "freischalten", "story"));
-    f2->addWidget(check(QStringLiteral("Arcade"), "freischalten", "arcade"));
-    f2->addWidget(check(QStringLiteral("Challenge"), "freischalten", "challenge"));
-    f2->addWidget(check(QStringLiteral("Hauptmenü mit „Options“"), "freischalten", "optionen"));
-    f2->addWidget(check(QStringLiteral("Alle Cheats/Extras"), "freischalten", "cheats"));
-    f2->addWidget(check(QStringLiteral("Unverwundbar"), "freischalten", "unverwundbar"));
-    f2->addWidget(check(QStringLiteral("Alles (Figuren, Level, Extras)"), "freischalten", "alles"));
-    v->addWidget(p2);
-    v->addStretch();
-    return scroll_page(content);
+    f.span(setup_log_);
+    return box;
 }
 
 // Spieltexte: Auswahl [sprache] text, Texte aus dem eigenen Xbox-Image
 // (PAL: de, fr, it, es, en) nach game/sprache/<code>.bin holen.
-QWidget* MainWindow::language_panel() {
-    auto* p = panel();
-    auto* f = new QVBoxLayout(p);
-    f->addWidget(heading(QStringLiteral("Sprache")));
-    f->addWidget(hint(QStringLiteral(
+QWidget* MainWindow::language_group() {
+    QGroupBox* box;
+    auto f = form_group(QStringLiteral("Sprache"), &box);
+    f.span(hint(QStringLiteral(
         "Der PC-Port hat nur englische Texte. Die Xbox-PAL-Fassung bringt Deutsch, Französisch, Italienisch und "
         "Spanisch mit: einmal aus dem eigenen Image holen. Die Sprachausgabe bleibt englisch.")));
-    auto* row = new QHBoxLayout;
+    track("sprache", "text");
     lang_ = new QComboBox;
     const QList<QPair<QString, QString>> langs = {
         {QStringLiteral("pc"), QStringLiteral("Englisch (PC-Port)")}, {QStringLiteral("de"), QStringLiteral("Deutsch")},
@@ -265,13 +402,10 @@ QWidget* MainWindow::language_panel() {
         ini_.set("sprache", "text", lang_->currentData().toString());
         refresh_language();
     });
-    row->addWidget(new QLabel(QStringLiteral("Spieltexte")));
-    row->addWidget(lang_, 1);
-    f->addLayout(row);
-    lang_status_ = new QLabel;
-    lang_status_->setWordWrap(true);
-    f->addWidget(lang_status_);
-    auto* row2 = new QHBoxLayout;
+    f.add(QStringLiteral("Spieltexte"), lang_);
+    lang_status_ = status_label();
+    f.add(QString(), lang_status_);
+    auto* row = new QHBoxLayout;
     xbox_image_ = new QLineEdit(ini_.get("sprache", "xbox_image"));
     xbox_image_->setPlaceholderText(QStringLiteral("Eigenes Xbox-Image von TimeSplitters 2 (.iso, PAL)"));
     auto* browse = new QPushButton(QStringLiteral("Durchsuchen …"));
@@ -282,12 +416,12 @@ QWidget* MainWindow::language_panel() {
     });
     auto* go = new QPushButton(QStringLiteral("Texte holen"));
     connect(go, &QPushButton::clicked, this, &MainWindow::extract_texts);
-    row2->addWidget(xbox_image_, 1);
-    row2->addWidget(browse);
-    row2->addWidget(go);
-    f->addLayout(row2);
+    row->addWidget(xbox_image_, 1);
+    row->addWidget(browse);
+    row->addWidget(go);
+    f.add(QStringLiteral("Xbox-Image"), row);
     refresh_language();
-    return p;
+    return box;
 }
 
 void MainWindow::refresh_language() {
@@ -297,9 +431,9 @@ void MainWindow::refresh_language() {
         return;
     }
     const bool have = QFile::exists(game_.filePath(QStringLiteral("sprache/%1.bin").arg(code)));
-    lang_status_->setText(have ? QStringLiteral("<span style='color:#7dff6a'>Texte vorhanden.</span>")
-                               : QStringLiteral("<span style='color:#ff4fd8'>Texte fehlen:</span> "
-                                                "unten das eigene Xbox-Image wählen und „Texte holen“."));
+    lang_status_->setText(have ? theme::colored(QStringLiteral("Texte vorhanden."), Severity::Ok)
+                               : theme::colored(QStringLiteral("Texte fehlen:"), Severity::Error) +
+                                     QStringLiteral(" unten das eigene Xbox-Image wählen und „Texte holen“."));
 }
 
 void MainWindow::extract_texts() {
@@ -310,7 +444,7 @@ void MainWindow::extract_texts() {
     const auto r = xboxtext::extract(image.toStdWString(), game_.filePath(QStringLiteral("sprache")).toStdWString());
     QApplication::restoreOverrideCursor();
     if (!r.error.empty()) {
-        lang_status_->setText(QStringLiteral("<span style='color:#ff4fd8'>%1</span>").arg(QString::fromStdString(r.error)));
+        lang_status_->setText(theme::colored(QString::fromStdString(r.error).toHtmlEscaped(), Severity::Error));
         return;
     }
     QStringList got;
@@ -322,9 +456,10 @@ void MainWindow::extract_texts() {
 QWidget* MainWindow::page_graphics() {
     auto* content = new QWidget;
     auto* v = new QVBoxLayout(content);
-    auto* p1 = panel();
-    auto* f = new QFormLayout(p1);
-    f->addRow(heading(QStringLiteral("Bild")));
+    QGroupBox* box;
+    auto f = form_group(QStringLiteral("Bild"), &box);
+    track("grafik", "breite");
+    track("grafik", "hoehe");
     auto* res = new QComboBox;
     const QList<QSize> sizes = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3840, 2160}};
     const QSize cur(ini_.get_int("grafik", "breite"), ini_.get_int("grafik", "hoehe"));
@@ -336,78 +471,81 @@ QWidget* MainWindow::page_graphics() {
         ini_.set_int("grafik", "breite", s.width());
         ini_.set_int("grafik", "hoehe", s.height());
     });
-    f->addRow(QStringLiteral("Render-Auflösung"), res);
+    f.add(QStringLiteral("Render-Auflösung"), res);
+    track("grafik", "takt");
     auto* rate = new QComboBox;
     rate->addItem(QStringLiteral("60 Hz (wie das Spiel)"), 60);
     rate->addItem(QStringLiteral("120 Hz (Spieler und Kamera nativ)"), 120);
     rate->setCurrentIndex(ini_.get_int("grafik", "takt") == 120 ? 1 : 0);
     connect(rate, &QComboBox::currentIndexChanged, this,
             [this, rate](int) { ini_.set_int("grafik", "takt", rate->currentData().toInt()); });
-    f->addRow(QStringLiteral("Bildtakt"), rate);
-    f->addRow(QString(), check(QStringLiteral("Randloses Vollbild (Alt+Enter schaltet um)"), "grafik", "vollbild"));
-    f->addRow(QString(), check(QStringLiteral("Zusätzlich auf den Monitor warten (Bildsync)"), "grafik", "bildsync"));
-    f->addRow(QString(), check(QStringLiteral("HDR-Ausgabe, wenn Windows-HDR an ist"), "grafik", "hdr"));
-    f->addRow(QStringLiteral("HDR-Weiß"), spin("grafik", "hdr_weiss", 80, 1000, QStringLiteral(" Nits")));
-    f->addRow(hint(QStringLiteral("Helligkeit von Weiß im Spiel. Ohne HDR-Ausgabe bildet Windows das Bild selbst ab "
-                                  "(wirkte überstrahlt).")));
-    f->addRow(QStringLiteral("Sichtfeld"), spin("grafik", "sichtfeld", 70, 150, QStringLiteral(" %")));
-    f->addRow(QStringLiteral("Schatten"), dspin("grafik", "schatten", 0.0, 1.0, 0.05, 2));
-    f->addRow(hint(QStringLiteral("Deckkraft der Schattenflecken unter Kisten und Figuren (Xbox: schwach). 0 = wie der "
-                                  "PC-Port (oft schwarz).")));
-    f->addRow(hint(QStringLiteral("In Prozent des Spiels; das Zielfernrohr zoomt im selben Verhältnis.")));
-    v->addWidget(p1);
+    f.add(QStringLiteral("Bildtakt"), rate);
+    f.add(QString(), check(QStringLiteral("Randloses Vollbild (Alt+Enter schaltet um)"), "grafik", "vollbild"));
+    f.add(QString(), check(QStringLiteral("Zusätzlich auf den Monitor warten (Bildsync)"), "grafik", "bildsync"));
+    f.add(QStringLiteral("Sichtfeld"), spin("grafik", "sichtfeld", 70, 150, QStringLiteral(" %")));
+    f.add(QString(), hint(QStringLiteral("In Prozent des Spiels; das Zielfernrohr zoomt im selben Verhältnis.")));
+    f.add(QStringLiteral("Schatten"), dspin("grafik", "schatten", 0.0, 1.0, 0.05, 2));
+    f.add(QString(), hint(QStringLiteral("Deckkraft der Schattenflecken unter Kisten und Figuren (Xbox: schwach). "
+                                             "0 = wie der PC-Port (oft schwarz).")));
+    v->addWidget(box);
 
-    auto* p2 = panel();
-    auto* f2 = new QFormLayout(p2);
-    f2->addRow(heading(QStringLiteral("Bildanpassung")));
-    f2->addRow(hint(QStringLiteral("Alle Werte neutral: keine Anpassung.")));
-    f2->addRow(QStringLiteral("Gamma"), dspin("grafik", "gamma", 0.5, 2.5, 0.05, 2));
-    f2->addRow(QStringLiteral("Kontrast"), dspin("grafik", "kontrast", 0.5, 2.0, 0.05, 2));
-    f2->addRow(QStringLiteral("Helligkeit"), dspin("grafik", "helligkeit", -0.5, 0.5, 0.02, 2));
-    f2->addRow(QStringLiteral("Sättigung"), dspin("grafik", "saettigung", 0.0, 2.0, 0.05, 2));
-    v->addWidget(p2);
-    v->addStretch();
-    return scroll_page(content);
+    f = form_group(QStringLiteral("HDR"), &box);
+    f.add(QString(), check(QStringLiteral("HDR-Ausgabe, wenn Windows-HDR an ist"), "grafik", "hdr"));
+    f.add(QStringLiteral("HDR-Weiß"), spin("grafik", "hdr_weiss", 80, 1000, QStringLiteral(" Nits")));
+    f.add(QString(), hint(QStringLiteral("Helligkeit von Weiß im Spiel. Ohne HDR-Ausgabe bildet Windows das Bild "
+                                             "selbst ab (wirkte überstrahlt).")));
+    v->addWidget(box);
+
+    f = form_group(QStringLiteral("Bildanpassung"), &box);
+    f.span(hint(QStringLiteral("Alle Werte neutral: keine Anpassung.")));
+    f.add(QStringLiteral("Gamma"), dspin("grafik", "gamma", 0.5, 2.5, 0.05, 2));
+    f.add(QStringLiteral("Kontrast"), dspin("grafik", "kontrast", 0.5, 2.0, 0.05, 2));
+    f.add(QStringLiteral("Helligkeit"), dspin("grafik", "helligkeit", -0.5, 0.5, 0.02, 2));
+    f.add(QStringLiteral("Sättigung"), dspin("grafik", "saettigung", 0.0, 2.0, 0.05, 2));
+    v->addWidget(box);
+    return scroll_page(content, v);
 }
 
 QWidget* MainWindow::page_controls() {
     auto* content = new QWidget;
     auto* v = new QVBoxLayout(content);
-    auto* p1 = panel();
-    auto* f = new QFormLayout(p1);
-    f->addRow(heading(QStringLiteral("Maus")));
-    f->addRow(QStringLiteral("Empfindlichkeit"), dspin("maus", "empfindlichkeit", 0.1, 5.0, 0.05, 2));
-    f->addRow(QString(), check(QStringLiteral("Oben und unten vertauschen"), "maus", "umkehren"));
-    f->addRow(QStringLiteral("Nickgrenze"), spin("maus", "nickgrenze", 40, 89, QStringLiteral("°")));
-    f->addRow(QString(), check(QStringLiteral("Menüs mit der Maus"), "maus", "menue"));
-    f->addRow(heading(QStringLiteral("Freie Kamera")));
-    f->addRow(hint(QStringLiteral("Taste löst die Kamera vom Spieler: WASD, Maus, Leertaste/C steigen/sinken, "
+    QGroupBox* box;
+    auto f = form_group(QStringLiteral("Maus"), &box);
+    f.add(QStringLiteral("Empfindlichkeit"), dspin("maus", "empfindlichkeit", 0.1, 5.0, 0.05, 2));
+    f.add(QString(), check(QStringLiteral("Oben und unten vertauschen"), "maus", "umkehren"));
+    f.add(QStringLiteral("Nickgrenze"), spin("maus", "nickgrenze", 40, 89, QStringLiteral("°")));
+    f.add(QString(), check(QStringLiteral("Menüs mit der Maus"), "maus", "menue"));
+    v->addWidget(box);
+
+    f = form_group(QStringLiteral("Freie Kamera"), &box);
+    f.span(hint(QStringLiteral("Taste löst die Kamera vom Spieler: WASD, Maus, Leertaste/C steigen/sinken, "
                                   "Umschalt schneller. Dieselbe Taste bringt sie zurück.")));
-    f->addRow(QString(), check(QStringLiteral("Freie Kamera"), "kamera", "freecam"));
-    f->addRow(QStringLiteral("Taste"), single_key("kamera", "freecam_taste"));
-    v->addWidget(p1);
+    f.add(QString(), check(QStringLiteral("Freie Kamera"), "kamera", "freecam"));
+    f.add(QStringLiteral("Taste"), single_key("kamera", "freecam_taste"));
+    v->addWidget(box);
 
-    auto* p2 = panel();
-    auto* f2 = new QFormLayout(p2);
-    f2->addRow(heading(QStringLiteral("Bewegung")));
-    f2->addRow(QString(), check(QStringLiteral("Springen"), "bewegung", "springen"));
-    f2->addRow(QStringLiteral("Sprungtaste"), single_key("bewegung", "sprungtaste"));
-    f2->addRow(QStringLiteral("Sprunghöhe"), dspin("bewegung", "sprunghoehe", 0.5, 4.0, 0.1, 2));
-    f2->addRow(QString(), check(QStringLiteral("Rennen"), "bewegung", "rennen"));
-    f2->addRow(QStringLiteral("Renntaste"), single_key("bewegung", "renntaste"));
-    f2->addRow(QStringLiteral("Renntempo"), spin("bewegung", "renntempo", 100, 300, QStringLiteral(" %")));
-    f2->addRow(QString(), check(QStringLiteral("Renntaste schaltet um statt gehalten zu werden"), "bewegung", "rennen_umschalten"));
-    v->addWidget(p2);
+    f = form_group(QStringLiteral("Bewegung"), &box);
+    f.add(QString(), check(QStringLiteral("Springen"), "bewegung", "springen"));
+    f.add(QStringLiteral("Sprungtaste"), single_key("bewegung", "sprungtaste"));
+    f.add(QStringLiteral("Sprunghöhe"), dspin("bewegung", "sprunghoehe", 0.5, 4.0, 0.1, 2));
+    f.add(QString(), check(QStringLiteral("Rennen"), "bewegung", "rennen"));
+    f.add(QStringLiteral("Renntaste"), single_key("bewegung", "renntaste"));
+    f.add(QStringLiteral("Renntempo"), spin("bewegung", "renntempo", 100, 300, QStringLiteral(" %")));
+    f.add(QString(), check(QStringLiteral("Renntaste schaltet um statt gehalten zu werden"), "bewegung", "rennen_umschalten"));
+    v->addWidget(box);
 
-    auto* p3 = panel();
-    auto* g = new QGridLayout(p3);
-    g->addWidget(heading(QStringLiteral("Tasten")), 0, 0, 1, 4);
+    // Tasten: bis zu drei Felder je Aktion, Liste mit Komma in [tasten]
+    auto* keys = new QGroupBox(QStringLiteral("Tasten"));
+    auto* g = new QGridLayout(keys);
+    g->setHorizontalSpacing(fontMetrics().height());
+    g->setVerticalSpacing(gap_of(this) * 2 / 3);
     g->addWidget(hint(QStringLiteral("Bis zu drei Tasten je Aktion. Klick, dann Taste oder Maustaste drücken; "
                                      "Rechtsklick leert. Mausrad: Waffe wechseln.")),
-                 1, 0, 1, 4);
-    int row = 2;
+                 0, 0, 1, 5);
+    int row = 1;
     QList<QList<KeySlot*>> all;
     for (const auto& k : ts2opt::key_defaults()) {
+        track("tasten", k.key);
         g->addWidget(new QLabel(QString::fromUtf8(k.label)), row, 0);
         const QStringList cur = ini_.get("tasten", k.key).split(QLatin1Char(','));
         QList<KeySlot*> fields;
@@ -428,7 +566,9 @@ QWidget* MainWindow::page_controls() {
         all << fields;
         ++row;
     }
+    g->setColumnStretch(4, 1);
     auto* reset = new QPushButton(QStringLiteral("Standardbelegung"));
+    reset->setToolTip(QStringLiteral("Nur die Tasten auf die Vorgaben setzen"));
     connect(reset, &QPushButton::clicked, this, [this, all] {
         int i = 0;
         for (const auto& k : ts2opt::key_defaults()) {
@@ -437,10 +577,9 @@ QWidget* MainWindow::page_controls() {
             ++i;
         }
     });
-    g->addWidget(reset, row, 0);
-    v->addWidget(p3);
-    v->addStretch();
-    return scroll_page(content);
+    g->addWidget(reset, row, 1, 1, 3, Qt::AlignLeft);
+    v->addWidget(keys);
+    return scroll_page(content, v);
 }
 
 // Waffen in der Hand des Spielers, nach ihrer Zeile in der Waffentabelle
@@ -460,99 +599,151 @@ const struct {
     {21, "Zeitzündermine"}, {22, "TNT"}, {23, "Tommy Gun"}, {24, "Uzi"},
     {25, "Doppelläufige Flinte"}, {26, "Ziegelstein"}, {36, "Armbrust"}, {37, "Pulverfass"},
 };
+constexpr int kWeaponRows = 46;
+
+// Schlüssel feuerrate_<zeile>; einmal angelegt, sie leben so lange wie das Programm
+const char* weapon_key(int w) {
+    static const std::vector<std::string> keys = [] {
+        std::vector<std::string> k;
+        for (int i = 0; i < kWeaponRows; ++i) k.push_back("feuerrate_" + std::to_string(i));
+        return k;
+    }();
+    return keys[size_t(w)].c_str();
+}
 }  // namespace
 
 QWidget* MainWindow::page_weapons() {
     auto* content = new QWidget;
     auto* v = new QVBoxLayout(content);
-    auto* p1 = panel();
-    auto* f = new QFormLayout(p1);
-    f->addRow(heading(QStringLiteral("Waffen")));
-    f->addRow(hint(QStringLiteral("Gilt für alle, auch für die KI. 100 % = wie das Spiel.")));
-    f->addRow(QStringLiteral("Tempo des Waffenwechsels"), spin("waffen", "wechseltempo", 25, 1000, QStringLiteral(" %")));
-    f->addRow(QStringLiteral("Feuerrate aller Waffen"), spin("waffen", "feuerrate", 10, 1000, QStringLiteral(" %")));
-    v->addWidget(p1);
-    auto* p2 = panel();
-    auto* g = new QGridLayout(p2);
-    g->addWidget(heading(QStringLiteral("Feuerrate einzelner Waffen")), 0, 0, 1, 6);
+    QGroupBox* box;
+    auto f = form_group(QStringLiteral("Waffen"), &box);
+    f.span(hint(QStringLiteral("Gilt für alle, auch für die KI. 100 % = wie das Spiel.")));
+    f.add(QStringLiteral("Tempo des Waffenwechsels"), spin("waffen", "wechseltempo", 25, 1000, QStringLiteral(" %")));
+    f.add(QStringLiteral("Feuerrate aller Waffen"), spin("waffen", "feuerrate", 10, 1000, QStringLiteral(" %")));
+    v->addWidget(box);
+
+    auto* single = new QGroupBox(QStringLiteral("Feuerrate einzelner Waffen"));
+    auto* g = new QGridLayout(single);
+    g->setHorizontalSpacing(fontMetrics().height());
+    g->setVerticalSpacing(gap_of(this) * 2 / 3);
     g->addWidget(hint(QStringLiteral("0 = wie oben. Zuerst die Waffen des Spielers, dann die übrigen Zeilen der "
-                                     "Waffentabelle (KI, Geschütze).")), 1, 0, 1, 6);
-    static std::vector<std::string> keys;  // Schlüssel müssen leben, solange das Fenster lebt
-    keys.clear();
-    keys.reserve(46);
-    for (int w = 0; w < 46; ++w) keys.push_back("feuerrate_" + std::to_string(w));
+                                     "Waffentabelle (KI, Geschütze).")), 0, 0, 1, 6);
     std::vector<std::pair<int, QString>> order;
-    std::vector<bool> named(46, false);
+    std::vector<bool> named(kWeaponRows, false);
     for (const auto& e : kWeapons) order.emplace_back(e.row, QString::fromUtf8(e.name)), named[e.row] = true;
-    for (int w = 0; w < 46; ++w)
+    for (int w = 0; w < kWeaponRows; ++w)
         if (!named[w]) order.emplace_back(w, QStringLiteral("Zeile %1").arg(w));
     for (int i = 0; i < int(order.size()); ++i) {
-        const int w = order[i].first;
-        g->addWidget(new QLabel(order[i].second), 2 + i / 3, (i % 3) * 2);
+        const char* key = weapon_key(order[i].first);
+        track("waffen", key);
+        g->addWidget(new QLabel(order[i].second), 1 + i / 3, (i % 3) * 2);
         auto* s = new QSpinBox;
         s->setRange(0, 1000);
         s->setSuffix(QStringLiteral(" %"));
         s->setSpecialValueText(QStringLiteral("wie oben"));
-        s->setValue(ini_.get("waffen", keys[w].c_str()).toInt());
-        const char* key = keys[w].c_str();
+        s->setValue(ini_.get("waffen", key).toInt());
         connect(s, &QSpinBox::valueChanged, this, [this, key](int val) {
             if (val == 0) ini_.set("waffen", key, QString());  // leer: wie oben
             else ini_.set_int("waffen", key, val);
         });
-        g->addWidget(s, 2 + i / 3, (i % 3) * 2 + 1);
+        g->addWidget(s, 1 + i / 3, (i % 3) * 2 + 1);
     }
-    v->addWidget(p2);
-    v->addStretch();
-    return scroll_page(content);
+    for (int c = 0; c < 3; ++c) g->setColumnStretch(c * 2, 1);
+    v->addWidget(single);
+    return scroll_page(content, v);
 }
 
 QWidget* MainWindow::page_sound() {
     auto* content = new QWidget;
     auto* v = new QVBoxLayout(content);
-    auto* p1 = panel();
-    auto* f = new QFormLayout(p1);
-    f->addRow(heading(QStringLiteral("Ton")));
-    f->addRow(QString(), check(QStringLiteral("Ton an"), "ton", "an"));
-    f->addRow(QStringLiteral("Gesamt"), percent_slider("ton", "gesamt"));
-    f->addRow(QStringLiteral("Musik"), percent_slider("ton", "musik"));
-    f->addRow(QStringLiteral("Effekte"), percent_slider("ton", "effekte"));
-    f->addRow(QString(), check(QStringLiteral("5.1 ausgeben, wenn das Gerät es kann"), "ton", "surround"));
-    v->addWidget(p1);
-    v->addStretch();
-    return scroll_page(content);
+    QGroupBox* box;
+    auto f = form_group(QStringLiteral("Ton"), &box);
+    f.add(QString(), check(QStringLiteral("Ton an"), "ton", "an"));
+    f.add(QStringLiteral("Gesamt"), percent_slider("ton", "gesamt"));
+    f.add(QStringLiteral("Musik"), percent_slider("ton", "musik"));
+    f.add(QStringLiteral("Effekte"), percent_slider("ton", "effekte"));
+    f.add(QString(), check(QStringLiteral("5.1 ausgeben, wenn das Gerät es kann"), "ton", "surround"));
+    v->addWidget(box);
+    return scroll_page(content, v);
 }
 
 QWidget* MainWindow::page_about() {
     auto* content = new QWidget;
     auto* v = new QVBoxLayout(content);
-    auto* p1 = panel();
-    auto* l = new QVBoxLayout(p1);
-    l->addWidget(heading(QStringLiteral("zeitbrecher_zwo")));
+    auto* box = new QGroupBox(QStringLiteral("zeitbrecher_zwo"));
+    auto* l = new QVBoxLayout(box);
     auto* t = new QLabel(QStringLiteral(
         "Eigenständiger PC-Port von TimeSplitters 2 aus der Fassung, die in <i>Homefront: The Revolution</i> steckt.<br><br>"
         "Enthält keine Daten oder Code des Spiels: beides kommt beim Einrichten aus der eigenen Homefront-Installation.<br><br>"
         "Erweiterungen nach dem Vorbild von split2-recomp_ff (Sprung, Rennen, Feuerrate, Menümaus), "
-        "Freischaltungen nach TS2Redux.<br><br>"
+        "Freischaltungen wie die Konsolen-Codes der Homefront-Fassung.<br><br>"
         "Alle Einstellungen stehen in <b>ts2.ini</b> neben <b>ts2.exe</b>; dieser Launcher schreibt jede Änderung sofort."));
     t->setWordWrap(true);
     t->setTextFormat(Qt::RichText);
     l->addWidget(t);
-    v->addWidget(p1);
-    v->addStretch();
-    return scroll_page(content);
+    v->addWidget(box);
+    return scroll_page(content, v);
 }
 
-// ---- Einrichten und Spielen
+// ---- Zurücksetzen, Einrichten und Spielen
+
+// Alle Schlüssel des aktuellen Reiters auf die Vorgaben aus ts2options setzen
+// und die Seite neu bauen (die Bedienelemente lesen ts2.ini beim Bauen)
+void MainWindow::reset_tab() {
+    const int i = pages_->currentIndex();
+    if (i < 0 || i >= kTabs || tab_keys_[i].empty()) return;
+    QMessageBox box(QMessageBox::Question, QStringLiteral("Auf Standard zurücksetzen"),
+                    QStringLiteral("Alle Einstellungen auf dem Reiter „%1“ auf ihre Standardwerte zurücksetzen?").arg(tab_name(i)),
+                    QMessageBox::NoButton, this);
+    QPushButton* yes = box.addButton(QStringLiteral("Zurücksetzen"), QMessageBox::AcceptRole);
+    QPushButton* no = box.addButton(QStringLiteral("Abbrechen"), QMessageBox::RejectRole);
+    box.setDefaultButton(no);
+    box.setEscapeButton(no);
+    box.exec();
+    if (box.clickedButton() != yes) return;
+
+    for (const auto& [sec, key] : tab_keys_[i])
+        ini_.set(sec.c_str(), key.c_str(), QString::fromStdString(ts2opt::default_value(sec, key)));
+
+    // Spiel-Reiter: Ordner und Protokoll des Einrichtens bleiben stehen
+    const QString hf = i == 0 ? homefront_->text() : QString();
+    const QString log = i == 0 ? setup_log_->toPlainText() : QString();
+    const bool log_shown = i == 0 && setup_log_->isVisible();
+    QWidget* old = pages_->widget(i);
+    const QSignalBlocker block(pages_);
+    pages_->removeTab(i);
+    pages_->insertTab(i, build_tab(i), tab_name(i));
+    pages_->setCurrentIndex(i);
+    old->deleteLater();
+    if (i == 0) {
+        homefront_->setText(hf);
+        setup_log_->setPlainText(log);
+        setup_log_->setVisible(log_shown);
+        if (setup_proc_) setup_btn_->setEnabled(false);
+        refresh_status();
+    }
+    status_->setText(QStringLiteral("„%1“ auf Standard zurückgesetzt und gespeichert.").arg(tab_name(i)));
+}
 
 void MainWindow::refresh_status() {
     const bool ready = QFile::exists(game_.filePath("ts2.bin")) && QFile::exists(game_.filePath("ts2/data"));
     const bool exe = QFile::exists(dir_.filePath("ts2.exe"));
-    game_status_->setText(ready ? QStringLiteral("<span style='color:#7dff6a'>Eingerichtet</span> in %1")
-                                      .arg(QDir::toNativeSeparators(game_.absolutePath()))
-                                : QStringLiteral("<span style='color:#ff4fd8'>Noch nicht eingerichtet.</span>"));
-    play_btn_->setEnabled(ready && exe);
-    status_->setText(exe ? QStringLiteral("Einstellungen: %1").arg(QDir::toNativeSeparators(dir_.filePath("ts2.ini")))
-                         : QStringLiteral("ts2.exe fehlt neben dem Launcher."));
+    const QString game_path = QDir::toNativeSeparators(game_.absolutePath());
+    game_status_->setText(ready ? theme::colored(QStringLiteral("Eingerichtet"), Severity::Ok) +
+                                      QStringLiteral(" in %1").arg(game_path.toHtmlEscaped())
+                                : theme::colored(QStringLiteral("Noch nicht eingerichtet."), Severity::Error));
+    info_->setText(QStringLiteral("Spiel: %1\nKonfiguration: %2")
+                       .arg(ready ? game_path : QStringLiteral("noch nicht eingerichtet"),
+                            QDir::toNativeSeparators(dir_.filePath("ts2.ini"))));
+    play_btn_->setEnabled(ready && exe && !setup_proc_);
+    if (!exe) {
+        status_->setText(theme::colored(QStringLiteral("ts2.exe fehlt neben dem Launcher."), Severity::Error));
+        play_btn_->setToolTip(QStringLiteral("ts2.exe fehlt neben dem Launcher."));
+    } else if (!ready) {
+        status_->setText(QStringLiteral("Alle Einstellungen gespeichert. Vor dem ersten Spielen auf „Spiel“ einrichten."));
+    } else {
+        status_->setText(QStringLiteral("Alle Einstellungen gespeichert."));
+    }
 }
 
 QString MainWindow::guess_homefront() const {
@@ -598,15 +789,15 @@ void MainWindow::run_setup() {
     connect(setup_proc_, &QProcess::finished, this, [this](int code) {
         setup_log_->appendPlainText(code == 0 ? QStringLiteral("Fertig.") : QStringLiteral("Fehlgeschlagen (%1).").arg(code));
         setup_btn_->setEnabled(true);
-        game_ = find_game(dir_);
-        refresh_status();
         setup_proc_->deleteLater();
         setup_proc_ = nullptr;
+        game_ = find_game(dir_);
+        refresh_status();
     });
     setup_proc_->start();
 }
 
 void MainWindow::play() {
     if (QProcess::startDetached(dir_.filePath("ts2.exe"), {}, dir_.absolutePath())) close();
-    else status_->setText(QStringLiteral("ts2.exe ließ sich nicht starten."));
+    else status_->setText(theme::colored(QStringLiteral("ts2.exe ließ sich nicht starten."), Severity::Error));
 }
