@@ -49,8 +49,8 @@ Funktionen von außen erreicht. Daraus:
 |---|---|
 | "%d/%d Spieler" am Container (Siberia) | behoben: Xbox-Texttabelle hat ab 2425 einen Eintrag mehr |
 | Menütexte nicht in ihren Balken (Pausen-/Game-over-Menü, 3D) | behoben: Textausgabe 0x14121DA7C bekommt v umgerechnet (am Bild gemessen), Texte liegen auf den Balkenmitten; Maus folgt |
-| Überlagerte Meldungen (Aufsammeln, Waffen) | offen; nachgestellt nur eine Meldung je Mal, Ursache noch nicht gefunden |
-| Maus im Menü nach Rundenende (Pause 2. Ebene, Tod, Levelende) | behoben: Einträge der 3D-Menüs haben dort Breite 0 und schieden aus; geprüft: Pause → Beenden → "Beenden?" → Beenden per Maus |
+| Überlagerte Meldungen (Aufsammeln, Waffen) | vermutlich mit den Redux-Anzeigefixes behoben: sie ändern in der HUD-Meldungsliste `0x1411B08EC` Zeilenabstand (`lea ebx,[rsi+0x13B]` → `0x24B`) und Schrift; im Spiel noch zu bestätigen |
+| Maus im Menü nach Rundenende (Pause 2. Ebene, Tod, Levelende) | behoben: Einträge der 3D-Menüs mit Breite 0 schieden aus; geprüft: Pause → Beenden → "Beenden?" → Beenden per Maus. Tod/Levelende nutzen dieselben 3D-Menüs, dort nicht eigens nachgestellt |
 | Kistenschatten schwarz statt weich (Xbox: schwache Abdunklung) | behoben: Eckenfarbe des Flecks ist im PC-Port Unsinn (Floats statt Farbe), eigener Shader mit fester Deckkraft (`[grafik] schatten`), siehe host.md "Schatten" |
 | Transparenz (Laserfenster schwarz, wenn aus) | offen, siehe Punkt 5; Werkzeug jetzt `TS2_DRAWDUMP` an der Stelle |
 | Überstrahlt in Siberia mit Windows-HDR | erste Abhilfe: eigene HDR-Ausgabe (`[grafik] hdr`, `hdr_weiss`) |
