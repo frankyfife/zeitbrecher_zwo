@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "log.h"
+#include "replace.h"
 
 namespace host {
 
@@ -17,6 +18,11 @@ namespace host {
 // in Homefronts Füllbereichen (z. B. 0x140016EC8, 0x140025908), die ts2.bin
 // nicht enthält; diese Seiten sind nur reserviert und werden hier angelegt.
 void redux_install(const Ts2Image& img, const std::filesystem::path& game, const std::filesystem::path& ini) {
+    // HD-Texturen (ts2_redux.pak, von redux_patches.py nach game/redux entpackt)
+    if (GetPrivateProfileIntW(L"redux", L"texturen", 1, ini.c_str()) && std::filesystem::exists(game / L"redux" / L"ts2")) {
+        set_file_overlay("redux/");
+        log("Redux: HD-Texturen aus game/redux\n");
+    }
     std::ifstream f(game / L"redux.bin", std::ios::binary);
     if (!f) {
         log("Redux: game/redux.bin fehlt (tools/re/redux_patches.py), keine Redux-Fehlerbehebungen\n");

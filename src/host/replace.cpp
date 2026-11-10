@@ -17,6 +17,11 @@
 #include "log.h"
 
 namespace host {
+
+char g_overlay[64] = "";  // Vorsatz für überlagerte Dateien, leer = aus
+
+void set_file_overlay(const char* prefix) { std::snprintf(g_overlay, sizeof g_overlay, "%s", prefix ? prefix : ""); }
+
 namespace {
 
 // ---------------------------------------------------------------- Speicher
@@ -84,6 +89,16 @@ size_t x_fwrite(const void* b, size_t s, size_t n, FILE* f) { return std::fwrite
 long x_ftell(FILE* f) { return std::ftell(real_file(f)); }
 int x_fseek(FILE* f, long o, int w) { return std::fseek(real_file(f), o, w); }
 FILE* x_fopen(const char* n, const char* m) {
+    // Überlagerung (z. B. "redux/" mit den HD-Texturen von TS2 Redux): nur
+    // zum Lesen, nur wenn die Datei dort liegt
+    if (g_overlay[0] && m && m[0] == 'r') {
+        char p[512];
+        std::snprintf(p, sizeof p, "%s%s", g_overlay, n);
+        if (FILE* o = std::fopen(p, m)) {
+            log("[datei] %s %s\n", m, p);
+            return o;
+        }
+    }
     FILE* f = std::fopen(n, m);
     log("[datei] %s %s%s\n", m, n, f ? "" : "  -> fehlt");
     return f;

@@ -17,6 +17,7 @@ Format von redux.bin: "TS2R", u32 Anzahl Gruppen; je Gruppe u8 Namenslänge,
 Name, u32 Anzahl Einträge; je Eintrag u32 RVA, u16 Länge, Bytes.
 """
 import os
+import re
 import struct
 import sys
 
@@ -147,6 +148,26 @@ def main():
     with open(os.path.join(game, 'redux.bin'), 'wb') as f:
         f.write(b''.join(out))
     print('geschrieben:', os.path.join(game, 'redux.bin'))
+    # HD-Texturen: ts2_redux.pak ist ein gewöhnliches ZIP mit ts2/textures/*.rgb;
+    # nach game/redux, ts2.exe liest dort zuerst ([redux] texturen)
+    import zipfile
+    pak = os.path.join(src, 'Install', 'Texture-Mods', 'ts2_redux.pak')
+    if os.path.exists(pak):
+        dest = os.path.realpath(os.path.join(game, 'redux'))
+        n = 0
+        with zipfile.ZipFile(pak) as z:
+            for info in z.infolist():
+                target = os.path.realpath(os.path.join(dest, info.filename))
+                if not target.startswith(dest + os.sep) or info.is_dir():
+                    continue  # nur Dateien innerhalb von game/redux
+                base = os.path.basename(info.filename)
+                if re.match(r'(.*logo|ts2load\d|ts2banner\d)\.rgb$', base):
+                    continue  # Redux-Schriftzug in Logo, Ladebildern, Bannern: Original behalten
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with z.open(info) as i, open(target, 'wb') as o:
+                    o.write(i.read())
+                n += 1
+        print(f'HD-Texturen: {n} Dateien nach {dest}')
 
 
 if __name__ == '__main__':

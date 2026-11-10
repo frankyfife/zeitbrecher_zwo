@@ -96,6 +96,7 @@ const std::vector<IniOption>& ini_options() {
             {"redux", "unsichtbar", "1", "TS2 Redux: Unsichtbarkeitsfehler"},
             {"redux", "anzeige", "1", "TS2 Redux: HUD- und Textanzeige"},
             {"redux", "menue", "1", "TS2 Redux: Menue-Layout"},
+            {"redux", "texturen", "1", "TS2 Redux: hoeher aufgeloeste Texturen (Kisten, Fadenkreuze, Symbole)"},
             {"kamera", "freecam", "1", "Freie Kamera: Taste loest die Kamera vom Spieler (WASD, Maus, Leertaste/C, Umschalt schneller)"},
             {"kamera", "freecam_taste", "117", "virtueller Tastencode, 117 = F6"},
             {"grafik", "breite", "1920", "Render-Aufloesung"},

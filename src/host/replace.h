@@ -8,4 +8,6 @@ namespace host {
 const void* replacement_for(uint32_t rva);
 // Ersatz für einen Import des TS2-Codes oder nullptr.
 const void* import_for(const char* dll, const char* name);
+// Dateien, die TS2 liest, zuerst unter <prefix><name> suchen (z. B. "redux/")
+void set_file_overlay(const char* prefix);
 }  // namespace host

@@ -249,10 +249,15 @@ ts2.exe wendet sie vor allen eigenen Umlenkungen an; Gruppen in `ts2.ini`
 - Das eigene Hauptmenü liest Lage und Höhe der Seite aus der (geänderten)
   Original-Aufbaufunktion (`0x1410C81EC`/`0x1410C81F6`), so passt es zu Redux
   (ohne Balken, Logo oben).
+- HD-Texturen (`ts2_redux.pak`, ein gewöhnliches ZIP mit SGI-`.rgb`): das
+  Skript entpackt sie nach `game/redux/`; ts2.exe liest Dateien dort zuerst
+  (`x_fopen`, `[redux] texturen`). Ausgelassen: Logo, Ladebilder und Banner
+  mit Redux-Schriftzug; übernommen: Kiste, Riffelblech, Baum, Zaun,
+  Fadenkreuze, Spielmodus-Symbole, Xbox-Tasten.
 - Geprüft: Hauptmenü, Optionen, Pausenmenü (Fußzeile an den Rand),
-  Siberia-Start ohne Absturz. Nicht übernommen: Atemeffekt aus (andere
-  Schreibweise), eigene Menüs der Redux-DLLs (Speichern/Laden),
-  HD-Texturen (`ts2_redux.pak`), NeoTokyo-Patch (Pak-Differenz).
+  Siberia-Start. Nicht übernommen: Atemeffekt aus (andere Schreibweise),
+  eigene Menüs der Redux-DLLs (Speichern/Laden), NeoTokyo-Patch
+  (Pak-Differenz im jptch-Format).
 
 ## Ton (`src/host/audio.cpp`, `mixer.cpp`, `vorbis.cpp`)
 
