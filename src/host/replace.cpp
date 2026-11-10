@@ -6,6 +6,7 @@
 #include <windows.h>
 
 #include <cmath>
+#include <intrin.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -118,7 +119,24 @@ int x_sscanf(const char* s, const char* f, void* a0, void* a1, void* a2, void* a
 }
 unsigned x_controlfp(unsigned n, unsigned m) { return _controlfp(n, m); }
 void x_exit(int c) {
-    log("[ersatz] TS2 ruft exit(%d)\n", c);
+    // Aufrufkette (Rücksprungadressen) für die Fehlersuche
+    void* frames[12] = {};
+    const USHORT n = RtlCaptureStackBackTrace(1, 12, frames, nullptr);
+    std::string chain;
+    char buf[24];
+    for (USHORT i = 0; i < n; ++i) {
+        std::snprintf(buf, sizeof buf, " %p", frames[i]);
+        chain += buf;
+    }
+    // TS2-Code hat keine Abwicklungsdaten: Stapel roh nach Adressen im
+    // TS2-Bereich durchsuchen (mögliche Rücksprungadressen)
+    const auto* sp = static_cast<const uint64_t*>(_AddressOfReturnAddress());
+    for (int i = 0; i < 64; ++i)
+        if (sp[i] >= 0x141069000ull && sp[i] < 0x141C60000ull) {
+            std::snprintf(buf, sizeof buf, " [%d]%llX", i, static_cast<unsigned long long>(sp[i]));
+            chain += buf;
+        }
+    log("[ersatz] TS2 ruft exit(%d), Aufrufer:%s\n", c, chain.c_str());
     std::exit(c);
 }
 

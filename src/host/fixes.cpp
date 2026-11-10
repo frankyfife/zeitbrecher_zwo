@@ -85,6 +85,18 @@ void fixes_install(const Ts2Image& img, const std::filesystem::path& game) {
         DWORD old;
         VirtualProtect(pool, 0x1000, PAGE_READONLY, &old);
     }
+    // Spielspeicher: TS2 legt beim Start eine Arena fester Größe an
+    // (0x141069DA0 → 0x1411A98F8, Größe in 0x1424E23D8 = 58 MB wie auf der
+    // Konsole) und ruft exit(1), wenn sie voll ist (0x1411A9A10). Mit
+    // hochaufgelösten Texturen reichte das in Chicago nicht. 192 MB; alle
+    // Größen dort sind 32 Bit, also weit unter der Grenze.
+    {
+        auto* arena = img.va<uint32_t>(0x1424E23D8);
+        if (*arena == 0x3A00000u) {
+            *arena = 0xC000000u;
+            log("Spielspeicher: 192 MB statt 58 MB\n");
+        }
+    }
     FlushInstructionCache(GetCurrentProcess(), img.base, img.size);
     for (const auto& [g, n] : applied)
         log("Fehlerbehebung %s: %d Stellen%s\n", g.c_str(), n, skipped[g] ? " (einige ausgelassen)" : "");
