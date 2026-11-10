@@ -524,9 +524,63 @@ QWidget* MainWindow::page_controls() {
     f.add(QString(), check(QStringLiteral("Menüs mit der Maus"), "maus", "menue"));
     v->addWidget(box);
 
+    // Controller ([pad]): XInput, das zuletzt benutzte Gerät gilt
+    f = form_group(QStringLiteral("Controller"), &box);
+    f.span(hint(QStringLiteral("Xbox-Controller (XInput), Belegung wie TimeSplitters 2 auf der Xbox: linker Stick "
+                               "gehen, rechter zielen, RT Feuer, LT Zweitfunktion, R3 Zielen, L3 Ducken, A Benutzen, "
+                               "Y Nachladen, Steuerkreuz Waffe und Zoomstufen, Start Pause, Back Ziele. Es gilt das "
+                               "zuletzt benutzte Gerät.")));
+    f.add(QString(), check(QStringLiteral("Controller benutzen"), "pad", "an"));
+    f.add(QString(), check(QStringLiteral("Vibration"), "pad", "vibration"));
+    f.add(QStringLiteral("Vibrationsstärke"), spin("pad", "vibration_staerke", 0, 200, QStringLiteral(" %")));
+    f.add(QStringLiteral("Blickempfindlichkeit"), dspin("pad", "empfindlichkeit", 0.1, 3.0, 0.05, 2));
+    f.add(QString(), check(QStringLiteral("Oben und unten vertauschen"), "pad", "umkehren"));
+    f.add(QStringLiteral("Totzone der Sticks"), spin("pad", "totzone", 0, 90, QStringLiteral(" %")));
+    f.add(QString(), check(QStringLiteral("Zielen schaltet um statt gehalten zu werden (wie auf der Xbox)"), "pad",
+                           "zielen_umschalten"));
+    {
+        // Belegung: Knopf, zwei zugleich mit +, zwei Belegungen mit Komma
+        static const struct {
+            const char* key;
+            const char* label;
+        } kPadActions[] = {
+            {"rennen", "Rennen"},         {"springen", "Springen"},         {"freecam", "Freie Kamera"},
+            {"feuer", "Feuer"},           {"alt_feuer", "Zweitfunktion"},   {"zielen", "Zielen / Zoom"},
+            {"ducken", "Ducken"},         {"benutzen", "Benutzen"},         {"nachladen", "Nachladen"},
+            {"naechste_waffe", "Nächste Waffe"}, {"vorige_waffe", "Vorige Waffe"},
+            {"zoom_rein", "Zoom rein"},   {"zoom_raus", "Zoom raus"},       {"pause", "Pause"},
+            {"dreieck", "Ziele (Dreieck)"}, {"quadrat", "Quadrat"},
+        };
+        const QStringList choices = {QString(),          QStringLiteral("A"),      QStringLiteral("B"),
+                                     QStringLiteral("X"), QStringLiteral("Y"),      QStringLiteral("LB"),
+                                     QStringLiteral("RB"), QStringLiteral("LT"),    QStringLiteral("RT"),
+                                     QStringLiteral("L3"), QStringLiteral("R3"),    QStringLiteral("Start"),
+                                     QStringLiteral("Back"), QStringLiteral("Hoch"), QStringLiteral("Runter"),
+                                     QStringLiteral("Links"), QStringLiteral("Rechts"), QStringLiteral("L3+R3"),
+                                     QStringLiteral("LB+RB"), QStringLiteral("Back+Start")};
+        f.span(hint(QStringLiteral("Knöpfe: A B X Y LB RB LT RT L3 R3 Start Back, Steuerkreuz Hoch Runter Links "
+                                   "Rechts; zwei zugleich mit „+“, zwei Belegungen mit Komma, leer = keine. "
+                                   "A/B/Steuerkreuz bedienen außerdem die Menüs.")));
+        for (const auto& a : kPadActions) {
+            track("pad", a.key);
+            auto* c = new QComboBox;
+            c->setEditable(true);
+            c->addItems(choices);
+            c->setCurrentText(ini_.get("pad", a.key));
+            c->setMinimumContentsLength(10);
+            const char* key = a.key;
+            connect(c, &QComboBox::currentTextChanged, this,
+                    [this, key](const QString& t) { ini_.set("pad", key, t.trimmed()); });
+            f.add(QString::fromUtf8(a.label), c);
+        }
+    }
+    v->addWidget(box);
+
     f = form_group(QStringLiteral("Freie Kamera"), &box);
     f.span(hint(QStringLiteral("Taste löst die Kamera vom Spieler: WASD, Maus, Leertaste/C steigen/sinken, "
-                                  "Umschalt schneller. Dieselbe Taste bringt sie zurück.")));
+                                  "Umschalt schneller. Dieselbe Taste bringt sie zurück. Controller: L3+R3 "
+                                  "(Belegung oben), Sticks, Steuerkreuz hoch/runter oder RT/LT steigen/sinken, "
+                                  "LB/RB schneller.")));
     f.add(QString(), check(QStringLiteral("Freie Kamera"), "kamera", "freecam"));
     f.add(QStringLiteral("Taste"), single_key("kamera", "freecam_taste"));
     v->addWidget(box);

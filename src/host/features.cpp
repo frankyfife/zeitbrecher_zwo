@@ -101,6 +101,7 @@ void camera_setup_fov(float near_z, float far_z, float aspect, float fov_deg) {
 // an 0x1410828EE nimmt stattdessen g_fc_room, solange er nicht 0 ist
 // (Raumsuche 0x1411BFA08 an der Kamera-Position, wie die Flugkamera Modus 6).
 //   WASD bewegen, Maus blickt, Leertaste/C steigen/sinken, Umschalt schneller
+//   (Pad: [pad] freecam = L3+R3, Sticks, Steuerkreuz oder RT/LT, LB/RB schneller)
 using FindRoomFn = int32_t (*)(const float* pos, float one, float arg);
 int32_t g_fc_room = 0;
 bool g_fc_ready = false;
@@ -264,6 +265,20 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
                     cam ? *reinterpret_cast<float*>(cam + 0x34C) : 0.0f, cam ? *reinterpret_cast<float*>(cam + 0x350) : 0.0f);
         }
     }
+    // Rütteln: TS2 setzt die Motoren seines Pads (wie scePadSetActDirect auf
+    // der PS2: Pad +0x44 Schüsse, +0x45 Treffer, je 0..127); input.cpp gibt
+    // sie an XInput weiter. Das Pad ist der erste int des Spielers.
+    {
+        int small = 0, large = 0;
+        if (const int32_t* pl = *img.va<int32_t*>(hf2::kHudPlayer)) {
+            const int32_t pad = pl[0];
+            if (pad >= 0 && pad < 8) {
+                small = reinterpret_cast<int (*)(int)>(img.va<uint8_t>(hf2::kPadMotor44))(pad);
+                large = reinterpret_cast<int (*)(int)>(img.va<uint8_t>(hf2::kPadMotor45))(pad);
+            }
+        }
+        input_rumble(small, large);
+    }
     // Freie Kamera (oben bei g_fc_room beschrieben)
     if (g_fc_ready) {
         static bool on = false, was_key = false, was_bit = false;
@@ -340,7 +355,7 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
         else if (game_limit > 0.0f)
             *limit = game_limit;
     }
-    // Rennen: Taste gehalten (oder umgeschaltet), Shift oder linke Schultertaste
+    // Rennen: Taste gehalten (oder umgeschaltet), Shift oder [pad] rennen (LB)
     {
         const bool fg = GetForegroundWindow() == HWND(window);
         const bool run_down = (fg && (GetAsyncKeyState(s.run_key) & 0x8000) != 0) || (input_host_bits() & kHostRun);

@@ -151,19 +151,57 @@ geprüft (`rad_fire` 0x10000, `rad_fire_alt` 0x20000, `rad_zoom` 0x200000 …):
 
 Je Aktion bis zu drei Tasten (`ducken=162,67`). Ein `[tasten]`-Abschnitt
 einer älteren Fassung (ohne `belegung=2`) wird einmal auf diese Belegung
-umgestellt; die Lauftasten bleiben dabei, wie sie waren. Pad (XInput): A/B/X/Y =
-Kreuz/Kreis/Quadrat/Dreieck, rechter/linker Trigger = R1/L1, Schultertasten =
-R2/L2, Start/Back = Start, Steuerkreuz. Alles in `ts2.ini` ([tasten], [maus])
-änderbar. Es gilt das zuletzt benutzte Gerät.
+umgestellt; die Lauftasten bleiben dabei, wie sie waren. Alles in `ts2.ini`
+([tasten], [maus]) änderbar. Es gilt das zuletzt benutzte Gerät.
+
+**Mausrad:** solange gezielt wird (Zielen-Taste gehalten, Vorgabe rechte
+Maustaste), wählt es die Zoomstufen (hoch = näher), sonst wie bisher die
+Waffe. Skript-Bits `04000000`/`02000000` = eine Raste hoch/runter. Geprüft:
+Siberia, Scharfschützengewehr: zwei Rasten beim Zielen zoomen zweimal näher,
+ohne Zielen wechselt die Waffe.
+
+**Pad (XInput, `[pad]`).** TS2 liest im Spiel feste Steuerungs-Masken im
+Spieler (+0x20, gefüllt von `0x1411DCBAC`): Feuer 0x10000, Alt-Feuer 0x20000,
+Benutzen 0x40000, Nachladen 0x80000, Zoom 0x200000, Ducken 0x100000, Zoom
+rein/raus 0x1000000/0x2000000, Waffe vorige/nächste 0x800000/0x400000. Das gilt
+auch im Pad-Modus (Port 0); die Konsolen-Bits (L1, R1, Dreieck …) bewegen im
+Spiel nichts und dienen nur den Menüs. Deshalb gingen am Pad nur Bewegung,
+Blick und Menüs. Das Pad gibt jetzt dieselben Bits wie Tastatur und Maus, die
+Sticks über Port 0 (TS2s eigenes Pad-Zielen, Nickgrenze des Spiels).
+
+Vorgabe wie TimeSplitters 2 auf der Xbox: linker Stick gehen, rechter Stick
+blicken, RT Feuer, LT Zweitfunktion, R3 Zielen (schaltet um,
+`zielen_umschalten`), L3 Ducken, A Benutzen/OK, B zurück, Y Nachladen, X
+Quadrat, Steuerkreuz links/rechts Waffe, hoch/runter Zoomstufen (und Menü),
+Start Pause, Back Dreieck (Ziele). Dazu wie im Fork LB Rennen, RB Springen,
+L3+R3 freie Kamera. Jede Aktion ist in `[pad]` umbelegbar (`feuer=RT`,
+`freecam=L3+R3`, zwei Belegungen mit Komma). Knöpfe eines Akkords gehen erst
+nach 4 Takten einzeln an TS2, damit L3+R3 weder duckt noch zielt. Weitere
+Optionen: `an`, `vibration`, `vibration_staerke`, `totzone`,
+`empfindlichkeit`, `umkehren`. Ohne Fensterfokus zählt das Pad nicht.
+
+**Rütteln:** `0x141144DBC(pad, edx, r8d)` setzt die Motorbytes Pad +0x45/+0x44
+(0..127, wie scePadSetActDirect auf der PS2). Schüsse setzen +0x44, Treffer
++0x45; TS2 lässt beide selbst abklingen. `features_tick` liest sie je Takt
+über die Getter `0x141144E60`/`0x141144E24` für das Pad des Spielers
+(`**0x143F1A388`); `input.cpp` gibt +0x44 auf den rechten und +0x45 auf den
+linken Motor (`XInputSetState`), nur im Pad-Modus.
+
+**Freie Kamera am Pad:** L3+R3; linker Stick fliegen, rechter Stick blicken,
+Steuerkreuz hoch/runter oder RT/LT steigen/sinken, LB/RB schneller.
+
+**Testskript:** `TS2_PADSKRIPT="takt:knoepfe,lx,ly,rx,ry,lt,rt[,ts2bits];…"`
+ersetzt XInput (Zustand gilt bis zum nächsten Eintrag). `TS2_PADSPUR=1`
+protokolliert die Motoren. Geprüft per Skript: Menüs nur mit dem Pad bis
+Siberia; Feuer, Nachladen, Zielfernrohr mit drei Zoomstufen, Ducken, Sprung,
+Rennen, Waffenwechsel, freie Kamera; Rütteln beim Schuss 127 → 0 in 5 Takten;
+Tastatur und Maus pixelgleich zum Stand davor.
 
 Testskripte ohne Bildschirm: `--eingabe takt:bits:anzahl,...` (Bits
 hexadezimal; zusätzlich `80000000` Sprung, `40000000` vorwärts) mit
 `--takte` und `--bild`. Geprüft: 320:40:5 wählt im Titel "Story", weitere
 OKs überspringen das Intro und führen über Levelwahl und Briefing nach
 Chicago; Sprung 0 → Modus 2 (+0,145) → Landung Modus 0.
-
-Offen: die Pad-Belegung für das Spiel selbst (welche Konsolenbits TS2 im
-Spiel für Feuern/Zielen nutzt) ist am Pad noch nicht ausprobiert.
 
 ## Freischalten (`src/host/menu.cpp`)
 

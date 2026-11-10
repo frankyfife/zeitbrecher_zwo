@@ -254,4 +254,16 @@ constexpr uint32_t kHudThunkRva = 0x00048000;      // eigene Seite für Sprünge
 constexpr uint64_t kHudRect = 0x143F0F508;         // int32*: +0 links, +4 rechts, +0x14 oben
 constexpr uint64_t kHudMarginL = 0x143F28860, kHudMarginT = 0x143F28864, kHudMarginR = 0x143F28868;
 
+// ---- Pad (input.cpp, features.cpp; docs/host.md "Pad")
+// Rüttelmotoren je Pad (PS2: scePadSetActDirect): 0x141144DBC(pad, edx, r8d)
+// setzt Pad +0x45 = edx, +0x44 = r8d (je 0..127, nur wenn 0x143F2F7A0 == 3);
+// die Getter liefern sie. Pad = erster int des Spielers (*0x143F1A388).
+// Schüsse ändern +0x44 (0x14112AB80, 0x141206AD9), Treffer +0x45 (0x1411DC304).
+constexpr uint64_t kPadMotor44 = 0x141144E60;      // int (pad): Pad +0x44
+constexpr uint64_t kPadMotor45 = 0x141144E24;      // int (pad): Pad +0x45
+// Steuerungs-Masken (Spieler +0x20, gefüllt von 0x1411DCBAC): fest die
+// PC-Bits (Feuer 0x10000 …) auch im Pad-Modus; die Konsolen-Bits (L1, R1 …)
+// bewegen im Spiel nichts.
+constexpr uint64_t kControlDefaults = 0x1411DCBAC;
+
 }  // namespace hf2
