@@ -43,6 +43,22 @@ Funktionen von außen erreicht. Daraus:
 | Lokalisierung (Texte, ggf. Sprache) aus dem eigenen Xbox-Image, z. B. die PAL-Fassung (En/Fr/De/Es/It); Sprachwahl im Launcher | Texte erledigt (`[sprache] text=de`; Sprachwahl und Auslesen im Launcher, oder `tools/re/xbox_text.py`); offen: Sprachausgabe |
 | Launcher | erste Fassung (Qt 6, `ts2launcher.exe`): alle Optionen, Tastenerfassung, Einrichten, Spielen, Sprache, Waffennamen (wie im Xbox-Fork); offen: Feinschliff |
 
+## Spieldurchlauf 2026-11-10 (Befunde des Nutzers)
+
+| Befund | Stand |
+|---|---|
+| "%d/%d Spieler" am Container (Siberia) | behoben: Xbox-Texttabelle hat ab 2425 einen Eintrag mehr |
+| Menütexte nicht in ihren Balken (Pausen-/Game-over-Menü, 3D) | offen; mit TS2 Redux rücken Ring und Fußzeile an den Rand, der Versatz der Texte bleibt. Nächster Schritt: Lage der Texte (+0x98) gegen die Projektion der Balken |
+| Überlagerte Meldungen (Aufsammeln, Waffen) | offen; nachgestellt nur eine Meldung je Mal, Ursache noch nicht gefunden |
+| Maus im Menü nach Rundenende | offen; nicht nachgestellt |
+| Kistenschatten schwarz statt weich (Xbox: schwache Abdunklung) | offen; Blend-Zustände SUBTRACT sind es nicht (Versuch REV_SUBTRACT ohne Wirkung), Suche nach dem Zustand läuft (`TS2_BLENDSKIP`) |
+| Transparenz (Laserfenster schwarz, wenn aus) | offen, siehe Punkt 5 |
+| Überstrahlt in Siberia mit Windows-HDR | erste Abhilfe: eigene HDR-Ausgabe (`[grafik] hdr`, `hdr_weiss`) |
+| Waffengeräusche anders als auf der Xbox | Proben gleich benannt (22 kHz); der PC-Port liest die Hall-Skripte `ts2/sound/reverb/levelNN_reverb.s` (Raum → Effektnummer) nie, die Xbox hallt je Raum. Nachbau: Raum verfolgen, Effektnummer → I3DL2-Voreinstellung der XBE, XAudio2-Hall |
+| Launcher schwarz, Reiter, Titel "Zeitbrecher Zwo" | erledigt |
+| Fehlerbehebungen aus TS2 Redux | übernommen (`game/redux.bin`, HD-Texturen), siehe host.md |
+| Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
+
 ## Nächste Schritte, konkret
 
 1. 120 fps nativ, Stufe 2: Gegner und Objekte. Ein allgemeiner Ansatz pro

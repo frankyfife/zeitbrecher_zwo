@@ -200,9 +200,35 @@ CreateBlendFn g_create_blend = nullptr;
 ClearRtvFn g_clear_rtv = nullptr;
 int g_clear_n = 0;
 
-HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_DESC* bd, ID3D11BlendState** out) {
+bool g_blend_log = false, g_blend_revsub = false;
+
+HRESULT STDMETHODCALLTYPE probe_create_blend(ID3D11Device* d, const D3D11_BLEND_DESC* in, ID3D11BlendState** out) {
+    D3D11_BLEND_DESC fixed;
+    const D3D11_BLEND_DESC* bd = in;
+    // Versuch Schatten: SUBTRACT (Quelle − Ziel) -> REV_SUBTRACT (Ziel − Quelle)
+    if (in && g_blend_revsub) {
+        fixed = *in;
+        for (auto& r : fixed.RenderTarget) {
+            if (r.BlendOp == D3D11_BLEND_OP_SUBTRACT) r.BlendOp = D3D11_BLEND_OP_REV_SUBTRACT;
+            if (r.BlendOpAlpha == D3D11_BLEND_OP_SUBTRACT) r.BlendOpAlpha = D3D11_BLEND_OP_REV_SUBTRACT;
+        }
+        bd = &fixed;
+    }
+    // TS2_BLENDSKIP=quelle,ziel,op: Zustände dieser Art schreiben nichts
+    // (welche Zeichnung nutzt welchen Zustand?)
+    static int skip[3] = {-1, -1, -1};
+    static const bool have_skip = [] {
+        wchar_t v[32] = {};
+        return GetEnvironmentVariableW(L"TS2_BLENDSKIP", v, 32) > 0 &&
+               swscanf(v, L"%d,%d,%d", &skip[0], &skip[1], &skip[2]) == 3;
+    }();
+    if (in && have_skip) {
+        if (bd != &fixed) fixed = *in, bd = &fixed;
+        for (auto& r : fixed.RenderTarget)
+            if (r.SrcBlend == skip[0] && r.DestBlend == skip[1] && r.BlendOp == skip[2]) r.RenderTargetWriteMask = 0;
+    }
     const HRESULT hr = g_create_blend(d, bd, out);
-    if (bd) {
+    if (bd && g_blend_log) {
         const auto& r = bd->RenderTarget[0];
         log("[blend] %p: an %d, Farbe %d*%d op %d, Alpha %d*%d op %d, Maske %X, a2c %d, einzeln %d\n",
             out ? static_cast<void*>(*out) : nullptr, r.BlendEnable, r.SrcBlend, r.DestBlend, r.BlendOp,
@@ -335,7 +361,14 @@ bool make_gfx(Gfx* g, int width, int height, bool want_hdr) {
         log("D3D11-Debug-Schicht an\n");
     if (best) best->Release();
     if (FAILED(dhr)) return false;
+    g_blend_revsub = GetEnvironmentVariableW(L"TS2_REVSUB", nullptr, 0) > 0;
+    if ((g_blend_revsub || GetEnvironmentVariableW(L"TS2_BLENDSKIP", nullptr, 0) > 0) &&
+        GetEnvironmentVariableW(L"TS2_BLENDPROBE", nullptr, 0) == 0) {
+        patch_vtable(g->dev, 20, reinterpret_cast<void*>(&probe_create_blend), reinterpret_cast<void**>(&g_create_blend));
+        log("Blend: SUBTRACT -> REV_SUBTRACT\n");
+    }
     if (GetEnvironmentVariableW(L"TS2_BLENDPROBE", nullptr, 0) > 0) {
+        g_blend_log = true;
         // ID3D11Device: CreateBlendState ist Methode 20; Kontext:
         // ClearRenderTargetView Methode 50 (+0x190)
         patch_vtable(g->dev, 20, reinterpret_cast<void*>(&probe_create_blend), reinterpret_cast<void**>(&g_create_blend));
