@@ -79,6 +79,17 @@ Deutsche (französische, italienische, spanische) Spieltexte kommen aus dem
 eigenen Xbox-Image der PAL-Fassung: im Launcher unter Spiel → Sprache holen
 und wählen ([docs/host.md](docs/host.md#sprache-srchostmenucpp-toolsrexbox_textpy)).
 
+Die Fehlerbehebungen von [TS2 Redux](https://github.com/HFTSRedux/TS2Redux)
+(Reaper-Absturz, Regen auf der Kamera, Unsichtbarkeit, HUD, Menü-Layout,
+HD-Texturen) übernimmt ts2.exe aus der eigenen Redux-Kopie:
+
+```bash
+python -I tools/re/redux_patches.py <TS2Redux-Ordner> game <Homefront2_Release.exe>
+```
+
+Mit Windows-HDR gibt ts2.exe selbst HDR aus (`[grafik] hdr`, Weiß in
+`hdr_weiss` Nits).
+
 ## Quellen
 
 - [split2-recomp_ff](https://github.com/frankyfife/split2-recomp_ff): Xbox-Recompile

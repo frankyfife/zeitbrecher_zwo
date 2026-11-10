@@ -241,6 +241,19 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
             last_mode = m;
         }
     }
+    // TS2_VIEWPROBE=1: Bildausschnitt *0x143F0F508 und Kamera-Halbbreiten alle
+    // 120 Takte (Pausenmenü: Texte gegen Balken)
+    {
+        static const bool probe = GetEnvironmentVariableW(L"TS2_VIEWPROBE", nullptr, 0) > 0;
+        if (probe && g_frame_no % 120 == 0) {
+            const int32_t* v = *img.va<int32_t*>(0x143F0F508);
+            uint8_t* cam = *img.va<uint8_t*>(hf2::kCamera);
+            if (v)
+                log("[ausschnitt] %d %d %d %d %d | %d %d %d %d %d | Kamera tan %.4f %.4f fov %.2f\n", v[0], v[1], v[2],
+                    v[3], v[4], v[5], v[6], v[7], v[8], v[9], cam ? *reinterpret_cast<float*>(cam + 0x348) : 0.0f,
+                    cam ? *reinterpret_cast<float*>(cam + 0x34C) : 0.0f, cam ? *reinterpret_cast<float*>(cam + 0x350) : 0.0f);
+        }
+    }
     // Freie Kamera (oben bei g_fc_room beschrieben)
     if (g_fc_ready) {
         static bool on = false, was_key = false, was_bit = false;
