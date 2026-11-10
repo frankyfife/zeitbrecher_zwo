@@ -348,7 +348,17 @@ als letzten Schritt vor der Ausgabe an.
 - **Geprüft** (Siberia, 60 Hz): Der Schritt mit praktisch neutralen Werten
   ergibt ein pixelgleiches Bild (größte Abweichung 0). Kontrast 1,2 /
   Gamma 1,1 erhöht die Helligkeitsstreuung von 29 auf 35.
-- Der Schritt ist die Grundlage für eine HDR-Ausgabe.
+- **HDR** (`[grafik] hdr=1`, Vorgabe): Läuft der Monitor des Fensters im
+  HDR-Modus (Windows "HDR verwenden", `IDXGIOutput6::GetDesc1` meldet
+  G2084/P2020), ist der Bildpuffer scRGB (`R16G16B16A16_FLOAT`,
+  `DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709`). TS2 zeichnet weiter in eine
+  UNORM-Textur (seine Kopien brauchen dieses Format); der Schritt
+  linearisiert (sRGB-Kurve) und legt Weiß auf `[grafik] hdr_weiss` Nits
+  (Vorgabe 200). Vorher bildete Windows (bzw. RTX HDR) das SDR-Bild selbst ab,
+  und im HDR-Modus wirkte Siberia überstrahlt. Ohne HDR-Modus bleibt alles
+  SDR wie bisher. Bildschirmfotos (`--bild`) kommen aus TS2s Textur, also
+  ohne diesen Schritt. Geprüft: läuft auf einem HDR-Monitor ohne
+  D3D-Meldungen; die Helligkeit am Gerät ist noch von Hand zu prüfen.
 
 ## Fenster und Vollbild
 

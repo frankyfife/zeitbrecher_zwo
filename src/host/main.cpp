@@ -277,9 +277,10 @@ struct Gfx {
     ID3D11Device* dev = nullptr;
     ID3D11DeviceContext* ctx = nullptr;
     IDXGISwapChain1* swap = nullptr;
+    bool hdr = false;  // Ausgabe scRGB (FP16, linear), weil der Monitor im HDR-Modus läuft
 };
 
-bool make_gfx(Gfx* g, int width, int height) {
+bool make_gfx(Gfx* g, int width, int height, bool want_hdr) {
     WNDCLASSW wc{};
     wc.lpfnWndProc = wndproc;
     wc.hInstance = GetModuleHandleW(nullptr);
@@ -350,16 +351,52 @@ bool make_gfx(Gfx* g, int width, int height) {
     g->dev->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&xd));
     xd->GetAdapter(&ad);
     ad->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&fa));
+    // HDR: nur wenn der Monitor des Fensters im HDR-Modus läuft (Windows
+    // "HDR verwenden"); sonst bildet Windows das SDR-Bild selbst ab, und das
+    // wirkte dort überstrahlt.
+    if (want_hdr) {
+        RECT wr;
+        GetWindowRect(g->wnd, &wr);
+        const POINT mid{(wr.left + wr.right) / 2, (wr.top + wr.bottom) / 2};
+        IDXGIOutput* out = nullptr;
+        for (UINT i = 0; !g->hdr && ad->EnumOutputs(i, &out) != DXGI_ERROR_NOT_FOUND; ++i) {
+            IDXGIOutput6* o6 = nullptr;
+            DXGI_OUTPUT_DESC1 od{};
+            if (SUCCEEDED(out->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&o6))) &&
+                SUCCEEDED(o6->GetDesc1(&od)) && PtInRect(&od.DesktopCoordinates, mid))
+                g->hdr = od.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+            if (o6) o6->Release();
+            out->Release();
+        }
+        log("HDR: Monitor %s\n", g->hdr ? "im HDR-Modus, Ausgabe scRGB" : "ohne HDR-Modus, Ausgabe SDR");
+    }
     DXGI_SWAP_CHAIN_DESC1 sd{};
     sd.Width = UINT(width);
     sd.Height = UINT(height);
     sd.Scaling = DXGI_SCALING_STRETCH;
-    sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.Format = g->hdr ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R8G8B8A8_UNORM;
     sd.SampleDesc.Count = 1;
     sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sd.BufferCount = 2;
     sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     HRESULT hr = fa->CreateSwapChainForHwnd(g->dev, g->wnd, &sd, nullptr, nullptr, &g->swap);
+    if (SUCCEEDED(hr) && g->hdr) {
+        IDXGISwapChain3* s3 = nullptr;
+        UINT support = 0;
+        if (FAILED(g->swap->QueryInterface(__uuidof(IDXGISwapChain3), reinterpret_cast<void**>(&s3))) ||
+            FAILED(s3->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, &support)) ||
+            !(support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) ||
+            FAILED(s3->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709))) {
+            log("HDR: Farbraum scRGB nicht verfügbar, zurück zu SDR\n");
+            if (s3) s3->Release(), s3 = nullptr;
+            g->swap->Release();
+            g->swap = nullptr;
+            g->hdr = false;
+            sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            hr = fa->CreateSwapChainForHwnd(g->dev, g->wnd, &sd, nullptr, nullptr, &g->swap);
+        }
+        if (s3) s3->Release();
+    }
     // Alt+Enter übernimmt ts2.exe selbst (randlos, set_fullscreen)
     fa->MakeWindowAssociation(g->wnd, DXGI_MWA_NO_ALT_ENTER);
     fa->Release();
@@ -532,7 +569,8 @@ int wmain(int argc, wchar_t** argv) {
     fake_set(fields[0xD0 / 8], 0x100, reinterpret_cast<const void*>(&audio_open_stream));
 
     Gfx gfx;
-    if (!make_gfx(&gfx, settings.width, settings.height)) {
+    if (!make_gfx(&gfx, settings.width, settings.height,
+                  GetPrivateProfileIntW(L"grafik", L"hdr", 1, (self_dir() / L"ts2.ini").c_str()) != 0)) {
         log("D3D11 nicht verfügbar\n");
         return 1;
     }
@@ -578,7 +616,11 @@ int wmain(int argc, wchar_t** argv) {
         pf.contrast = getf(L"kontrast", L"1.0");
         pf.brightness = getf(L"helligkeit", L"0.0");
         pf.saturation = getf(L"saettigung", L"1.0");
-        postfx_init(gfx.dev, back, pf, &scene_rtv, &scene_tex);
+        // HDR: TS2 zeichnet in eine UNORM-Textur, der Schritt legt sie
+        // linear auf das gewählte Weiß (Nits) in den scRGB-Bildpuffer
+        if (gfx.hdr) pf.hdr_scale = std::clamp(getf(L"hdr_weiss", L"200"), 80.0f, 1000.0f) / 80.0f;
+        if (!postfx_init(gfx.dev, back, pf, &scene_rtv, &scene_tex) && gfx.hdr)
+            log("HDR: Ausgabeschritt fehlt, das Bild wird falsch\n");
     }
 
     // Bildzeiten protokollieren (alle 600 Bilder): Mittel, Spanne, Ausreißer
@@ -637,16 +679,16 @@ int wmain(int argc, wchar_t** argv) {
             return 5;
         }
         postfx_apply(gfx.ctx, rtv);
-        if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, back, shot);
+        if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, scene_tex, shot);
         if (series_step > 0 && t >= series_from && (t - series_from) % series_step == 0 && !shot.empty()) {
             fs::path p = shot;
             p.replace_filename(shot.stem().wstring() + L"_" + std::to_wstring(t) + L".bmp");
-            save_bmp(gfx, back, p);
+            save_bmp(gfx, scene_tex, p);
         }
         // TS2_BILDPAAR=1: auch das vorletzte Bild (<bild>.vorher.bmp), um zu
         // prüfen, ob sich das Bild in jedem Takt ändert
         if (t + 2 == ticks && !shot.empty() && GetEnvironmentVariableW(L"TS2_BILDPAAR", nullptr, 0) > 0)
-            save_bmp(gfx, back, fs::path(shot).replace_extension(L".vorher.bmp"));
+            save_bmp(gfx, scene_tex, fs::path(shot).replace_extension(L".vorher.bmp"));
         // TS2 hält seine 60 Takte selbst ein (Sleep, dann Warteschleife,
         // 0x14107CC64); ein zusätzliches Warten auf den Monitor liefe gegen
         // diesen Takt. Ohne bildsync zeigt das Flip-Modell jedes Bild ab dem

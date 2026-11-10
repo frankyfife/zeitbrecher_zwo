@@ -14,7 +14,10 @@ namespace host {
 namespace {
 
 const char kShader[] = R"(
-cbuffer Adjust : register(b0) { float inv_gamma; float contrast; float brightness; float saturation; };
+cbuffer Adjust : register(b0) {
+    float inv_gamma; float contrast; float brightness; float saturation;
+    float hdr_scale; float3 pad;
+};
 Texture2D scene : register(t0);
 SamplerState pt : register(s0);
 struct V { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
@@ -30,7 +33,14 @@ float4 ps(V i) : SV_Target {
     x = (x - 0.5) * contrast + 0.5 + brightness;
     float l = dot(x, float3(0.2126, 0.7152, 0.0722));
     x = lerp(float3(l, l, l), x, saturation);
-    return float4(saturate(x), c.a);
+    x = saturate(x);
+    if (hdr_scale > 0) {
+        // TS2 rechnet im Gamma-Raum (sRGB-nahe Texturen, UNORM-Ziel): für
+        // scRGB linearisieren und auf das gewählte Weiß legen
+        float3 lin = x <= 0.04045 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4);
+        return float4(lin * hdr_scale, 1);
+    }
+    return float4(x, c.a);
 }
 )";
 
@@ -63,6 +73,7 @@ bool postfx_init(ID3D11Device* dev, ID3D11Texture2D* backbuffer, const PostFxSet
     g_dev = dev;
     D3D11_TEXTURE2D_DESC td{};
     backbuffer->GetDesc(&td);
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // TS2 kopiert daraus in eigene Texturen dieses Formats
     td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     td.MiscFlags = 0;
     td.Usage = D3D11_USAGE_DEFAULT;
@@ -79,7 +90,8 @@ bool postfx_init(ID3D11Device* dev, ID3D11Texture2D* backbuffer, const PostFxSet
     if (vsb) vsb->Release();
     if (psb) psb->Release();
     if (ok) {
-        const float data[4] = {1.0f / (s.gamma > 0.05f ? s.gamma : 0.05f), s.contrast, s.brightness, s.saturation};
+        const float data[8] = {1.0f / (s.gamma > 0.05f ? s.gamma : 0.05f), s.contrast, s.brightness, s.saturation,
+                               s.hdr_scale, 0, 0, 0};
         D3D11_BUFFER_DESC bd{sizeof data, D3D11_USAGE_IMMUTABLE, D3D11_BIND_CONSTANT_BUFFER, 0, 0, 0};
         D3D11_SUBRESOURCE_DATA sd{data, 0, 0};
         D3D11_SAMPLER_DESC smp{};
@@ -104,8 +116,8 @@ bool postfx_init(ID3D11Device* dev, ID3D11Texture2D* backbuffer, const PostFxSet
     *scene_rtv = rtv;
     *scene_tex = tex;
     g_on = true;
-    log("Bildanpassung: Gamma %.2f, Kontrast %.2f, Helligkeit %.2f, Sättigung %.2f\n", s.gamma, s.contrast,
-        s.brightness, s.saturation);
+    log("Bildanpassung: Gamma %.2f, Kontrast %.2f, Helligkeit %.2f, Sättigung %.2f, HDR-Weiß %.0f Nits\n", s.gamma,
+        s.contrast, s.brightness, s.saturation, s.hdr_scale * 80.0f);
     return true;
 }
 

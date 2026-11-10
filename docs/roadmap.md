@@ -61,7 +61,8 @@ Funktionen von außen erreicht. Daraus:
    eine Nachbearbeitung (Gamma, Tonemapping), die Homefront nach
    TS2s Render-Aufruf angewandt hat. Zuerst messen: Bild gegen die
    Homefront-Fassung und die Xbox-Fassung vergleichen.
-3. HDR-Ausgabe (noch nicht drin): Swapchain mit HDR10 oder scRGB, TS2s
+3. HDR-Ausgabe: erste Fassung (scRGB, `[grafik] hdr`, `hdr_weiss`), am Gerät
+   zu prüfen. Ursprünglich geplant: Swapchain mit HDR10 oder scRGB, TS2s
    Bild in einen erweiterten Bereich abbilden (Spitzlichter, Weißpunkt
    einstellbar), als Option im Launcher.
 4. Vollbild: erledigt (randlos, Alt+Enter, `[grafik] vollbild`, DPI-bewusst);

@@ -346,6 +346,10 @@ QWidget* MainWindow::page_graphics() {
     f->addRow(QStringLiteral("Bildtakt"), rate);
     f->addRow(QString(), check(QStringLiteral("Randloses Vollbild (Alt+Enter schaltet um)"), "grafik", "vollbild"));
     f->addRow(QString(), check(QStringLiteral("Zusätzlich auf den Monitor warten (Bildsync)"), "grafik", "bildsync"));
+    f->addRow(QString(), check(QStringLiteral("HDR-Ausgabe, wenn Windows-HDR an ist"), "grafik", "hdr"));
+    f->addRow(QStringLiteral("HDR-Weiß"), spin("grafik", "hdr_weiss", 80, 1000, QStringLiteral(" Nits")));
+    f->addRow(hint(QStringLiteral("Helligkeit von Weiß im Spiel. Ohne HDR-Ausgabe bildet Windows das Bild selbst ab "
+                                  "(wirkte überstrahlt).")));
     f->addRow(QStringLiteral("Sichtfeld"), spin("grafik", "sichtfeld", 70, 150, QStringLiteral(" %")));
     f->addRow(hint(QStringLiteral("In Prozent des Spiels; das Zielfernrohr zoomt im selben Verhältnis.")));
     v->addWidget(p1);
@@ -353,7 +357,7 @@ QWidget* MainWindow::page_graphics() {
     auto* p2 = panel();
     auto* f2 = new QFormLayout(p2);
     f2->addRow(heading(QStringLiteral("Bildanpassung")));
-    f2->addRow(hint(QStringLiteral("Alle Werte neutral: keine Anpassung. HDR folgt.")));
+    f2->addRow(hint(QStringLiteral("Alle Werte neutral: keine Anpassung.")));
     f2->addRow(QStringLiteral("Gamma"), dspin("grafik", "gamma", 0.5, 2.5, 0.05, 2));
     f2->addRow(QStringLiteral("Kontrast"), dspin("grafik", "kontrast", 0.5, 2.0, 0.05, 2));
     f2->addRow(QStringLiteral("Helligkeit"), dspin("grafik", "helligkeit", -0.5, 0.5, 0.02, 2));

@@ -12,7 +12,12 @@ namespace host {
 
 struct PostFxSettings {
     float gamma = 1.0f, contrast = 1.0f, brightness = 0.0f, saturation = 1.0f;
-    bool neutral() const { return gamma == 1.0f && contrast == 1.0f && brightness == 0.0f && saturation == 1.0f; }
+    // HDR (scRGB-Bildpuffer): Weiß des Spiels in Vielfachen von 80 Nits
+    // ([grafik] hdr_weiss / 80); 0 = SDR
+    float hdr_scale = 0.0f;
+    bool neutral() const {
+        return gamma == 1.0f && contrast == 1.0f && brightness == 0.0f && saturation == 1.0f && hdr_scale == 0.0f;
+    }
 };
 
 // Legt Textur und Shader an. Liefert false, wenn der Schritt entfällt
