@@ -57,6 +57,8 @@ struct MenuApi {
     const int32_t* players;
     const char* flags;
     void* options_page;
+    const int32_t* main_y_imm;  // imm32 in der Original-Aufbaufunktion
+    const int32_t* main_h_imm;
 } g_api;
 
 const char* text(uint32_t id) {
@@ -85,8 +87,11 @@ void goto_options() { g_api.set_next_page(g_api.options_page); }
 void build_main_menu(uint8_t* page) {
     *reinterpret_cast<uint64_t*>(page + 0x650) = 0;  // kein Titel
     *reinterpret_cast<int32_t*>(page + 0x660) = 0xB;
-    *reinterpret_cast<int32_t*>(page + 0x658) = 0xA8;
-    *reinterpret_cast<int32_t*>(page + 0x65C) = 0x360;
+    // Werte aus den Befehlen der Original-Aufbaufunktion (mov dword [rcx+0x658],
+    // imm32 bei 0x1410C81E6 usw.): 0xA8/0x360, mit TS2 Redux 0/0x3E0
+    // (Hauptmenü ohne Balken, wie Redux es auslegt).
+    *reinterpret_cast<int32_t*>(page + 0x658) = *g_api.main_y_imm;
+    *reinterpret_cast<int32_t*>(page + 0x65C) = *g_api.main_h_imm;
     uint8_t* menu = g_api.create(page, 0x294);
 
     const int32_t players = *g_api.players;
@@ -190,6 +195,8 @@ void unlock_install(const Ts2Image& img, const UnlockConfig& c) {
     g_api.players = img.va<int32_t>(hf2::kPlayersInGame);
     g_api.flags = flags;
     g_api.options_page = img.va<void>(hf2::kOptionsPage);
+    g_api.main_y_imm = img.va<const int32_t>(hf2::kMainMenuBuild + 0x34);  // 0x1410C81EC
+    g_api.main_h_imm = img.va<const int32_t>(hf2::kMainMenuBuild + 0x3E);  // 0x1410C81F6
 
     void** slot = reinterpret_cast<void**>(img.va(hf2::kMainMenuPage + hf2::kPageBuild));
     if (*slot != img.va<void>(hf2::kMainMenuBuild)) {

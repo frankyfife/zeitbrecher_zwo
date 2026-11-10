@@ -30,6 +30,7 @@
 #include "fake.h"
 #include "features.h"
 #include "input.h"
+#include "redux.h"
 #include "menu.h"
 #include "menumouse.h"
 #include "ts2options.h"
@@ -466,6 +467,7 @@ int wmain(int argc, wchar_t** argv) {
     // Anzeigeskalierung > 100 % nachträglich (unscharf, kein direktes Flip).
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     fs::path game, setup_from, shot;
+    int series_from = -1, series_step = 0;
     std::wstring input_spec, menu_mouse_spec;
     int ticks = 0;  // 0 = bis das Fenster geschlossen wird
     for (int i = 1; i < argc; ++i) {
@@ -474,6 +476,9 @@ int wmain(int argc, wchar_t** argv) {
         else if (a == L"--einrichten" && i + 1 < argc) setup_from = argv[++i];
         else if (a == L"--takte" && i + 1 < argc) ticks = _wtoi(argv[++i]);
         else if (a == L"--bild" && i + 1 < argc) shot = fs::absolute(argv[++i]);
+        // --serie start:schritt: ab Takt start alle schritt Takte ein Bild
+        // (<bild>_<takt>.bmp; für Tests)
+        else if (a == L"--serie" && i + 1 < argc) swscanf(argv[++i], L"%d:%d", &series_from, &series_step);
         else if (a == L"--eingabe" && i + 1 < argc) input_spec = argv[++i];
         else if (a == L"--menuemaus" && i + 1 < argc) menu_mouse_spec = argv[++i];
         else {
@@ -500,6 +505,8 @@ int wmain(int argc, wchar_t** argv) {
     if (const int n = ts2opt::ini_complete(self_dir() / L"ts2.ini"))
         log("ts2.ini: %d Option(en) ergänzt\n", n);
     const Settings settings = load_settings(self_dir() / L"ts2.ini");
+    // Redux zuerst: die eigenen Umlenkungen prüfen danach ihre Stellen
+    redux_install(g_img, game, self_dir() / L"ts2.ini");
     features_install(g_img, settings);
     timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
@@ -631,6 +638,11 @@ int wmain(int argc, wchar_t** argv) {
         }
         postfx_apply(gfx.ctx, rtv);
         if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, back, shot);
+        if (series_step > 0 && t >= series_from && (t - series_from) % series_step == 0 && !shot.empty()) {
+            fs::path p = shot;
+            p.replace_filename(shot.stem().wstring() + L"_" + std::to_wstring(t) + L".bmp");
+            save_bmp(gfx, back, p);
+        }
         // TS2_BILDPAAR=1: auch das vorletzte Bild (<bild>.vorher.bmp), um zu
         // prüfen, ob sich das Bild in jedem Takt ändert
         if (t + 2 == ticks && !shot.empty() && GetEnvironmentVariableW(L"TS2_BILDPAAR", nullptr, 0) > 0)
