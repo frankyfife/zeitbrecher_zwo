@@ -8,7 +8,7 @@
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("TimeSplitters 2 Startrampe"));
+    app.setApplicationName(QStringLiteral("Zeitbrecher Zwo"));
     app.setStyleSheet(theme::stylesheet());
     // --texte-holen <image> <ziel>: nur die Spieltexte holen (für Tests)
     const QStringList pre = app.arguments();

@@ -1,5 +1,5 @@
-// Aussehen des Launchers: Retro-Futurismus (Sternenhimmel, Ringplanet,
-// Neonröhren, Chrom). Alles hier gezeichnet, keine fremden Grafiken.
+// Aussehen des Launchers: schwarz, Reiter oben (wie der Launcher des
+// Xbox-Forks), grüne Akzente. Alles hier gezeichnet, keine fremden Grafiken.
 #pragma once
 #include <QColor>
 #include <QIcon>

@@ -23,6 +23,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include "keyslot.h"
@@ -78,20 +79,17 @@ MainWindow::MainWindow(QWidget* parent)
       game_(find_game(dir_)),
       ini_(QDir::toNativeSeparators(dir_.filePath("ts2.ini")).toStdWString()) {
     ts2opt::ini_complete(std::filesystem::path(ini_.path()));
-    setWindowTitle(QStringLiteral("TimeSplitters 2 – Startrampe"));
+    setWindowTitle(QStringLiteral("Zeitbrecher Zwo – TimeSplitters 2"));
     setWindowIcon(theme::app_icon());
     setMinimumSize(1100, 720);
 
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(28, 110, 28, 20);
+    root->setContentsMargins(28, 96, 28, 20);
     root->setSpacing(14);
 
-    auto* middle = new QHBoxLayout;
-    auto* nav = new QVBoxLayout;
-    nav->setSpacing(4);
-    pages_ = new QStackedWidget;
-    auto* group = new QButtonGroup(this);
-    nav_ = group;
+    // Reiter oben wie im Launcher des Xbox-Forks
+    pages_ = new QTabWidget;
+    pages_->setDocumentMode(true);
     const struct {
         QString name;
         QWidget* (MainWindow::*make)();
@@ -100,23 +98,8 @@ MainWindow::MainWindow(QWidget* parent)
         {QStringLiteral("Steuerung"), &MainWindow::page_controls}, {QStringLiteral("Waffen"), &MainWindow::page_weapons},
         {QStringLiteral("Ton"), &MainWindow::page_sound},          {QStringLiteral("Über"), &MainWindow::page_about},
     };
-    int i = 0;
-    for (const auto& t : tabs) {
-        auto* b = new QPushButton(t.name);
-        b->setObjectName("nav");
-        b->setCheckable(true);
-        b->setMinimumWidth(190);
-        group->addButton(b, i);
-        nav->addWidget(b);
-        pages_->addWidget((this->*t.make)());
-        ++i;
-    }
-    nav->addStretch();
-    group->button(0)->setChecked(true);
-    connect(group, &QButtonGroup::idClicked, pages_, &QStackedWidget::setCurrentIndex);
-    middle->addLayout(nav);
-    middle->addWidget(pages_, 1);
-    root->addLayout(middle, 1);
+    for (const auto& t : tabs) pages_->addTab((this->*t.make)(), t.name.toUpper());
+    root->addWidget(pages_, 1);
 
     auto* bottom = new QHBoxLayout;
     status_ = new QLabel;
@@ -132,7 +115,6 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::show_page(int i) {
     if (i < 0 || i >= pages_->count()) return;
-    nav_->button(i)->setChecked(true);
     pages_->setCurrentIndex(i);
 }
 
@@ -230,6 +212,20 @@ QWidget* MainWindow::page_game() {
     f1->addWidget(setup_log_);
     v->addWidget(p1);
     v->addWidget(language_panel());
+
+    auto* pr = panel();
+    auto* fr = new QVBoxLayout(pr);
+    fr->addWidget(heading(QStringLiteral("Fehlerbehebungen (TS2 Redux)")));
+    const bool have_redux = QFile::exists(game_.filePath(QStringLiteral("redux.bin")));
+    fr->addWidget(hint(have_redux
+        ? QStringLiteral("Aus der eigenen Kopie von TS2 Redux (github.com/HFTSRedux/TS2Redux), game/redux.bin.")
+        : QStringLiteral("<span style='color:#ff4fd8'>game/redux.bin fehlt:</span> einmal "
+                         "tools/re/redux_patches.py mit der eigenen TS2-Redux-Kopie ausführen.")));
+    fr->addWidget(check(QStringLiteral("Spielfehler (Reaper-Absturz, Regen auf der Kamera)"), "redux", "spielfehler"));
+    fr->addWidget(check(QStringLiteral("Unsichtbarkeitsfehler"), "redux", "unsichtbar"));
+    fr->addWidget(check(QStringLiteral("HUD- und Textanzeige"), "redux", "anzeige"));
+    fr->addWidget(check(QStringLiteral("Menü-Layout wie auf der Konsole"), "redux", "menue"));
+    v->addWidget(pr);
 
     auto* p2 = panel();
     auto* f2 = new QVBoxLayout(p2);

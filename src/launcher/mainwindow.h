@@ -54,8 +54,7 @@ private:
     QDir dir_;       // Ordner von ts2.exe und ts2.ini
     QDir game_;      // game/ mit ts2.bin und ts2/
     Ini ini_;
-    QStackedWidget* pages_ = nullptr;
-    class QButtonGroup* nav_ = nullptr;
+    class QTabWidget* pages_ = nullptr;
     QLabel* status_ = nullptr;
     QLabel* game_status_ = nullptr;
     QLineEdit* homefront_ = nullptr;
