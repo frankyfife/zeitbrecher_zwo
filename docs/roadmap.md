@@ -62,6 +62,13 @@ Funktionen von außen erreicht. Daraus:
 | Level nach und nach freischalten wie auf der Xbox, Spielstand | erledigt: Xbox-Regeln aus der PAL-XBE, `profil.bin` (host.md "Fortschritt") |
 | Untertitel fehlen | behoben: Zwischensequenz-Untertitel waren im PC-Port aus (nur bei nicht-englischer Sprache an), `[sprache] untertitel` |
 | Hall für Umgebung und Waffen | erledigt: XAudio2-Hall nach Dambusters Raumtabellen, übrige Räume mit der häufigsten Voreinstellung (`[ton] hall`) |
+| Redux-Issue #12/#25: Robot Factory hängt nach dem 2. Energieknoten (Fortschritt blockiert) | in Arbeit |
+| Redux-Issue #3: Regen auf der Kamera (schwarze Quadrate, von Redux nur abgeschaltet) | in Arbeit |
+| Redux-Issue #21: Fotokamera-Bild weiß/verschmiert | in Arbeit |
+| Redux-Issue #4: Lichtflackern bei Mündungsfeuer/Feuer | in Arbeit |
+| Redux-Issue #23: Computeranzeigen abgeschnitten | in Arbeit |
+| Redux-Issue #20: Boss-Lebensbalken schlecht lesbar | in Arbeit |
+| Redux-Issue #5: Absturz in der Figurenauswahl | in Arbeit |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret
