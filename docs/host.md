@@ -751,8 +751,27 @@ P1/P2): wie Xbox; Einzelspieler (Arcade, Siberia; Pause und Spiel)
 pixelgleich. Porträtleiste eines bestätigten Spielers: auf der Xbox
 ebenfalls leer. Rang-Blase: Größenverhältnisse wie Xbox (RANK 0,57 der
 Blasenbreite, Xbox 0,58); das englische „1st=“ ist nur breiter als das
-deutsche „6.“. Offen: Ergebnisseite „GAME OVER“ im Mehrspieler – Ring
-passt, Überschrift/Rang liegen falsch.
+deutsche „6.“.
+
+**Ergebnisseite „GAME OVER“ im Mehrspieler.** Seite `0x14257C6E8` (Zeichnen
+`0x1411B59C4`, Aufbau `0x1411B60A0`; Xbox `0xD6170`/`0xD6880`). Xbox: je
+Ansicht Überschrift „GAME OVER“ (Balken v 0,52..0,4), darunter der Rang in
+einem Textfenster, beim ersten Menüspieler die Einträge (Balken
+−0,02..−0,14, −0,17..−0,29). Der PC-Port hat den Aufbau verändert:
+Überschriftbalken aus einer Tabelle (`0x14257BFD4`/`0x14257C084`:
+0,25..0,13), Eintragsbalken 0..0, und beim ersten Menüspieler überschreibt
+der erste Eintrag („Rematch“) Text und Aktion der Überschrift. Das
+Rangfenster (Seite +0x2C: y0 = Seite y + 47, Höhe 75) rechnet in
+Xbox-Pixeln ohne den halben oberen Randabstand der Xbox, und TS2 Redux
+(„anzeige“, `0x1411B5AAF`, `0x1411B5AE7`, `0x1411B5B77`) passt es für einen
+Spieler an; im Mehrspieler lag der Rang über bzw. unter der Ansicht. Mit
+mehreren Spielern gelten an den drei Redux-Stellen die Originalbytes; nach
+dem Aufbau stellt ts2.exe Überschrift und Einträge wie auf der Xbox her
+(Balkenobjekte Menü +0x3D0/+0xDE0/+0x17F0, Textlagen neu über
+`0x1410DEEBC`), und das Rangfenster (vor `0x1412230DC`, Aufruf
+`0x1411B5B05`) liegt bei Seite y + (47 + oben·0,5)·2,25 mit Höhe 75·2,25.
+Geprüft mit 2 und 3 Spielern (Arcade): wie Xbox, die Schrift ist größer
+(wie allein). Einzelspieler unverändert (Redux-Werte, Seite unverändert).
 
 Soll (Xbox-PAL in xemu, 2 Spieler Story Co-op, eigene Aufnahme): Das Menü des
 pausierenden Spielers füllt dessen ganze Ansicht ohne Randbalken; Überschrift
@@ -801,7 +820,7 @@ Sprung, Feuer, Rütteln), Story Co-op Siberia (Spieler 2 läuft aus dem
 Tunnel, kein Geisterbild), Rückweg zur Auswahl. Einzelspieler (Siberia mit
 Tastatur und nur mit Pad): pixelgleich zum Stand davor.
 
-**Offen:** mit echten Pads prüfen; GAME-OVER-Seite (oben); Auflösungen ungleich 1920×1080;
+**Offen:** mit echten Pads prüfen; Auflösungen ungleich 1920×1080;
 Pads müssen vor der Wahl stecken.
 
 ## Bildanpassung (`src/host/postfx.cpp`)
