@@ -264,6 +264,27 @@ Vorrat bleiben bei 5/5 über 30 Schüsse; ohne Munitions-Cheat 10 Schüsse in 10
 Takten, Magazin voll bis der Vorrat leer ist, kein Nachladen; Wechsel in 4
 statt 32 Takten; beide aus: Bild gleich wie vorher.
 
+## Beenden (`src/host/quit.cpp`)
+
+Die Aktion von "Quit" im Hauptmenü (`0x1410C0D80`) setzt nur ein Flag
+(`0x142F2C378` = 1). Homefront fragte es über die vtable des
+TS2-Laufzeitobjekts ab (+0x38, `0x14122BE88`: "läuft noch" = Flag 0) und
+kehrte dann in sein eigenes Menü zurück; ts2.exe fragt es nicht ab, der
+Eintrag tat nichts. Der Takt der Hauptmenüseite (`0x1410D134C`) setzt
+dasselbe Flag auch bei "Zurück"/"Start" (Tasten 0x120).
+
+ts2.exe lenkt nur die Aktion des Eintrags um (Sprung am Anfang von
+`0x1410C0D80`): Sie setzt das Flag wie das Original und schickt dem
+Spielfenster `WM_CLOSE`. Danach läuft alles wie beim Schließen des
+Fensters (`WM_DESTROY` → `PostQuitMessage` → Ende der Hauptschleife,
+Ton aus, Profil per atexit gespeichert). "Zurück"/Esc im Hauptmenü
+beendet weiterhin nicht. Eine Sicherheitsabfrage hat TS2 hier nicht.
+
+Geprüft per Skript (`[maus] menue=0`, sonst verschiebt der echte
+Mauszeiger die Auswahl): 4× runter, OK bei Takt 580 → `[beenden]`, Ende
+nach 581 Takten, Exitcode 0; per `--menuemaus` ebenso; nach Arcade und
+Zurück ebenso; Zurück/Start im Hauptmenü beenden nicht.
+
 ## Fortschritt (`src/host/profile.cpp`)
 
 TS2 führt den Fortschritt im Profil: 16 Profile je 0x20E4 Byte ab
