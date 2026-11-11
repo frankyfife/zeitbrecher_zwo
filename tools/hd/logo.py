@@ -130,13 +130,64 @@ def rgba_speichern(bild, pfad):
         f.write(b.tobytes())
 
 
-def installieren(spiel, png, textur, schein, groesse=None, menueschein=False):
+# Lage des Original-Schriftzugs im 1920x1080-Bild (Alpha-Umriss von
+# ts2newlogo (20,47)-(482,193) auf das Viereck x 40..1880, y -48..492)
+ORIGINAL_LAGE = (112, 51, 1772, 359)
+ANZEIGE_X0, ANZEIGE_Y0 = 40, -48   # obere linke Ecke der Anzeigefläche
+LEINWAND = 2                       # Arbeitsfläche in doppelter Anzeigegröße
+
+
+def anzeige_setzen(im, lage):
+    """Schriftzug (Umriss seines Alphas) auf das Bildschirm-Viereck lage
+    (x0, y0, x1, y1 im 1920x1080-Bild) strecken; Ergebnis: Arbeitsfläche
+    in Anzeigeform (3680x1080), wird beim Einspielen auf 2:1 gebracht."""
+    bb = im.getchannel('A').point(lambda v: 255 if v > 8 else 0).getbbox()
+    x0, y0, x1, y1 = lage
+    k = LEINWAND
+    w, h = round((x1 - x0) * k), round((y1 - y0) * k)
+    teil = im.crop(bb).resize((w, h), Image.LANCZOS)
+    fl = Image.new('RGBA', (ANZEIGE[0] * k, ANZEIGE[1] * k), (0, 0, 0, 0))
+    fl.alpha_composite(teil, (round((x0 - ANZEIGE_X0) * k), round((y0 - ANZEIGE_Y0) * k)))
+    s = (x1 - x0) / (y1 - y0) / ((bb[2] - bb[0]) / (bb[3] - bb[1]))
+    print(f'Schriftzug auf {x0},{y0}-{x1},{y1} gesetzt (waagerecht {s:.2f}fach gestreckt; '
+          f'Original im Spiel 1,70fach)')
+    return fl
+
+
+def relief(im, staerke):
+    """leichtes Relief wie beim Original: Kanten oben links heller, unten
+    rechts dunkler (Licht von oben links auf die weich gerundete Form),
+    dazu ein sanfter Verlauf von oben nach unten"""
+    a = im.getchannel('A')
+    pro_pixel = im.height / ANZEIGE[1]             # Bildpunkte je Anzeige-Pixel
+    hoehe = np.asarray(a.filter(ImageFilter.GaussianBlur(4.0 * pro_pixel)), np.float32) / 255.0
+    gy, gx = np.gradient(hoehe)
+    licht = -(gx + gy) / np.sqrt(2.0)              # Licht von oben links
+    licht = np.clip(licht / (np.percentile(np.abs(licht[np.asarray(a) > 0]), 98) + 1e-6), -1, 1)
+    # Rand: Innenkante etwas dunkler (gefaste Kante wie beim Original)
+    innen = np.asarray(a.filter(ImageFilter.GaussianBlur(1.5 * pro_pixel)), np.float32) / 255.0
+    rand = np.clip(1.0 - innen, 0, 1)
+    bb = a.getbbox() or (0, 0, im.width, im.height)
+    zeilen = np.clip((np.arange(im.height, dtype=np.float32)[:, None] - bb[1]) / max(1, bb[3] - bb[1]), 0, 1)
+    # Metallverlauf: oben hell, unten leicht graublau
+    verlauf = 1.0 - staerke * zeilen[..., None] * np.array([0.42, 0.36, 0.22], np.float32)
+    faktor = ((1.0 + staerke * licht) * (1.0 - 0.6 * staerke * rand))[..., None] * verlauf
+    px = np.asarray(im, np.float32)
+    rgb = np.clip(px[..., :3] * faktor, 0, 255)
+    return Image.fromarray(np.dstack([rgb, px[..., 3]]).astype(np.uint8), 'RGBA')
+
+
+def installieren(spiel, png, textur, schein, groesse=None, menueschein=False, lage=None, relief_staerke=0.0):
     hd = make_hd()
     im = Image.open(png)
     im.load()
     if im.mode != 'RGBA':
         print(f'Hinweis: {png} ist {im.mode}, ohne Alphakanal; Alpha wird 255 (deckend)')
     im = im.convert('RGBA')
+    if lage:
+        im = anzeige_setzen(im, lage)
+    if relief_staerke > 0:
+        im = relief(im, relief_staerke)
     w, h = im.size
     ziel = groesse or zielgroesse(w, h)
     verh = w / h
@@ -159,6 +210,14 @@ def installieren(spiel, png, textur, schein, groesse=None, menueschein=False):
     for name, b in bilder:
         p = os.path.join(spiel, 'hd_eigen', MISC, name + '.rgb')
         os.makedirs(os.path.dirname(p), exist_ok=True)
+        # liegt in game/hd noch unsere frühere Fassung, sie nicht als
+        # "Original" nach hd_backup sichern lassen (sonst holt
+        # --zuruecksetzen die alte eigene Fassung statt des Originals)
+        z = os.path.join(spiel, 'hd', MISC, name + '.rgb')
+        if os.path.exists(p) and os.path.exists(z):
+            import filecmp
+            if filecmp.cmp(p, z, shallow=False):
+                os.remove(z)
         hd.sgi_speichern(b.transpose(Image.FLIP_TOP_BOTTOM), p)
         print(f'  {p}  {b.width}x{b.height} RGBA')
     hd.installieren(spiel, ['misc/' + n for n, _ in bilder])
@@ -193,6 +252,11 @@ def main():
     ap.add_argument('--schein', action='store_true', help='ts2glow aus dem neuen Schriftzug erzeugen und mit einspielen')
     ap.add_argument('--menueschein', action='store_true',
                     help='eigenen Schein nur für das Hauptmenü erzeugen (brennendes Logo bleibt)')
+    ap.add_argument('--lage', metavar='X0,Y0,X1,Y1',
+                    help='Schriftzug auf dieses Viereck im 1920x1080-Bild strecken; "original" = '
+                         'Lage des Original-Schriftzugs (112,51,1772,359)')
+    ap.add_argument('--relief', type=float, default=0.0, metavar='STAERKE',
+                    help='leichtes Relief wie das Original (z. B. 0.35; 0 = aus)')
     ap.add_argument('--groesse', metavar='BxH', help='Texturgröße erzwingen, z. B. 1840x540 (Standard: 2:1, Zweierpotenz)')
     ap.add_argument('--zuruecksetzen', action='store_true', help='game/hd aus game/hd_backup wiederherstellen')
     ap.add_argument('--probe', metavar='PNG', help='Prüfbild (4fach, Rahmen) schreiben')
@@ -204,7 +268,11 @@ def main():
         export(spiel, args.ziel or os.path.join(spiel, 'hd_eigen', 'logo'))
     elif args.installieren:
         groesse = tuple(int(x) for x in args.groesse.lower().split('x')) if args.groesse else None
-        installieren(spiel, args.installieren, args.textur, args.schein, groesse, args.menueschein)
+        lage = None
+        if args.lage:
+            lage = ORIGINAL_LAGE if args.lage == 'original' else tuple(float(v) for v in args.lage.split(','))
+        installieren(spiel, args.installieren, args.textur, args.schein, groesse, args.menueschein,
+                     lage, args.relief)
     elif args.zuruecksetzen:
         make_hd().zuruecksetzen(spiel, ['misc/' + args.textur] + (['misc/ts2glow'] if args.schein else []))
         if args.menueschein:

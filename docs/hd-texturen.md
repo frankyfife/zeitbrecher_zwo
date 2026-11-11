@@ -219,7 +219,17 @@ für das Hauptmenü (`game/hd/ts2/textures/misc/ts2glow_menue.rgba`, Format
 (`src/host/menulogo.cpp`) bindet ihn für die beiden ts2glow-Zeichnungen des
 Hauptmenüs (Schein 0x1410B5C76; Alpha-Maske für Feuer und dunklen Hof in
 0x1410B59A8, Aufruf 0x1410B5A55). Fehlt die Datei, bleibt alles wie bisher.
-Eigener Schriftzug des Nutzers: 1500×527 (2,85:1), unverzerrt auf
-1138×400 Bildpunkte bei y 35..435 in die Anzeigefläche gesetzt
-(`game/hd_eigen/logo/neu_schriftzug_3680x1080.png`), dann
-`--installieren … --menueschein`.
+`--lage X0,Y0,X1,Y1` streckt den Umriss des Schriftzugs auf ein Viereck im
+1920×1080-Bild (`original` = Lage des Original-Schriftzugs 112,51–1772,359;
+das Original erscheint im Spiel 1,70fach waagerecht gestreckt).
+`--relief STÄRKE` gibt ihm ein leichtes Relief wie dem Original: Licht von
+oben links auf die weich gerundete Form, dunklere Innenkante, Verlauf von
+hell zu graublau. Liegt in game/hd noch die frühere eigene Fassung, wird sie
+nicht nach hd_backup gesichert (`--zuruecksetzen` holt so das Original).
+Eigener Schriftzug des Nutzers (1500×527):
+
+```
+python -I tools/hd/logo.py --installieren game/hd_eigen/logo/neu_schriftzug_vorlage.png --lage 112,40,1772,390 --relief 0.6 --menueschein
+```
+
+Breite wie das Original, 1,70fach gestreckt wie das Original.
