@@ -105,7 +105,7 @@ const std::vector<IniOption>& ini_options() {
             {"pad", "freecam", "L3+R3", ""},
             {"freischalten", "story", "0",
              "0: Fortschritt wie auf der Konsole (Level nacheinander, gespeichert in profil.bin);\n"
-             "1: alle Story-Level sofort (wie die Konsolen-Codes, Schummeln)"},
+             "1: alle Story-Level sofort (wie die Konsolen-Codes)"},
             {"freischalten", "arcade", "0", "1: alle Arcade-Karten und -Spielarten sofort"},
             {"freischalten", "challenge", "0", "1: alle Challenges sofort"},
             {"freischalten", "figuren", "0", "1: alle Figuren sofort"},
@@ -126,6 +126,8 @@ const std::vector<IniOption>& ini_options() {
              "Untertitel in den Zwischensequenzen (wie die Xbox-Fassung ausser auf Englisch);\n"
              "gilt bei jedem Start, im Optionsmenue (Audio/Video) umgeschaltet bis zum Beenden"},
             {"sprache", "xbox_image", "", "Pfad des eigenen Xbox-Images (nur fuer den Launcher)"},
+            {"debug", "watchdog", "0", "1: Watchdog meldet in ts2.log, wo das Spiel haengt (Fehlersuche)"},
+            {"debug", "watchdog_ms", "2000", "Watchdog: Stillstand in Millisekunden, ab dem gemeldet wird"},
             {"kamera", "freecam", "1", "Freie Kamera: Taste loest die Kamera vom Spieler (WASD, Maus, Leertaste/C, Umschalt schneller;\n"
              "Pad: [pad] freecam, Sticks, Steuerkreuz hoch/runter oder RT/LT, LB/RB schneller)"},
             {"kamera", "freecam_taste", "117", "virtueller Tastencode, 117 = F6"},

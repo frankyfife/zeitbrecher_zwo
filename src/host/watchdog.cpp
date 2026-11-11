@@ -131,9 +131,13 @@ DWORD WINAPI watch(void*) {
 
 }  // namespace
 
-void watchdog_install(const Ts2Image& img) {
+void watchdog_install(const Ts2Image& img, const std::filesystem::path& ini) {
+    // ts2.ini [debug] watchdog / watchdog_ms; TS2_WACHHUND(_MS) haben Vorrang
     wchar_t v[16] = {};
-    if (GetEnvironmentVariableW(L"TS2_WACHHUND", v, 16) == 0 || v[0] == L'0') return;
+    bool on = GetPrivateProfileIntW(L"debug", L"watchdog", 0, ini.c_str()) != 0;
+    if (GetEnvironmentVariableW(L"TS2_WACHHUND", v, 16) > 0) on = v[0] != L'0';
+    if (!on) return;
+    g_limit_ms = std::max(200, int(GetPrivateProfileIntW(L"debug", L"watchdog_ms", 2000, ini.c_str())));
     if (GetEnvironmentVariableW(L"TS2_WACHHUND_MS", v, 16) > 0) g_limit_ms = std::max(200, _wtoi(v));
     if (!DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_game,
                          THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0)) {

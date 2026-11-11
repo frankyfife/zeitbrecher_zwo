@@ -345,16 +345,24 @@ QWidget* MainWindow::page_game() {
     auto f = form_group(QStringLiteral("Freischalten"), &box);
     f.span(hint(QStringLiteral("Ohne Haken: Fortschritt wie auf der Konsole – Level, Karten, Figuren und "
                                "Challenges werden nacheinander frei und in profil.bin gespeichert. "
-                               "Die Haken schalten sofort alles frei (wie die Konsolen-Codes, Schummeln).")));
-    f.span(check(QStringLiteral("Alle Story-Level (Schummeln)"), "freischalten", "story"));
-    f.span(check(QStringLiteral("Alle Arcade-Karten und -Spielarten (Schummeln)"), "freischalten", "arcade"));
-    f.span(check(QStringLiteral("Alle Challenges (Schummeln)"), "freischalten", "challenge"));
-    f.span(check(QStringLiteral("Alle Figuren (Schummeln)"), "freischalten", "figuren"));
+                               "Die Haken schalten sofort alles frei (wie die Konsolen-Codes).")));
+    f.span(check(QStringLiteral("Alle Story-Level"), "freischalten", "story"));
+    f.span(check(QStringLiteral("Alle Arcade-Karten und -Spielarten"), "freischalten", "arcade"));
+    f.span(check(QStringLiteral("Alle Challenges"), "freischalten", "challenge"));
+    f.span(check(QStringLiteral("Alle Figuren"), "freischalten", "figuren"));
     f.span(check(QStringLiteral("Hauptmenü mit „Options“"), "freischalten", "optionen"));
     f.span(check(QStringLiteral("Alle Cheats/Extras"), "freischalten", "cheats"));
     f.span(check(QStringLiteral("Unverwundbar"), "freischalten", "unverwundbar"));
-    f.span(check(QStringLiteral("Alles (Figuren, Level, Extras; Schummeln)"), "freischalten", "alles"));
+    f.span(check(QStringLiteral("Alles (Figuren, Level, Extras)"), "freischalten", "alles"));
     v->addWidget(box);
+
+    QGroupBox* dbg;
+    auto d = form_group(QStringLiteral("Debug-Optionen"), &dbg);
+    d.span(hint(QStringLiteral("Watchdog: meldet in ts2.log, wo das Spiel hängt, wenn es länger als die "
+                               "Wartezeit nicht weiterläuft (Fehlersuche, z. B. Robot Factory).")));
+    d.span(check(QStringLiteral("Watchdog"), "debug", "watchdog"));
+    d.add(QStringLiteral("Wartezeit"), spin("debug", "watchdog_ms", 200, 60000, QStringLiteral(" ms")));
+    v->addWidget(dbg);
     return scroll_page(content, v);
 }
 

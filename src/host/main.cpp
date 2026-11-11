@@ -942,7 +942,7 @@ int wmain(int argc, wchar_t** argv) {
     timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
     subtitles_install(g_img, self_dir() / L"ts2.ini");
-    watchdog_install(g_img);
+    watchdog_install(g_img, self_dir() / L"ts2.ini");
     levelfix_install(g_img);
     hudfix_install(g_img, self_dir() / L"ts2.ini");
     profile_install(g_img, self_dir() / L"profil.bin");

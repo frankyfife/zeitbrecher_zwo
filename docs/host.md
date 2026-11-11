@@ -858,11 +858,12 @@ geprüft.
 - **Offen:** Raster mit Spalten (falls es sie gibt; in den geprüften Menüs
   keine), Schieberegler, ein eigener Zeiger.
 
-## Wachhund (`src/host/watchdog.cpp`)
+## Watchdog (`src/host/watchdog.cpp`)
 
+`ts2.ini` `[debug] watchdog=1` (Launcher: Spiel → Debug-Optionen) oder
 `TS2_WACHHUND=1` startet einen Thread, der TS2s Taktzähler (`0x142EE3DE8`,
 vom Begrenzer `0x14107CC64` je Bild erhöht) beobachtet. Steht er länger als
-`TS2_WACHHUND_MS` (Vorgabe 2000), hält der Thread den Spiel-Thread kurz an
+`[debug] watchdog_ms` bzw. `TS2_WACHHUND_MS` (Vorgabe 2000), hält der Thread den Spiel-Thread kurz an
 und schreibt nach `ts2.log`: RIP, Register, die möglichen Rücksprungadressen
 im TS2-Code (rohe Suche über 1024 Stapeleinträge) und eine Häufigkeitsliste
 aus 200 RIP-Stichproben (zeigt die Schleife). Höchstens sechs Meldungen je
