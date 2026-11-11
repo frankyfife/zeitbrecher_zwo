@@ -10,7 +10,7 @@
 // erzeugt von tools/hd/logo.py). Fehlt die Datei, bleibt alles wie bisher.
 //
 // Dateiformat: "TS2R", u32 Breite, u32 Höhe, dann RGBA8 zeilenweise in der
-// Reihenfolge der .rgb-Datei (wie TS2 seine Texturen hochlädt).
+// Reihenfolge der Anzeige (oberste Zeile zuerst).
 #include "menulogo.h"
 
 #include <windows.h>

@@ -122,9 +122,9 @@ MENUESCHEIN = 'ts2glow_menue.rgba'
 
 def rgba_speichern(bild, pfad):
     """eigenes Format für src/host/menulogo.cpp: "TS2R", Breite, Höhe (u32),
-    RGBA8 in der Zeilenfolge der .rgb-Dateien (unterste Zeile zuerst)"""
+    RGBA8 aufrecht (oberste Zeile zuerst, so wie sie im Spiel erscheint)"""
     import struct
-    b = bild.convert('RGBA').transpose(Image.FLIP_TOP_BOTTOM)
+    b = bild.convert('RGBA')
     with open(pfad, 'wb') as f:
         f.write(b'TS2R' + struct.pack('<II', b.width, b.height))
         f.write(b.tobytes())
