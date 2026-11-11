@@ -153,6 +153,45 @@ bool redirect_lea(uint64_t va, uint64_t target, const void* fn) {
     return true;
 }
 
+// ---- Umlaute in booklight
+//
+// Akzente (Schrift +0x18, je 0x24 Byte: Zeichen, Spiegeln, x-Versatz,
+// y-Versatz, x-Faktor, y-Faktor, Anzahl, Schritt) setzt 0x14121CEC0 aus einem
+// Zeichen derselben Schrift zusammen; Umlaute (Eintrag 4) aus zwei Punkten
+// '.'. book und booklight teilen eine Tabelle (0x14259BC00), deren Werte zu
+// book passen: In booklight (Rechtehinweis, Stile 0x10–0x12) sitzen die
+// Punkte zu hoch, nach rechts und sind zu klein – auf der Xbox ebenso (gleiche
+// Daten, PAL-Abbild). ts2.exe gibt booklight eine eigene Kopie mit
+// angepassten Umlaut-Werten (TS2_UMLAUT_LIGHT="x,y,fx,fy" zum Abgleichen).
+constexpr uint64_t kAccents = 0x14259BC00;
+constexpr int kAccentCount = 12;
+constexpr int kBooklight = 3;
+constexpr int kLightX = 1, kLightY = -10;
+constexpr float kLightFx = 0.45f, kLightFy = 1.3f;  // Tabelle: 2, -12, 0.4, 1.0 (für book)
+uint8_t g_light_accents[kAccentCount * 0x24];
+
+void fix_booklight_umlauts() {
+    uint8_t* font = g_img->va<uint8_t>(kFonts + kBooklight * kFontSize);
+    uint8_t** acc = reinterpret_cast<uint8_t**>(font + 0x18);
+    if (*acc != g_img->va<uint8_t>(kAccents)) {
+        log("[schrift] booklight: Akzenttabelle unerwartet, Umlaute unverändert\n");
+        return;
+    }
+    std::memcpy(g_light_accents, *acc, sizeof g_light_accents);
+    int32_t* e = reinterpret_cast<int32_t*>(g_light_accents + 3 * 0x24);  // Eintrag 4: Umlaut
+    float* ef = reinterpret_cast<float*>(e);
+    int x = kLightX, y = kLightY;
+    float fx = kLightFx, fy = kLightFy;
+    char v[64] = {};
+    if (GetEnvironmentVariableA("TS2_UMLAUT_LIGHT", v, sizeof v) > 0) std::sscanf(v, "%d,%d,%f,%f", &x, &y, &fx, &fy);
+    e[2] = x;
+    e[3] = y;
+    ef[4] = fx;
+    ef[5] = fy;
+    *acc = g_light_accents;
+    log("[schrift] booklight: eigene Umlaut-Punkte (x %d, y %d, Breite %.2f, Höhe %.2f)\n", x, y, fx, fy);
+}
+
 }  // namespace
 
 void fontfix_install(const Ts2Image& img) {
@@ -185,6 +224,7 @@ void fontfix_install(const Ts2Image& img) {
         n += redirect_lea(s.lea_va, s.target, reinterpret_cast<const void*>(kHooks[s.fn]));
     }
     log("[schrift] Zeichen-Rückrufe %d/4 umgelenkt; Originale: %s\n", n, found.c_str());
+    fix_booklight_umlauts();
 }
 
 }  // namespace host

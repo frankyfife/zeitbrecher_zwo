@@ -297,6 +297,31 @@ Der PC-Code hat diese Zeichnungen nicht. ts2.exe hängt sie an den Aufruf
 derselben Funktion (TS2_FIRMENLOGOS=0: aus). Gegen eine xemu-Aufnahme:
 Lage auf 1 Pixel gleich, Einblendung ab etwa 1,2 s nach Beginn des Feuers.
 
+### Rechtehinweis vor dem brennenden Logo
+
+Das Titel-Level 0x67 zeichnet in 0x1410D6048 (Xbox PAL 0xDD290) den
+Rechtehinweis: igmtex als Verlauf (nur 1/16 der Textur), ts2loading
+(0x4F4F4F3F), ts2newlogo, FREE RADICAL und EIDOS, Text 1712 (Stil 0x10)
+0x37 Punkte über dem Rand; die Xbox legt den Ladebalken der Ladeanzeige
+0xDCE90 darüber (0xDCD90(60,250,392,15) in 512×448 = (75,263)+490×16,
+Hintergrund 0x2A18180F, Füllung 0x141E3C7F) und lädt, während das Bild erst
+24 % Helligkeit hat. Im PC-Port schrieb igmtex Tiefe und verdeckte alles
+außer dem Text; die Logos lagen in 640×480-Punkten, kein Balken, nach
+wenigen Bildern weg. ts2.exe zeichnet den Bildschirm nach (Aufruf
+0x14114D2C0; Lagen ×3/×2,25, ts2loading unverzerrt 4:3 in der Mitte, Text
+in der Höhe wie die gestreckte Xbox-Schrift, 24 % Helligkeit, Balken voll
+hell) und hält Level 0x67 im Takt (Aufruf 0x14122C0F6, Zustand 0x142EE3DF0)
+mindestens 2 s, bis der Balken voll ist (Enter, Leertaste, Esc, Linksklick,
+A/Start überspringen). In Testläufen mit --takte ohne Mindestdauer;
+TS2_RECHTE_MS=<ms>, TS2_RECHTEHINWEIS=0 aus.
+
+Umlaute in booklight (`src/host/fontfix.cpp`): book und booklight teilen die
+Akzenttabelle 0x14259BC00 (Umlaut = zwei '.', Werte für book). In booklight
+(Rechtehinweis, Einsatzbriefing) saßen die Punkte zu klein, zu hoch und
+rechts, mit Originalschriften und auf der Xbox ebenso. booklight bekommt eine
+eigene Kopie mit Umlaut-Werten 1, −10, 0,45, 1,3; book und impact
+unverändert. Proben: TS2_UMLAUTTEST=1, TS2_UMLAUT_LIGHT="x,y,b,h".
+
 ## Teilchen und Sprites in Konsolengröße (`src/host/spritefix.cpp`)
 
 Teilchen (0x14112F3C0), Effekt-Objekte (Typen 3, 24, 34, 35 aus
