@@ -163,14 +163,26 @@ aus den Originalen gemessen bzw. vergrößert.
 TS2 zeichnet Text mit drei Schrift-Texturen: `misc/impact` (256², HUD,
 Waffennamen, Ziffern, Menütitel), `misc/book` (128×256, Menüs, Untertitel)
 und `misc/booklight` (128×192). Sie sind weiß, die Form steckt im Alpha.
-`tools/hd/make_fonts.py` zeichnet sie als Umrisse nach: Es schätzt eine
-glatte, harte Form, deren Kantenglättung auf Originalgröße das Original
-ergibt, dann Marching Squares, Glättung und spitze Ecken. Die Umrisse stehen
-als SVG in `game/hd_eigen/schrift/<name>.svg` (bearbeitbar, Ebene „vorlage“
-zeigt das Original); daraus werden 4fache Texturen mit derselben
-Zeichenanordnung (`hd_eigen/ts2/textures/misc/`). `--messen` zeigt die
-Abweichung (RMS 2,6/4,5/5,2 von 255), `--vergleich <Ordner>` Original und
-neu nebeneinander, `--installieren` kopiert nach `game/hd`. Die
+`tools/hd/make_fonts.py` zeichnet sie je Zeichen nach (Zellen aus den
+Zeichentabellen in `game/ts2.bin`): Es schätzt eine glatte, harte Form,
+deren Kantenglättung auf Originalgröße das Original ergibt, mittelt
+spiegelsymmetrische Zeichen (A, H, O, V …) an ihrer besten Achse, verfolgt
+die Kante (Marching Squares) und ordnet sie: optimale Zerlegung in Geraden
+und Kreisbögen, abgerundete Ecken werden spitz, runde Strichenden gerade
+Kappen, fast achsparallele Kanten exakt waagerecht/senkrecht; schriftweit
+rasten Grundlinie/Versal-/x-Höhe und gleich dicke Striche auf gemeinsame
+Werte ein. Ein Sicherheitsnetz lässt Zeichen, die geordnet deutlich
+schlechter passen, nur geglättet (booklight `7`, `|`); `--svg --einfach`
+nimmt für alle das frühere, nur glättende Verfahren. Die Texturen werden
+auf die Zeichenzellen beschnitten, weil das Spiel beim Filtern über den
+Zellrand hinaus liest (sonst Saum). Die Umrisse stehen als SVG in
+`game/hd_eigen/schrift/<name>.svg` (bearbeitbar, Ebene „vorlage“ zeigt das
+Original); daraus werden 4fache Texturen mit derselben Zeichenanordnung
+(`hd_eigen/ts2/textures/misc/`). `--messen` zeigt die Abweichung und die
+Zeichen mit der größten (RMS 3,1/4,6/5,3 von 255 für impact/book/booklight;
+geglättet ohne Ordnen 2,6/4,5/5,2 – der Unterschied ist die bewusste
+Angleichung, vor allem das Spiegeln bei impact), `--vergleich <Ordner>`
+Original und neu nebeneinander, `--installieren` kopiert nach `game/hd`. Die
 Zeichentabellen im Programm zählen in Pixeln des Originals; ts2.exe rechnet
 sie auf die geladene Größe um (`src/host/fontfix.cpp`); ohne diese
 Umrechnung zeigt eine größere Schrift-Textur nur ihr oberes linkes Viertel.

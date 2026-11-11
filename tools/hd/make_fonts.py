@@ -6,19 +6,36 @@ Konsolen-Auflösung. Bei 1920x1080 werden sie 2- bis 4fach vergrößert und
 unscharf. Dieses Werkzeug macht daraus Umrisse (SVG) und zeichnet sie in
 4facher Größe kantenglatt neu, mit derselben Anordnung der Zeichen:
 
-1. Nachzeichnen: Aus dem Alphakanal wird in 8facher Abtastung eine glatte,
-   scharf begrenzte Form geschätzt, deren Kantenglättung auf Originalgröße
-   wieder das Original ergibt (Rückprojektion mit Weichzeichnen, `feld`).
-   Ihre Kante wird als Linienzug verfolgt (Marching Squares), entlang der
-   Kante geglättet, Ecken werden spitz wiederhergestellt, dann wird
-   vereinfacht. Ergebnis: game/hd_eigen/schrift/<name>.svg, ein Blatt
-   je Schrift in Original-Pixeln, Zeichen aufrecht, schwarz auf
-   durchsichtig. Das SVG ist die Vorlage zum Nachbessern (z. B. in
-   Inkscape: Pfade bearbeiten; die Ebene "vorlage" zeigt das Original).
+1. Nachzeichnen, je Zeichen (Zellen aus den Zeichentabellen in
+   game/ts2.bin): Aus dem Alphakanal wird in 8facher Abtastung eine
+   glatte, scharf begrenzte Form geschätzt, deren Kantenglättung auf
+   Originalgröße wieder das Original ergibt (Rückprojektion mit
+   Weichzeichnen, `feld`). Spiegelsymmetrische Zeichen (A, H, O, V ...)
+   werden an ihrer besten Achse gemittelt. Die Kante wird verfolgt
+   (Marching Squares) und dann geordnet (`ordnen`):
+   - optimale Zerlegung in Geraden und Kreisbögen (dynamische
+     Programmierung, `segmentieren`),
+   - Vielecke aus kurzen Geraden an Rundungen werden wieder Kurven,
+     abgerundete Ecken zwischen zwei Geraden spitz, runde Strichenden
+     gerade Kappen (waagerecht/senkrecht), fast gleiche Geraden eine,
+   - fast achsparallele Geraden werden exakt waagerecht/senkrecht,
+   - schriftweit: waagerechte Kanten auf gemeinsame Höhen (Grundlinie,
+     Versal-, x-Höhe; nur starke Häufungen), gleich dicke Striche von
+     Buchstaben und Ziffern auf eine gemeinsame Stärke,
+   - Ecken = Schnittpunkte der Geraden, Kurven geglättet und angeglichen.
+   Weicht ein Zeichen so deutlich stärker vom Original ab als mit der
+   einfachen Glättung (früheres Verfahren), bleibt es bei dieser
+   (Sicherheitsnetz, z. B. für sehr dünne Zeichen). Ergebnis:
+   game/hd_eigen/schrift/<name>.svg, ein Blatt je Schrift in
+   Original-Pixeln, Zeichen aufrecht, schwarz auf durchsichtig. Das SVG
+   ist die Vorlage zum Nachbessern (z. B. in Inkscape: Pfade bearbeiten;
+   die Ebene "vorlage" zeigt das Original).
 2. Zeichnen: Die Pfade aus dem SVG werden in der Zielgröße mit genauer
    Flächendeckung gefüllt (Gerade/Bögen/Kurven, Füllregeln nonzero und
-   evenodd) und als SGI-Textur (RGB weiß, Alpha = Deckung) nach
-   game/hd_eigen/ts2/textures/misc/<name>.rgb geschrieben.
+   evenodd), auf die Zeichenzellen beschnitten (kein Überlauf in die
+   Lücken, die das Spiel beim Filtern mitliest) und als SGI-Textur (RGB
+   weiß, Alpha = Deckung) nach game/hd_eigen/ts2/textures/misc/<name>.rgb
+   geschrieben.
 
 Die SVGs sind aus den Spieldaten abgeleitet und gehören wie alles unter
 game/ nie ins Repository. Ins Repo gehört nur dieses Skript.
@@ -31,6 +48,7 @@ Aufrufe (aus dem Repo-Ordner, Python mit Pillow und numpy):
 
   python -I tools/hd/make_fonts.py                 SVG anlegen (falls fehlt), Texturen zeichnen
   python -I tools/hd/make_fonts.py --svg           SVG neu aus dem Original (überschreibt Änderungen!)
+  python -I tools/hd/make_fonts.py --svg --einfach SVG nur geglättet (früheres Verfahren, ohne Ordnen)
   python -I tools/hd/make_fonts.py --nur book      nur diese Schrift(en)
   python -I tools/hd/make_fonts.py --faktor 2      andere Vergrößerung (Standard 4)
   python -I tools/hd/make_fonts.py --messen        Abweichung (verkleinert gegen Original)
@@ -45,6 +63,7 @@ import io
 import math
 import os
 import re
+import struct
 import sys
 import xml.etree.ElementTree as ET
 
@@ -58,7 +77,7 @@ MISC = os.path.join('ts2', 'textures', 'misc')
 # Zeichentabelle und wird nicht benutzt). schwelle: Deckung, an der die
 # Kante liegt (0,5 = Mitte der Kantenglättung; kleiner = kräftiger).
 SCHRIFTEN = {
-    'impact': dict(unschaerfe=0.15, haerte=10.0),
+    'impact': dict(unschaerfe=0.15, haerte=10.0, kappe_breite=6.0),
     'book': dict(unschaerfe=0.2, haerte=8.0),
     'booklight': dict(unschaerfe=0.2, haerte=8.0),
 }
@@ -70,6 +89,36 @@ SCHRIFTEN = {
 # sigma       Glättung der Linienzüge in Original-Pixeln (Ecken bleiben fest)
 # schaerfen   Ecken mit geraden Nachbarstücken spitz wiederherstellen
 GEMEINSAM = dict(schwelle=0.5, iterationen=30, sigma=0.15, schaerfen=True)
+# Ordnen der Umrisse (Längen in Original-Pixeln, Winkel in Grad; Stand: am Bild
+# und mit --messen verglichen, siehe docs/hd-texturen.md "Schriften")
+ORDNEN = dict(
+    schritt=0.1,            # Abtastabstand der Linienzüge
+    sigma_vor=0.08,         # leichte Glättung vor dem Zerlegen
+    seg_max=20.0,           # längstes Stück der Zerlegung
+    r_min=0.9, r_max=60.0,  # erlaubte Bogenradien (kleiner: Ecke, größer: Gerade)
+    lam_gerade=0.03,        # Preis je Gerade bzw. Bogen (Fehlerquadrate in px²): weniger,
+    lam_bogen=0.08,         # aber genaue Stücke; Geraden etwas billiger als Bögen
+    knick_gerade=35.0, knick_stoss=25.0, knick_bogen=40.0,  # Ecke ab diesem Knick (G-G, G-B, B-B)
+    poly_max=2.5, poly_knick=(6.0, 45.0), poly_min=3,      # Vieleck an Rundungen -> Kurve
+    kurz_gerade=1.0,        # kürzere Geraden gelten als Teil einer Ecke/Kappe
+    kurve_lang=1.5, kurve_r=1.8,  # Bögen ab dieser Länge/diesem Radius zählen wie Geraden (Tangente)
+    gleich_grad=8.0,        # zwei Geraden mit weniger Knick werden eine
+    max_gerade=0.09,        # größter Abstand der Punkte einer zusammengefassten Geraden
+    ecke_kurve_max=2.5, ecke_winkel=25.0, ecke_abstand=0.5,  # abgerundete Ecke -> spitz
+    kappen=True, kappe_winkel=120.0, kappe_winkel_bogen=150.0, kappe_max=8.0,
+    kappe_abstand=0.7, kappe_breite=2.6,  # rundes Strichende -> gerade Kappe
+    min_gerade_frei=3.5,    # kürzere Geraden ohne Ecke an beiden Enden werden Kurve
+    achse_grad=4.0, achse_versatz=0.15,   # achsparallel, wenn die Enden höchstens so weit wandern
+    max_schnitt=0.8,        # Eckpunkt höchstens so weit vom nachgezeichneten Umriss
+    sigma_kurve=0.2, angleichen=0.6,      # Glättung der Kurven, Übergang zu verschobenen Ecken
+    metrik_radius=0.2, metrik_luecke=0.15, metrik_min=8,  # gemeinsame Höhen
+    staerke_radius=0.2, staerke_luecke=0.1, staerke_min_n=3, staerke_max=4.0, staerke_min_laenge=1.0,
+    max_sym_rest=0.15,      # Spiegelsymmetrie nur, wenn das Zeichen fast symmetrisch ist
+    val_flaeche=0.2, val_abstand=0.9,     # geordneter Ring muss nahe am nachgezeichneten liegen
+    netz_faktor=1.5, netz_abstand=4.0,    # Sicherheitsnetz: RMS neu > alt * f + a/255 -> alt
+)
+# Zeichen, die in allen drei Schriften spiegelsymmetrisch angelegt sind
+SYMMETRISCH = set('AHIMOTUVWXYovwxil08!\'"*+-=^_.:')
 FAKTOR = 4      # Vergrößerung der Ausgabe
 ABTAST = 8      # Feinabtastung beim Nachzeichnen (je Original-Pixel)
 RAND = 2        # Rand in Original-Pixeln beim Nachzeichnen
@@ -114,6 +163,64 @@ def textur_aus_deckung(deckung):
     h, w = a.shape
     rgb = np.full((h, w, 3), 255, np.uint8)
     return Image.fromarray(np.dstack([rgb, a]), 'RGBA')
+
+
+# Schrifttabelle in ts2.bin (siehe src/host/fontfix.cpp): je Schrift 0x30 Byte,
+# +0 Zeiger auf den Texturnamen, +0x10 Zeiger auf die Zeichentabelle (je Zeichen
+# ab ' ' 10 Byte: u16 x0, y0, x1, y1 (x1/y1 ausschließlich), s8 Versatz nach unten)
+SCHRIFT_TABELLE = 0x14259BF60
+SCHRIFT_ANZAHL = 4
+ZEICHEN_ANZAHL = 102  # ' ' bis 0x85
+
+
+def _ts2bin_leser(spiel):
+    """game/ts2.bin (Kopf, dann Bereiche rva/Größe/Art/Daten) -> Lesefunktion(va, n)."""
+    with open(os.path.join(spiel, 'ts2.bin'), 'rb') as f:
+        v = f.read()
+    _, ver, _, _, basis = struct.unpack_from('<IIIIQ', v, 0)
+    if ver != 1:
+        raise ValueError(f'ts2.bin Version {ver}')
+    o = 24
+    (n,) = struct.unpack_from('<I', v, o)
+    o += 4
+    bereiche = []
+    for _ in range(n):
+        rva, groesse, _ = struct.unpack_from('<III', v, o)
+        o += 12
+        bereiche.append((rva, o, groesse))
+        o += groesse
+
+    def lesen(va, k):
+        r = va - basis
+        for rva, ab, groesse in bereiche:
+            if rva <= r and r + k <= rva + groesse:
+                return v[ab + r - rva:ab + r - rva + k]
+        raise KeyError(hex(va))
+    return lesen
+
+
+def zeichentabelle(spiel, name):
+    """Zellen der Schrift: Liste (Zeichencode, x0, y0, x1, y1, Versatz); None ohne ts2.bin."""
+    try:
+        lesen = _ts2bin_leser(spiel)
+        for i in range(SCHRIFT_ANZAHL):
+            eintrag = SCHRIFT_TABELLE + i * 0x30
+            (zname,) = struct.unpack('<Q', lesen(eintrag, 8))
+            (tab,) = struct.unpack('<Q', lesen(eintrag + 0x10, 8))
+            if not zname or not tab:
+                continue
+            text = lesen(zname, 48).split(b'\0')[0].decode('ascii', 'replace')
+            if os.path.splitext(text.rsplit('/', 1)[-1])[0] != name:
+                continue
+            zellen = []
+            for k in range(1, ZEICHEN_ANZAHL):
+                x0, y0, x1, y1, versatz = struct.unpack('<HHHHb', lesen(tab + 10 * k, 9))
+                if x1 > x0 and y1 > y0:
+                    zellen.append((32 + k, x0, y0, x1, y1, versatz))
+            return zellen
+    except (OSError, KeyError, ValueError, struct.error) as e:
+        print(f'  {name}: keine Zeichentabelle aus ts2.bin ({e})')
+    return None
 
 
 # ======================================================================
@@ -356,9 +463,23 @@ def feld(alpha, abtast, iterationen, unschaerfe, haerte):
 
 def nachzeichnen(alpha, schwelle=0.5, abtast=ABTAST, rand=RAND, toleranz=TOLERANZ, iterationen=30,
                  unschaerfe=0.25, haerte=6.0, **glatt):
-    """Kanten der Form als geschlossene Ringe (Original-Pixel, y nach unten)."""
-    pad = np.pad(alpha, rand)
-    F = feld(pad, abtast, iterationen, unschaerfe, haerte)
+    """Einfaches Verfahren: Kanten der Form als geschlossene, geglättete Ringe
+    (Original-Pixel, y nach unten)."""
+    F = feld(np.pad(alpha, rand), abtast, iterationen, unschaerfe, haerte)
+    ringe = []
+    for pts in kanten(F, schwelle, abtast, rand):
+        if len(pts) >= 8:
+            pts = formen_glaetten(pts, **glatt)
+        pts = _vereinfachen(pts, toleranz)
+        if len(pts) >= 3 and abs(flaeche(pts)) > 0.02:
+            ringe.append(pts)
+    return ringe
+
+
+def kanten(F, schwelle, abtast, rand):
+    """Marching Squares auf dem Feld: rohe Ringe in Pixeln des Ausschnitts
+    (ohne Rand). Die Tinte liegt links der Laufrichtung (Normale (-dy, dx)),
+    wenn der äußere Ring positive Fläche hat; das gilt für alle Ringe gleich."""
     h, w = F.shape
     drin = F > schwelle
     fall = (drin[:-1, :-1] * 8 + drin[:-1, 1:] * 4 + drin[1:, 1:] * 2 + drin[1:, :-1] * 1).astype(np.int8)
@@ -388,12 +509,7 @@ def nachzeichnen(alpha, schwelle=0.5, abtast=ABTAST, rand=RAND, toleranz=TOLERAN
             nxt = weiter.pop(nxt)
         pts = np.array([punkt(k) for k in kette], np.float64)
         # Feinraster -> Original-Pixel (Pixelmitte bei +0,5)
-        pts = (pts + 0.5) / abtast - rand
-        if len(pts) >= 8:
-            pts = formen_glaetten(pts, **glatt)
-        pts = _vereinfachen(pts, toleranz)
-        if len(pts) >= 3 and abs(flaeche(pts)) > 0.02:
-            ringe.append(pts)
+        ringe.append((pts + 0.5) / abtast - rand)
     return ringe
 
 
@@ -429,6 +545,637 @@ def gruppieren(ringe):
         r = g[0]
         return (round(float(r[:, 1].min()) / 8), float(r[:, 0].min()))
     return sorted(gruppen.values(), key=lage)
+
+
+# ======================================================================
+# Ordnen: Geraden und Bögen, spitze Ecken, Kappen, gemeinsame Maße
+# ======================================================================
+
+class Gerade:
+    """Gerade durch c mit Richtung d (in Laufrichtung); i0..i1 Indizes im Ring."""
+
+    def __init__(self, i0, i1, c, d):
+        self.i0, self.i1 = i0, i1
+        self.c = np.asarray(c, float)
+        self.d = np.asarray(d, float) / math.hypot(*d)
+        self.achse = None   # 'h' oder 'v', wenn achsparallel
+        self.fest = False   # Kappe oder zusammengefasst (zählt immer als lang)
+
+    def normale(self):
+        return np.array([-self.d[1], self.d[0]])
+
+    def proj(self, pt):
+        return self.c + np.dot(np.asarray(pt) - self.c, self.d) * self.d
+
+
+class Kurve:
+    def __init__(self, i0, i1, kreis=None):
+        self.i0, self.i1 = i0, i1
+        self.kreis = kreis  # (Mitte, Radius) eines Bogens aus der Zerlegung
+
+
+def _laenge(e, ds):
+    return (e.i1 - e.i0) * ds
+
+
+def _stueck(p, i0, i1):
+    n = len(p)
+    while i1 < i0:
+        i1 += n
+    return p[np.arange(i0, i1 + 1) % n]
+
+
+def _ausgleich(pts):
+    """Ausgleichsgerade: Schwerpunkt, Richtung, Abstände der Punkte."""
+    c = pts.mean(0)
+    _, _, vt = np.linalg.svd(pts - c)
+    d = vt[0]
+    return c, d, np.abs((pts - c) @ np.array([-d[1], d[0]]))
+
+
+def _schnitt(g1, g2):
+    det = g1.d[0] * (-g2.d[1]) - g1.d[1] * (-g2.d[0])
+    if abs(det) < 0.25:  # fast parallel
+        return None
+    r = g2.c - g1.c
+    t = (r[0] * (-g2.d[1]) - r[1] * (-g2.d[0])) / det
+    return g1.c + t * g1.d
+
+
+def _kosten(q, kmax, rmin, rmax):
+    """Fehlerquadratsummen aller Stücke q[i..i+l] (l = 2..kmax) als Gerade
+    (kleinster Eigenwert) und als Kreisbogen (Kasa-Anpassung, auf Abstände
+    umgerechnet); Bögen außerhalb rmin..rmax sind nicht erlaubt."""
+    n = len(q)
+    x, y = q[:, 0], q[:, 1]
+    z = x * x + y * y
+    S = {k: np.concatenate([[0.0], np.cumsum(v)]) for k, v in dict(
+        n=np.ones(n), x=x, y=y, xx=x * x, yy=y * y, xy=x * y, z=z, xz=x * z, yz=y * z, zz=z * z).items()}
+    eg = np.full((n, kmax + 1), np.inf)
+    eb = np.full((n, kmax + 1), np.inf)
+    for l in range(2, kmax + 1):
+        i = np.arange(0, n - l)
+        if len(i) == 0:
+            break
+        j = i + l + 1
+        s = {k: v[j] - v[i] for k, v in S.items()}
+        m = s['n']
+        mx, my = s['x'] / m, s['y'] / m
+        cxx, cyy, cxy = s['xx'] / m - mx * mx, s['yy'] / m - my * my, s['xy'] / m - mx * my
+        spur, det = cxx + cyy, cxx * cyy - cxy * cxy
+        eg[i, l] = np.maximum(spur / 2 - np.sqrt(np.maximum(spur * spur / 4 - det, 0)), 0) * m
+        A = np.stack([np.stack([s['xx'], s['xy'], s['x']], -1),
+                      np.stack([s['xy'], s['yy'], s['y']], -1),
+                      np.stack([s['x'], s['y'], m], -1)], -2)
+        b = -np.stack([s['xz'], s['yz'], s['z']], -1)
+        ok = np.abs(np.linalg.det(A)) > 1e-12
+        sol = np.zeros_like(b)
+        if ok.any():
+            sol[ok] = np.linalg.solve(A[ok], b[ok][..., None])[..., 0]
+        D, E, F = sol[:, 0], sol[:, 1], sol[:, 2]
+        r = np.sqrt(np.maximum(D * D / 4 + E * E / 4 - F, 1e-12))
+        rest = (s['zz'] + D * D * s['xx'] + E * E * s['yy'] + F * F * m
+                + 2 * D * s['xz'] + 2 * E * s['yz'] + 2 * F * s['z']
+                + 2 * D * E * s['xy'] + 2 * D * F * s['x'] + 2 * E * F * s['y'])
+        gut = ok & (r >= rmin) & (r <= rmax)
+        eb[i[gut], l] = (np.maximum(rest, 0) / (4 * r * r))[gut]
+    return eg, eb
+
+
+def _kreis(P):
+    x, y = P[:, 0], P[:, 1]
+    D, E, F = np.linalg.lstsq(np.stack([x, y, np.ones_like(x)], 1), -(x * x + y * y), rcond=None)[0]
+    c = np.array([-D / 2, -E / 2])
+    return c, math.sqrt(max(c[0] * c[0] + c[1] * c[1] - F, 1e-12))
+
+
+def _richtung(e, p, ende):
+    """Laufrichtung eines Elements am Ende bzw. Anfang."""
+    if isinstance(e, Gerade):
+        return e.d
+    c, _ = e.kreis
+    n = len(p)
+    rad = p[(e.i1 if ende else e.i0) % n] - c
+    t = np.array([-rad[1], rad[0]]) / max(math.hypot(*rad), 1e-9)
+    anf, mit = p[e.i0 % n] - c, p[((e.i0 + e.i1) // 2) % n] - c
+    return t if anf[0] * mit[1] - anf[1] * mit[0] > 0 else -t
+
+
+def segmentieren(p, ds, par):
+    """Gleichmäßig abgetasteten Ring optimal in Geraden und Kreisbögen zerlegen
+    (kleinste Summe aus Fehlerquadraten und Preis je Stück). -> (Elemente,
+    Modellpunkte): Elemente als Liste (Element, Ecke am Anfang), Modellpunkte
+    = jeder Ringpunkt auf seine Gerade bzw. seinen Kreis projiziert."""
+    n = len(p)
+    kmax = min(n - 1, int(par['seg_max'] / ds))
+    # Anfang an der schärfsten Ecke, damit kein Stück über den Anfang läuft
+    m = max(2, int(round(0.5 / ds)))
+    v1 = p - np.roll(p, m, axis=0)
+    v2 = np.roll(p, -m, axis=0) - p
+    start = int(np.argmax(np.abs(np.arctan2(v1[:, 0] * v2[:, 1] - v1[:, 1] * v2[:, 0], (v1 * v2).sum(1)))))
+    q = np.roll(p, -start, axis=0)
+    q = np.vstack([q, q[:1]])
+    eg, eb = _kosten(q, kmax, par['r_min'], par['r_max'])
+    N = len(q)
+    best = np.full(N, np.inf)
+    best[0] = 0.0
+    wahl = [None] * N
+    for j in range(2, N):
+        i = np.arange(max(0, j - kmax), j - 1)
+        cg = best[i] + eg[i, j - i] + par['lam_gerade']
+        cb = best[i] + eb[i, j - i] + par['lam_bogen']
+        kg, kb = int(np.argmin(cg)), int(np.argmin(cb))
+        best[j], wahl[j] = (cg[kg], (int(i[kg]), 'g')) if cg[kg] <= cb[kb] else (cb[kb], (int(i[kb]), 'b'))
+    if wahl[N - 1] is None:
+        return None
+    teile, j = [], N - 1
+    while j > 0:
+        i, art = wahl[j]
+        teile.append((i, j, art))
+        j = i
+    el = []
+    M = np.zeros_like(p)
+    for i, j, art in reversed(teile):
+        a, b = i + start, j + start
+        P = q[i:j + 1]
+        idx = np.arange(a, b + 1) % n
+        if art == 'g':
+            c, d, _ = _ausgleich(P)
+            if np.dot(d, P[-1] - P[0]) < 0:
+                d = -d
+            el.append(Gerade(a, b, c, d))
+            M[idx] = c + ((P - c) @ d)[:, None] * d
+        else:
+            c, r = _kreis(P)
+            el.append(Kurve(a, b, (c, r)))
+            v = P - c
+            M[idx] = c + r * v / np.maximum(np.hypot(v[:, 0], v[:, 1]), 1e-9)[:, None]
+    out = []
+    for k, e in enumerate(el):
+        vor = el[k - 1]
+        dreh = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(_richtung(vor, p, True),
+                                                                        _richtung(e, p, False)))))))
+        if isinstance(e, Kurve) and isinstance(vor, Kurve):
+            grenze = par['knick_bogen']
+        elif isinstance(e, Gerade) and isinstance(vor, Gerade):
+            grenze = par['knick_gerade']
+        else:
+            grenze = par['knick_stoss']
+        out.append((e, dreh > grenze))
+    return out, M
+
+
+def _vieleck_zu_kurve(el, ds, par):
+    """Ketten kurzer Geraden mit mäßigen, gleichsinnigen Knicken (eine Rundung
+    als Vieleck) -> Kurve."""
+    L = len(el)
+    if L < 4:
+        return el
+    kurz = [isinstance(e, Gerade) and _laenge(e, ds) < par['poly_max'] for e, _ in el]
+    dreh = []
+    for k in range(L):
+        a, b = el[k - 1][0], el[k][0]
+        if isinstance(a, Gerade) and isinstance(b, Gerade):
+            dreh.append(math.degrees(math.atan2(a.d[0] * b.d[1] - a.d[1] * b.d[0], float(np.dot(a.d, b.d)))))
+        else:
+            dreh.append(None)
+    start = next((k for k in range(L) if not kurz[k]), None)
+    if start is None:
+        return el
+    folge = [(start + k) % L for k in range(L)]
+    out, k = [], 0
+    while k < L:
+        i = folge[k]
+        j = k
+        while j + 1 < L and kurz[folge[j]] and kurz[folge[j + 1]]:
+            d = dreh[folge[j + 1]]
+            if d is None or not par['poly_knick'][0] <= abs(d) <= par['poly_knick'][1]:
+                break
+            if j > k and (d > 0) != (dreh[folge[j]] > 0):
+                break
+            j += 1
+        if j - k + 1 >= par['poly_min'] and kurz[i]:
+            out.append((Kurve(el[i][0].i0, el[folge[j]][0].i1), el[i][1]))
+            k = j + 1
+        else:
+            out.append(el[i])
+            k += 1
+    return out
+
+
+def _tangente(e, p, ds, ende):
+    """Tangente am Ende (ende=True) bzw. Anfang einer Kurve als Gerade."""
+    k = max(2, int(0.6 / ds))
+    Q = _stueck(p, e.i1 - k, e.i1) if ende else _stueck(p, e.i0, e.i0 + k)
+    _, d, _ = _ausgleich(Q)
+    if np.dot(d, Q[-1] - Q[0]) < 0:
+        d = -d
+    return Gerade(e.i0, e.i1, Q[-1] if ende else Q[0], d)
+
+
+def _ersetzen(el, k, m, ersatz, e2):
+    """el[k+1 .. k+m-1] (zyklisch) durch ersatz ersetzen; e2 bekommt eine Ecke."""
+    L = len(el)
+    weg = {(k + j) % L for j in range(1, m)}
+    neu = []
+    for i in range(L):
+        if i in weg:
+            if i == (k + 1) % L:
+                neu.extend(ersatz)
+            continue
+        neu.append((e2, True) if el[i][0] is e2 else el[i])
+    return neu
+
+
+def _zusammenfassen(p, el, k, bis, par):
+    """el[k] .. el[bis] (zyklisch, beide Geraden) zu einer Geraden, wenn sie passt."""
+    L = len(el)
+    g1, g2 = el[k][0], el[bis % L][0]
+    Q = _stueck(p, g1.i0, g2.i1)
+    c, d, abst = _ausgleich(Q)
+    if abst.max() > par['max_gerade'] * 1.5:
+        return None
+    gz = Gerade(g1.i0, g1.i0 + len(Q) - 1, c, d if np.dot(d, Q[-1] - Q[0]) >= 0 else -d)
+    gz.fest = True
+    weg = {(k + j) % L for j in range(0, bis - k + 1)}
+    neu = []
+    for i in range(L):
+        if i in weg:
+            if i == k:
+                neu.append((gz, el[k][1]))
+            continue
+        neu.append(el[i])
+    return neu
+
+
+def ecken_bilden(p, ds, el, par, tinte_links):
+    """Zwischen zwei langen Elementen (Geraden; Bögen mit ihrer Tangente):
+    rundes Strichende -> gerade Kappe, abgerundete Ecke -> spitze Ecke, fast
+    gleiche Geraden -> eine. Danach kurze freie Geraden wieder zu Kurven."""
+    n = len(p)
+    for e, _ in el:
+        if isinstance(e, Gerade) and np.dot(e.d, p[e.i1 % n] - p[e.i0 % n]) < 0:
+            e.d = -e.d
+    geaendert = True
+    while geaendert and len(el) >= 3:
+        geaendert = False
+        L = len(el)
+        lang = [(isinstance(e, Gerade) and (_laenge(e, ds) >= par['kurz_gerade'] or e.fest))
+                or (isinstance(e, Kurve) and e.kreis is not None and _laenge(e, ds) >= par['kurve_lang']
+                    and e.kreis[1] >= par['kurve_r']) for e, _ in el]
+        for k in range(L):
+            if not lang[k]:
+                continue
+            e1 = el[k][0]
+            g1 = e1 if isinstance(e1, Gerade) else _tangente(e1, p, ds, True)
+            m = 1
+            while m < L and not lang[(k + m) % L]:
+                m += 1
+            if m >= L:
+                continue
+            e2 = el[(k + m) % L][0]
+            if e2 is e1:
+                continue
+            g2 = e2 if isinstance(e2, Gerade) else _tangente(e2, p, ds, False)
+            beide_geraden = e1 is g1 and e2 is g2
+            dreh = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(g1.d, g2.d))))))
+            if m == 1:
+                # zwei Geraden hintereinander, fast gleiche Richtung
+                if beide_geraden and dreh < par['gleich_grad']:
+                    neu = _zusammenfassen(p, el, k, k + 1, par)
+                    if neu is not None:
+                        el, geaendert = neu, True
+                        break
+                continue
+            i0, i1 = el[(k + 1) % L][0].i0, el[(k + m - 1) % L][0].i1
+            P = _stueck(p, i0, i1)
+            i1 = i0 + len(P) - 1
+            laenge = (len(P) - 1) * ds
+            sehne = P[-1] - P[0]
+            n_tinte = np.array([-sehne[1], sehne[0]]) * (1 if tinte_links else -1)
+            konvex = float(np.dot(P[len(P) // 2] - (P[0] + P[-1]) / 2, n_tinte)) < 0
+            ersatz = None
+            kw = par['kappe_winkel'] if beide_geraden else par['kappe_winkel_bogen']
+            if par['kappen'] and konvex and dreh > kw and laenge <= par['kappe_max']:
+                # Strichende: gerade Kappe quer, achsparallel am äußersten Punkt
+                s = g1.d - g2.d
+                if abs(s[1]) >= abs(s[0]):
+                    kap = Gerade(i0, i1, (P[:, 0].mean(), P[:, 1].max() if s[1] > 0 else P[:, 1].min()), (1, 0))
+                    kap.achse = 'h'
+                else:
+                    kap = Gerade(i0, i1, (P[:, 0].max() if s[0] > 0 else P[:, 0].min(), P[:, 1].mean()), (0, 1))
+                    kap.achse = 'v'
+                if np.dot(kap.d, sehne) < 0:
+                    kap.d = -kap.d
+                kap.fest = True
+                x1, x2 = _schnitt(g1, kap), _schnitt(kap, g2)
+                if x1 is not None and x2 is not None and math.hypot(*(x2 - x1)) <= par['kappe_breite'] and \
+                        max(np.hypot(*(P - x1).T).min(), np.hypot(*(P - x2).T).min()) <= par['kappe_abstand']:
+                    ersatz = [(kap, True)]
+            if ersatz is None and laenge <= par['ecke_kurve_max'] and beide_geraden and dreh < par['ecke_winkel']:
+                neu = _zusammenfassen(p, el, k, k + m, par)
+                if neu is not None:
+                    el, geaendert = neu, True
+                    break
+            if ersatz is None and laenge <= par['ecke_kurve_max'] and \
+                    par['ecke_winkel'] <= dreh <= par['kappe_winkel']:
+                x = _schnitt(g1, g2)
+                if x is not None and np.hypot(*(P - x).T).min() <= par['ecke_abstand']:
+                    ersatz = []
+            if ersatz is not None:
+                el, geaendert = _ersetzen(el, k, m, ersatz, e2), True
+                break
+    out = []
+    for k, (e, f) in enumerate(el):
+        if isinstance(e, Gerade) and not f and not el[(k + 1) % len(el)][1] and \
+                _laenge(e, ds) < par['min_gerade_frei']:
+            e = Kurve(e.i0, e.i1)
+        out.append((e, f))
+    zus = []
+    for e, f in out:
+        if zus and isinstance(e, Kurve) and isinstance(zus[-1][0], Kurve) and not f:
+            zus[-1] = (Kurve(zus[-1][0].i0, e.i1), zus[-1][1])
+        else:
+            zus.append((e, f))
+    if len(zus) > 1 and isinstance(zus[0][0], Kurve) and isinstance(zus[-1][0], Kurve) and not zus[0][1]:
+        zus[-1] = (Kurve(zus[-1][0].i0, zus[0][0].i1 + n), zus[-1][1])
+        del zus[0]
+    return zus
+
+
+def aufbauen(p, ds, el, par, M):
+    """Elemente -> Punkte des geordneten Rings: Ecken als Schnittpunkte, Kurven
+    aus den Modellpunkten geglättet und an verschobene Enden angeglichen."""
+    n = len(p)
+    E = len(el)
+    if E == 1 and isinstance(el[0][0], Kurve):
+        return _glaetten(M, par['sigma_kurve'] / ds, True)
+    punkte = []
+    for k, (e, _) in enumerate(el):
+        vor = el[k - 1][0]
+        pt = p[e.i0 % n]
+        x = None
+        if isinstance(vor, Gerade) and isinstance(e, Gerade):
+            x = _schnitt(vor, e)
+            if x is not None and np.hypot(*(_stueck(p, vor.i0, e.i1) - x).T).min() > par['max_schnitt']:
+                x = None
+            if x is None:
+                x = 0.5 * (vor.proj(pt) + e.proj(pt))
+        elif isinstance(vor, Gerade):
+            x = vor.proj(pt)
+        elif isinstance(e, Gerade):
+            x = e.proj(pt)
+        else:
+            x = pt
+        punkte.append(np.asarray(x, float))
+    out = []
+    for k, (e, _) in enumerate(el):
+        out.append(punkte[k])
+        if isinstance(e, Gerade):
+            continue
+        P = _stueck(M, e.i0, e.i1)
+        if len(P) >= 3:
+            P = _glaetten(P, par['sigma_kurve'] / ds, False)
+        d0, d1 = punkte[k] - P[0], punkte[(k + 1) % E] - P[-1]
+        s = np.arange(len(P)) * ds
+        S = s[-1] if len(s) > 1 else 1.0
+        b = par['angleichen']
+        if S < 2 * b:
+            w0, w1 = 1 - s / S, s / S
+        else:
+            w0, w1 = np.clip(1 - s / b, 0, 1), np.clip(1 - (S - s) / b, 0, 1)
+        out.extend((P + w0[:, None] * d0 + w1[:, None] * d1)[1:-1])
+    return np.array(out)
+
+
+def _spiegeln(F, abtast, rand, achse):
+    """Feld an der senkrechten Achse x = achse (Pixel des Ausschnitts) spiegeln
+    und mit dem Original mitteln."""
+    h, w = F.shape
+    x = (np.arange(w) + 0.5) / abtast - rand
+    js = (2 * achse - x + rand) * abtast - 0.5
+    j0 = np.floor(js).astype(int)
+    t = js - j0
+    G = F[:, np.clip(j0, 0, w - 1)] * (1 - t) + F[:, np.clip(j0 + 1, 0, w - 1)] * t
+    G[:, (js < 0) | (js > w - 1)] = 0
+    return 0.5 * (F + G)
+
+
+def _symmetrie(F, abtast, rand):
+    """Beste senkrechte Achse (kleinste Abweichung vom Spiegelbild, in 1/32 px)
+    -> (Achse, gemitteltes Feld, Rest relativ zur Fläche)."""
+    spalten = np.clip(F - 0.5, 0, None).sum(0)
+    xs = (np.arange(F.shape[1]) + 0.5) / abtast - rand
+    a0 = float((spalten * xs).sum() / max(spalten.sum(), 1e-9))
+    kand = a0 + np.arange(-24, 25) / 32.0
+    fehler = [float(((F - _spiegeln(F, abtast, rand, a)) ** 2).sum()) for a in kand]
+    achse = float(kand[int(np.argmin(fehler))])
+    S = _spiegeln(F, abtast, rand, achse)
+    return achse, S, float(np.abs(F - S).sum() * 2 / max((F > 0.5).sum(), 1))
+
+
+def _tinte_seite(g, ringe):
+    """+1, wenn die Tinte auf der Seite der Normale der Geraden liegt, sonst -1."""
+    q = g.c + 0.25 * g.normale()
+    return 1 if sum(_im_ring(q, r) for r in ringe) % 2 == 1 else -1
+
+
+def zeichen_nachzeichnen(crop, par, zeichen):
+    """Ein Zeichen: Feld, Symmetrie, Kanten, Zerlegung, Ecken/Kappen."""
+    F = feld(np.pad(crop, RAND), ABTAST, par['iterationen'], par['unschaerfe'], par['haerte'])
+    sym = None
+    if zeichen in SYMMETRISCH:
+        achse, S, rest = _symmetrie(F, ABTAST, RAND)
+        if rest <= par['max_sym_rest']:
+            F, sym = S, achse
+    roh = [r for r in kanten(F, par['schwelle'], ABTAST, RAND) if abs(flaeche(r)) > 0.02]
+    tinte_links = bool(roh) and flaeche(max(roh, key=lambda r: abs(flaeche(r)))) > 0
+    ringe = []
+    for r in roh:
+        el = M = None
+        p, ds = r, None
+        if len(r) >= 8:
+            p, ds = _gleichmaessig(r, par['schritt'])
+            p = _glaetten(p, par['sigma_vor'] / ds, True)
+            erg = segmentieren(p, ds, par)
+            if erg is not None:
+                el, M = erg
+                el = ecken_bilden(p, ds, _vieleck_zu_kurve(el, ds, par), par, tinte_links)
+        ringe.append(dict(p=p, ds=ds, el=el, M=M, roh=r))
+    return dict(roh=roh, ringe=ringe, sym=sym)
+
+
+def _geraden(glyphen, achse=None):
+    for g in glyphen:
+        for r in g['ringe']:
+            for e, _ in r['el'] or []:
+                if isinstance(e, Gerade) and (achse is None or e.achse == achse):
+                    yield g, r, e
+
+
+def _achsen_einrasten(glyphen, par):
+    """Fast waagerechte/senkrechte Geraden exakt achsparallel (um ihren
+    Schwerpunkt gedreht), wenn ihre Enden dabei kaum wandern."""
+    for g, r, e in _geraden(glyphen):
+        ang = math.degrees(math.atan2(e.d[1], e.d[0])) % 180
+        abw = min(ang, 180 - ang, abs(ang - 90))
+        if abw >= par['achse_grad'] or _laenge(e, r['ds']) / 2 * math.sin(math.radians(abw)) > par['achse_versatz']:
+            continue
+        if min(ang, 180 - ang) < par['achse_grad']:
+            e.d, e.achse = np.array([1.0 if e.d[0] >= 0 else -1.0, 0.0]), 'h'
+        else:
+            e.d, e.achse = np.array([0.0, 1.0 if e.d[1] >= 0 else -1.0]), 'v'
+
+
+def _haufen(werte, gewichte, radius, luecke):
+    """1D-Häufung: sortieren, an Lücken > luecke trennen -> [(gewichtete Mitte,
+    Indizes im Radius)]."""
+    o = list(np.argsort(werte))
+    if not o:
+        return []
+    gruppen, akt = [], [o[0]]
+    for a, b in zip(o, o[1:]):
+        if werte[b] - werte[a] > luecke:
+            gruppen.append(akt)
+            akt = []
+        akt.append(b)
+    gruppen.append(akt)
+    out = []
+    for gr in gruppen:
+        w = np.array([gewichte[i] for i in gr])
+        v = np.array([werte[i] for i in gr])
+        mitte = float((w * v).sum() / w.sum())
+        out.append((mitte, [i for i in gr if abs(werte[i] - mitte) <= radius]))
+    return out
+
+
+def _metriken_einrasten(glyphen, par, protokoll):
+    """Waagerechte Kanten auf gemeinsame Höhen in Zeilenkoordinaten (y in der
+    Zelle + Versatz), getrennt nach Ober- und Unterkante; nur Häufungen aus
+    mindestens metrik_min Zeichen (Grundlinie, Versal-, x-Höhe ...)."""
+    for seite in (1, -1):
+        items = []
+        for g, r, e in _geraden(glyphen, 'h'):
+            if _tinte_seite(e, g['roh']) * (1 if e.normale()[1] > 0 else -1) == seite:
+                items.append((e.c[1] + g['versatz'], _laenge(e, r['ds']), g, e))
+        for mitte, idx in _haufen([i[0] for i in items], [i[1] for i in items],
+                                  par['metrik_radius'], par['metrik_luecke']):
+            if len({id(items[i][2]) for i in idx}) < par['metrik_min']:
+                continue
+            for i in idx:
+                items[i][3].c = items[i][3].c + np.array([0.0, mitte - items[i][0]])
+            protokoll.append(f'Höhe {"oben" if seite > 0 else "unten"} {mitte:.2f}: {len(idx)} Kanten')
+
+
+def _staerken_einrasten(glyphen, par, achse, protokoll):
+    """Gegenüberliegende achsparallele Kanten eines Buchstabens/einer Ziffer
+    (Strich) auf gemeinsame Strichstärken, beide Kanten um die Hälfte."""
+    k = 0 if achse == 'v' else 1
+    paare = []
+    for g in glyphen:
+        if not g['zeichen'].isalnum():
+            continue
+        kanten_ = []
+        for r in g['ringe']:
+            for e, _ in r['el'] or []:
+                if isinstance(e, Gerade) and e.achse == achse:
+                    lang = _stueck(r['p'], e.i0, e.i1)[:, 1 - k]
+                    s = _tinte_seite(e, g['roh']) * (1 if e.normale()[k] > 0 else -1)
+                    kanten_.append((e.c[k], lang.min(), lang.max(), s, e))
+        for a in kanten_:
+            if a[3] != 1:
+                continue
+            best = None
+            for b in kanten_:
+                if b[3] != -1 or b[0] <= a[0]:
+                    continue
+                ueber = min(a[2], b[2]) - max(a[1], b[1])
+                if ueber < 0.5 * min(a[2] - a[1], b[2] - b[1]) or ueber < par['staerke_min_laenge']:
+                    continue
+                if best is None or b[0] < best[0]:
+                    best = b
+            if best is not None and best[0] - a[0] <= par['staerke_max']:
+                paare.append((best[0] - a[0], min(a[2], best[2]) - max(a[1], best[1]), a[4], best[4], g))
+    for ziel, idx in _haufen([q[0] for q in paare], [q[1] for q in paare],
+                             par['staerke_radius'], par['staerke_luecke']):
+        if len({id(paare[i][4]) for i in idx}) < par['staerke_min_n']:
+            continue
+        for i in idx:
+            w, _, ea, eb, _ = paare[i]
+            v = np.zeros(2)
+            v[k] = (ziel - w) / 2
+            ea.c, eb.c = ea.c - v, eb.c + v
+        protokoll.append(f'Strich {"senkrecht" if achse == "v" else "waagerecht"} {ziel:.2f}: '
+                         f'{"".join(sorted({paare[i][4]["zeichen"] for i in idx}))}')
+
+
+def _hausdorff(a, b):
+    d = np.full(len(a), np.inf)
+    for k in range(0, len(b), 256):
+        t = b[k:k + 256]
+        d = np.minimum(d, np.hypot(a[:, None, 0] - t[None, :, 0], a[:, None, 1] - t[None, :, 1]).min(1))
+    return float(d.max())
+
+
+def _passt(q, roh, par):
+    """Geordneter Ring nahe genug am nachgezeichneten (Fläche, größter Abstand)?"""
+    fq, fr = flaeche(q), flaeche(roh)
+    if fq * fr <= 0 or not 1 - par['val_flaeche'] <= fq / fr <= 1 + par['val_flaeche']:
+        return False
+    dq, _ = _gleichmaessig(q, 0.05)
+    return max(_hausdorff(dq, roh), _hausdorff(roh, dq)) <= par['val_abstand']
+
+
+def schrift_nachzeichnen(alpha, zellen, par):
+    """Alle Zeichen einer Schrift nachzeichnen und ordnen -> (Ringe in
+    Blattkoordinaten, Protokollzeilen)."""
+    glyphen, protokoll = [], []
+    for code, x0, y0, x1, y1, versatz in zellen:
+        crop = alpha[y0:y1, x0:x1]
+        if crop.max() < 0.02:
+            continue
+        g = zeichen_nachzeichnen(crop, par, chr(code) if code < 127 else '')
+        g.update(code=code, zeichen=chr(code) if code < 127 else f'#{code}', zelle=(x0, y0, x1, y1),
+                 versatz=versatz, crop=crop)
+        glyphen.append(g)
+    _achsen_einrasten(glyphen, par)
+    _staerken_einrasten(glyphen, par, 'v', protokoll)
+    _staerken_einrasten(glyphen, par, 'h', protokoll)
+    _metriken_einrasten(glyphen, par, protokoll)
+    ringe, netz, ersatz = [], [], 0
+    for g in glyphen:
+        x0, y0, x1, y1 = g['zelle']
+        neu, alt = [], []
+        for r in g['ringe']:
+            a = formen_glaetten(r['roh'], sigma=GEMEINSAM['sigma'], schaerfen=True) if len(r['roh']) >= 8 \
+                else r['roh']
+            q = None if r['el'] is None else aufbauen(r['p'], r['ds'], r['el'], par, r['M'])
+            if q is None or not _passt(q, r['roh'], par):
+                ersatz += 1
+                q = a
+            neu.append(_vereinfachen(q, TOLERANZ))
+            alt.append(_vereinfachen(a, TOLERANZ))
+
+        def fehler(rs):
+            rs = [r for r in rs if len(r) >= 3]
+            if not rs:
+                return 1.0
+            D = fuellen([(rs, True)], x1 - x0, y1 - y0, 1, zeilen=32)
+            return math.sqrt(float(np.mean((D - g['crop']) ** 2)))
+        f_neu, f_alt = fehler(neu), fehler(alt)
+        if f_neu > f_alt * par['netz_faktor'] + par['netz_abstand'] / 255:
+            netz.append(f'{g["zeichen"]} ({f_neu * 255:.1f} statt {f_alt * 255:.1f})')
+            neu = alt
+        for q in neu:
+            if len(q) >= 3 and abs(flaeche(q)) > 0.02:
+                ringe.append(q + np.array([x0, y0], float))
+    sym = ''.join(g['zeichen'] for g in glyphen if g['sym'] is not None)
+    protokoll.append(f'spiegelsymmetrisch: {sym}')
+    if ersatz:
+        protokoll.append(f'{ersatz} Ringe nur geglättet (geordnet zu weit vom Umriss)')
+    if netz:
+        protokoll.append('Sicherheitsnetz (Zeichen nur geglättet): ' + ', '.join(netz))
+    return ringe, protokoll
 
 
 def svg_schreiben(pfad, name, gruppen, w, h, alpha, faktor):
@@ -759,12 +1506,21 @@ def textur_pfad(spiel, name, wurzel='hd_eigen'):
     return os.path.join(spiel, wurzel, MISC, name + '.rgb')
 
 
-def svg_anlegen(spiel, name, faktor):
+def svg_anlegen(spiel, name, faktor, einfach=False):
     alpha, (w, h) = original_alpha(spiel, name)
-    ringe = nachzeichnen(alpha, **{**GEMEINSAM, **SCHRIFTEN[name]})
+    zellen = None if einfach else zeichentabelle(spiel, name)
+    if zellen is None:
+        feld_par = {k: SCHRIFTEN[name][k] for k in ('unschaerfe', 'haerte')}
+        ringe = nachzeichnen(alpha, **GEMEINSAM, **feld_par)
+        protokoll = ['einfaches Verfahren (nur geglättet)']
+    else:
+        par = {**GEMEINSAM, **ORDNEN, **SCHRIFTEN[name]}
+        ringe, protokoll = schrift_nachzeichnen(alpha, zellen, par)
     gruppen = gruppieren(ringe)
     svg_schreiben(svg_pfad(spiel, name), name, gruppen, w, h, alpha, faktor)
     print(f'  {name}: {len(ringe)} Umrisse in {len(gruppen)} Pfaden -> {svg_pfad(spiel, name)}')
+    for zeile in protokoll:
+        print(f'    {zeile}')
 
 
 def zeichnen(spiel, name, faktor):
@@ -774,6 +1530,14 @@ def zeichnen(spiel, name, faktor):
         # viewBox in anderer Einheit: auf Original-Pixel umrechnen
         formen = [([r * (w / vw, h / vh) for r in ringe], eo) for ringe, eo in formen]
     deckung = fuellen(formen, w, h, faktor)
+    zellen = zeichentabelle(spiel, name)
+    if zellen is not None:
+        # nur innerhalb der Zeichenzellen: das Spiel filtert bilinear über den
+        # Zellrand hinaus, Überlauf in die Lücken würde als Saum sichtbar
+        maske = np.zeros_like(deckung)
+        for _, x0, y0, x1, y1, _ in zellen:
+            maske[y0 * faktor:y1 * faktor, x0 * faktor:x1 * faktor] = 1.0
+        deckung = deckung * maske
     im = textur_aus_deckung(deckung)
     sgi_speichern(im, textur_pfad(spiel, name))
     print(f'  {name}: {w}x{h} -> {im.width}x{im.height} ({len(formen)} Pfade) -> {textur_pfad(spiel, name)}')
@@ -789,7 +1553,12 @@ def messen(spiel, name):
     klein = a.reshape(h, k, w, k).mean(axis=(1, 3))
     rms = math.sqrt(float(np.mean((klein - alpha) ** 2))) * 255
     tinte = klein.sum() / max(alpha.sum(), 1e-9)
-    print(f'  {name}: {im.width}x{im.height}, RMS {rms:.1f} von 255, Tinte {tinte * 100:.1f} % des Originals')
+    print(f'  {name}: {im.width}x{im.height}, RMS {rms:.2f} von 255, Tinte {tinte * 100:.1f} % des Originals')
+    zellen = zeichentabelle(spiel, name)
+    if zellen:
+        je = sorted(((math.sqrt(float(np.mean((klein[y0:y1, x0:x1] - alpha[y0:y1, x0:x1]) ** 2))) * 255,
+                      chr(c) if c < 127 else f'#{c}') for c, x0, y0, x1, y1, _ in zellen), reverse=True)
+        print('    größte Abweichung: ' + ', '.join(f'{z} {e:.1f}' for e, z in je[:8]))
 
 
 def vergleich(spiel, namen, ordner, faktor):
@@ -832,6 +1601,7 @@ def main():
     ap.add_argument('--nur', nargs='*', default=[], help='nur diese Schriften (impact, book, booklight)')
     ap.add_argument('--faktor', type=int, default=FAKTOR, help=f'Vergrößerung (Standard {FAKTOR})')
     ap.add_argument('--svg', action='store_true', help='SVG neu aus dem Original nachzeichnen (überschreibt)')
+    ap.add_argument('--einfach', action='store_true', help='mit --svg: nur glätten, nicht ordnen (früheres Verfahren)')
     ap.add_argument('--messen', action='store_true', help='Abweichung der neuen Texturen vom Original')
     ap.add_argument('--vergleich', metavar='ORDNER', help='Vergleichsbilder schreiben')
     ap.add_argument('--installieren', action='store_true', help='hd_eigen nach hd kopieren (Sicherung hd_backup)')
@@ -855,7 +1625,7 @@ def main():
         return vergleich(spiel, namen, args.vergleich, args.faktor)
     for n in namen:
         if args.svg or not os.path.exists(svg_pfad(spiel, n)):
-            svg_anlegen(spiel, n, args.faktor)
+            svg_anlegen(spiel, n, args.faktor, args.einfach)
         zeichnen(spiel, n, args.faktor)
     print('Fertig. Einspielen: python -I tools/hd/make_fonts.py --installieren '
           '(braucht ts2.exe mit Schrift-Umrechnung, src/host/fontfix.cpp)')
