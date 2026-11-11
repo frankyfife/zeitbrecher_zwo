@@ -24,10 +24,6 @@ constexpr uint64_t kParticles = 0x14112FA10;
 constexpr uint64_t kCallGlow = 0x1410B58EF;       // call 0x14108A41C (Sprite ts2glow)
 constexpr uint64_t kSprite = 0x14108A41C;
 constexpr uint64_t kAlphaRef = 0x14259D554;   // alphaRefMin für die nächsten Zeichnungen (0x14122A620)
-constexpr uint64_t kCamera = 0x143F3A870;     // Zeiger auf die Kamera, +0x27C Größenfaktor der Teilchen
-constexpr uint64_t kScreen = 0x143F0F508;     // Zeiger auf die Sicht, +0x18 Höhe in Bildpunkten
-constexpr uint64_t kLists = 0x142F3A210;      // 17 Teilchenlisten (je Klasse), verkettet über +0x68
-constexpr int kListCount = 17;
 constexpr float kXboxAlphaRef = 127.0f / 255.0f;  // Xbox: ALPHAFUNC GREATER, ALPHAREF 0x7E
 
 using ParticlesFn = void(__fastcall*)(void*, int);
@@ -35,35 +31,13 @@ using SpriteFn = void(__fastcall*)(int, int, int, int, int, int, int, int, uint3
 ParticlesFn g_particles = nullptr;
 SpriteFn g_sprite = nullptr;
 
-// Teilchen in Bildpunkten einer 480 Zeilen hohen Konsolen-Sicht: auf die
-// Sichthöhe des PC-Ports vergrößern
-float screen_scale() {
-    const int32_t* vp = *g_img->va<int32_t*>(kScreen);
-    const int h = vp ? vp[6] : 0;
-    return h > 0 ? float(h) / 480.0f : 1.0f;
-}
-
+// Feuerteilchen: Alpha-Test wie die Xbox-Art 7 (ihre Größe in Konsolen-
+// Bildpunkten richtet spritefix.cpp für alle Teilchen)
 void __fastcall particles(void* sys, int arg) {
     float* aref = g_img->va<float>(kAlphaRef);
     const float old_aref = *aref;
     *aref = kXboxAlphaRef;
-    const float k = screen_scale();
-    uint8_t* cam = *g_img->va<uint8_t*>(kCamera);
-    float* size = cam ? reinterpret_cast<float*>(cam + 0x27C) : nullptr;
-    const float old_size = size ? *size : 0.0f;
-    if (size) *size = old_size * k;
-    // Obergrenze je Teilchen (+0x40) ebenso
-    std::vector<std::pair<float*, float>> caps;
-    uint8_t** lists = g_img->va<uint8_t*>(kLists);
-    for (int i = 0; i < kListCount; ++i)
-        for (uint8_t* p = lists[i]; p && caps.size() < 4096; p = *reinterpret_cast<uint8_t**>(p + 0x68)) {
-            float* cap = reinterpret_cast<float*>(p + 0x40);
-            caps.emplace_back(cap, *cap);
-            *cap *= k;
-        }
     g_particles(sys, arg);
-    for (auto& [cap, v] : caps) *cap = v;
-    if (size) *size = old_size;
     *aref = old_aref;
 }
 
@@ -74,6 +48,61 @@ void __fastcall glow(int x0, int y0, int x1, int y1, int u0, int v0, int u1, int
     *aref = kXboxAlphaRef;
     g_sprite(x0, y0, x1, y1, u0, v0, u1, v1, color);
     *aref = old_aref;
+}
+
+// ---- FREE RADICAL / EIDOS (Xbox PAL 0x88D3B–0x88E2C; im PC-Code entfernt)
+//
+// Die Xbox setzt nach dem Schein Mischart 3 (SRC_ALPHA/ONE, Schreibmaske
+// weiter nur RGB, Alpha-Test 0x7E weiter an) und zeichnet ab Sekunde 1 der
+// Uhr 0x35C888 (PC 0x142F12728) zwei Sprites mit Farbe 0x320A0A00 | a,
+// a = min(Uhr − 1, 1) · 115: misc/frd bei (48,370)–(134,420), misc/eidos
+// bei (420,370)–(580,420) im 640×480-Bild. Der PC zeichnet die übrigen
+// Vollbild-Elemente dieser Funktion mit ×3/×2,25 (Abblend-Rechtecke
+// 0x14108A334(0,0,0x780,0x438), Xbox 0x280×0x1E0), also ebenso.
+constexpr uint64_t kCallBlend3 = 0x1410B58F9;  // call 0x14122A5BC (Mischart 3) nach dem Schein
+constexpr uint64_t kSetBlend = 0x14122A5BC;
+constexpr uint64_t kMiscTex = 0x1410D4150;     // Nummer der misc-Textur i
+constexpr uint64_t kBindTex = 0x141088C9C;     // Textur für 2D setzen
+constexpr uint64_t kTexBank = 0x14259D5E0;     // **Beschreiber, je 0x38, +0x26/+0x2A Breite/Höhe
+constexpr uint64_t kIntroClock = 0x142F12728;  // Sekunden seit Beginn des Bildschirms
+constexpr int kTexFrd = 0x74, kTexEidos = 0x73;
+
+using SetBlendFn = int(__fastcall*)(int);
+using MiscTexFn = int(__fastcall*)(int);
+using BindTexFn = void(__fastcall*)(int);
+SetBlendFn g_set_blend = nullptr;
+bool g_logos_logged = false;
+
+void company_logo(int index, int x0, int y0, int x1, int y1, uint32_t color) {
+    const int tex = reinterpret_cast<MiscTexFn>(g_img->va<uint8_t>(kMiscTex))(index);
+    if (tex < 0) {
+        if (!g_logos_logged) log("Brennendes Logo: misc-Textur %d nicht geladen\n", index);
+        return;
+    }
+    reinterpret_cast<BindTexFn>(g_img->va<uint8_t>(kBindTex))(tex);
+    const uint8_t* d = *g_img->va<uint8_t*>(kTexBank) ? *reinterpret_cast<uint8_t* const*>(*g_img->va<uint8_t*>(kTexBank))
+                                                      : nullptr;
+    if (!d) return;
+    d += size_t(tex) * 0x38;
+    const int w = *reinterpret_cast<const uint16_t*>(d + 0x26), h = *reinterpret_cast<const uint16_t*>(d + 0x2A);
+    g_sprite(x0 * 3, (y0 * 9) / 4, x1 * 3, (y1 * 9) / 4, 0, 0, w << 4, h << 4, color);
+}
+
+int __fastcall blend3(int mode) {
+    const int old = g_set_blend(mode);
+    const float t = *g_img->va<float>(kIntroClock);
+    if (t > 1.0f) {
+        const int a = int((t - 1.0f < 1.0f ? t - 1.0f : 1.0f) * 115.0f);
+        const uint32_t color = 0x320A0A00u | uint32_t(a & 0xFF);
+        float* aref = g_img->va<float>(kAlphaRef);
+        const float old_aref = *aref;
+        *aref = kXboxAlphaRef;  // Xbox: Alpha-Test der Art 7 gilt noch
+        company_logo(kTexFrd, 0x30, 0x172, 0x86, 0x1A4, color);
+        company_logo(kTexEidos, 0x1A4, 0x172, 0x244, 0x1A4, color);
+        *aref = old_aref;
+        g_logos_logged = true;
+    }
+    return old;
 }
 
 // ---- Probe (TS2_LOGOPROBE=<n>)
@@ -185,7 +214,13 @@ bool logofix_init(const Ts2Image& img, ID3D11Device* dev) {
         g_particles = reinterpret_cast<ParticlesFn>(hook_call(img, kCallParticles, kParticles, reinterpret_cast<const void*>(&particles)));
         if (g_particles) g_sprite = reinterpret_cast<SpriteFn>(hook_call(img, kCallGlow, kSprite, reinterpret_cast<const void*>(&glow)));
         if (g_particles && g_sprite)
-            log("Brennendes Logo: Teilchen in Konsolengröße (Bildhöhe/480), Alpha-Test wie Xbox\n");
+            log("Brennendes Logo: Alpha-Test wie Xbox\n");
+        // FREE RADICAL / EIDOS wie auf der Xbox (TS2_FIRMENLOGOS=0: weglassen)
+        if (g_sprite && !(GetEnvironmentVariableW(L"TS2_FIRMENLOGOS", v, 16) > 0 && v[0] == L'0')) {
+            g_set_blend = reinterpret_cast<SetBlendFn>(
+                hook_call(img, kCallBlend3, kSetBlend, reinterpret_cast<const void*>(&blend3)));
+            if (g_set_blend) log("Brennendes Logo: FREE RADICAL und EIDOS wie auf der Xbox\n");
+        }
     }
     return g_probe >= 0;
 }

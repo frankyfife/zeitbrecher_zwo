@@ -278,13 +278,43 @@ leuchtete ein Drittel der Fläche mit halber Helligkeit:
   Alpha-Test an, auch für den Schein (PC: aus).
 
 ts2.exe lenkt die Aufrufe 0x1410B586F (Teilchen) und 0x1410B58EF (Schein)
-um: Größe und Obergrenze × Bildhöhe/480, alphaRef 127/255 (0x14259D554),
-danach zurück. TS2_LOGOFIX=0 aus; TS2_LOGOPROBE=<n> schreibt beim n-ten
+um: alphaRef 127/255 (0x14259D554), danach zurück; die Größe richtet
+spritefix.cpp für alle Teilchen (siehe unten). TS2_LOGOFIX=0 aus; TS2_LOGOPROBE=<n> schreibt beim n-ten
 Bild Ziel-Alpha und Farbe vor/nach dem Schein. Gemessen (Takte 100–200):
 leuchtende Fläche 2,0 % → 4,6 % (Xbox 5,6 %), Rot-Median 36 → 67 (Xbox 65).
 Hauptmenü und Siberia unverändert. Nicht übernommen: die Logos
 FREE RADICAL/EIDOS der Xbox (0x88D8A–0x88E2C, im PC-Code entfernt).
 Vermutlich sind alle Teilchen dieses Systems im Port zu klein (ungeprüft).
+
+### Firmenlogos im Startbild
+
+Die Xbox zeichnet im ersten Bildschirm nach dem Schein (PAL 0x88D3B–0x88E2C)
+misc/frd und misc/eidos mit Mischart 3, ab Sekunde 1 der Uhr (PC
+0x142F12728) mit Farbe 0x320A0A00 | min(Uhr−1, 1)·115, bei (48,370)–(134,420)
+und (420,370)–(580,420) im 640×480-Bild, mit noch aktivem Alpha-Test 0x7E.
+Der PC-Code hat diese Zeichnungen nicht. ts2.exe hängt sie an den Aufruf
+0x1410B58F9 (Mischart 3) an, Lage ×3/×2,25 wie die Abblend-Rechtecke
+derselben Funktion (TS2_FIRMENLOGOS=0: aus). Gegen eine xemu-Aufnahme:
+Lage auf 1 Pixel gleich, Einblendung ab etwa 1,2 s nach Beginn des Feuers.
+
+## Teilchen und Sprites in Konsolengröße (`src/host/spritefix.cpp`)
+
+Teilchen (0x14112F3C0), Effekt-Objekte (Typen 3, 24, 34, 35 aus
+0x1410F5740), muzzle- und glow_64-Sprites rechnen ihre Größe als
+Wert · Kamera+0x27C / z in Pixeln einer 480 Zeilen hohen Sicht. Die Xbox
+setzt den Faktor auf 60/fov · Sicht+0x20/480 (PAL 0x36DBA, 0x8F6C2), der
+PC-Port auf 60/fov · Sicht+0x20/1080 (0x14108363B, 0x1410BC487;
+0x1421D3CDC = 1/1080, auch anderswo benutzt): alle diese Sprites waren
+2,25-mal zu klein (Werte wie 600/150 für Mündungsfeuer sonst gleich der
+Xbox). ts2.exe gibt beiden Schreibern 1/480 und vergrößert die
+Obergrenzen (je Teilchen +0x40, 250 in 0x1410F4494) mit Bildhöhe/480;
+der frühere Sonderfall in logofix.cpp entfällt (dort nur noch Alpha-Test).
+TS2_TEILCHENFIX=0 aus; TS2_SPRITEPROBE=1 zählt die zehn Größenrechnungen.
+Gemessen: brennendes Logo unverändert gegenüber dem früheren Sonderfall
+(leuchtende Fläche 4,6 %, Xbox 4,1–5,6 %). In Siberia (Tunnel, Schüsse,
+Beschuss durch Wachen), Chicago-Start und Glass Smash läuft keine dieser
+Rechnungen: Bilder dort unverändert. Ungeprüft: Level-Effekte,
+Mündungsfeuer anderer Figuren, Lichthöfe, Explosionen.
 
 ## Beenden (`src/host/quit.cpp`)
 

@@ -39,6 +39,7 @@
 #include "effectfix.h"
 #include "logofix.h"
 #include "menulogo.h"
+#include "spritefix.h"
 #include "fixes.h"
 #include "menu.h"
 #include "menumouse.h"
@@ -953,6 +954,7 @@ int wmain(int argc, wchar_t** argv) {
     watchdog_install(g_img, self_dir() / L"ts2.ini");
     levelfix_install(g_img);
     hudfix_install(g_img, self_dir() / L"ts2.ini");
+    spritefix_install(g_img, settings.height);  // Teilchen in Konsolengröße
     profile_install(g_img, self_dir() / L"profil.bin");
     quit_install(g_img);
     mp_install(g_img, self_dir() / L"ts2.ini");  // nach profile_install und features_install
