@@ -13,6 +13,7 @@
 #include "log.h"
 #include "ts2options.h"
 #include "menumouse.h"
+#include "multiplayer.h"
 
 #pragma comment(lib, "xinput.lib")
 
@@ -185,6 +186,11 @@ bool pad_state(XINPUT_STATE* xs, DWORD* port) {
         *port = 0;
         return true;
     }
+    // Mehrspieler: Spieler 1 behält das Pad, das er bei der Wahl hatte
+    if (const int u = mp_pad_user(0); u >= 0) {
+        *port = DWORD(u);
+        return XInputGetState(DWORD(u), xs) == ERROR_SUCCESS;
+    }
     for (DWORD i = 0; i < 4; ++i)
         if (XInputGetState(i, xs) == ERROR_SUCCESS) {
             *port = i;
@@ -257,8 +263,17 @@ struct PadConfig {
 
 DWORD g_pad_port = 0;
 bool g_pad_present = false;
-uint32_t g_chord_lock = 0;
-bool g_aim_latched = false;  // Zielen umgeschaltet an  // Knöpfe eines gehaltenen Akkords (gehen nicht einzeln an TS2)
+
+// Zustand der Übersetzung je Pad (Spieler 1 und, im Mehrspieler, 2–4)
+struct PadTrack {
+    uint32_t chord_lock = 0;   // Knöpfe eines gehaltenen Akkords (gehen nicht einzeln an TS2)
+    bool aim_latched = false;  // Zielen umgeschaltet an
+    bool aim_was = false;
+    int held[18] = {}, pulse[18] = {};
+    bool chorded[18] = {};
+};
+PadTrack g_tracks[kMaxPads];
+PadTrack& g_p1 = g_tracks[0];
 
 void pad_load(const std::wstring& ini) {
     const wchar_t* p = ini.c_str();
@@ -295,19 +310,20 @@ void pad_load(const std::wstring& ini) {
 // ducken oder zielen auslöst (beides schaltet um); ein kürzerer Klick geht
 // beim Loslassen als kurzer Druck hinaus.
 constexpr int kChordWait = 4, kChordPulse = 2;
-uint32_t chord_members_delay(uint32_t src) {
-    static int held[18] = {}, pulse[18] = {};
-    static bool chorded[18] = {};
+uint32_t chord_members_delay(uint32_t src, PadTrack& t) {
+    int* held = t.held;
+    int* pulse = t.pulse;
+    bool* chorded = t.chorded;
     uint32_t members = 0;
     for (const auto& pb : g_pad_binds)
         for (uint32_t c : pb.combo)
             if (c & (c - 1)) members |= c;
-    uint32_t out = src & ~members & ~g_chord_lock;
+    uint32_t out = src & ~members & ~t.chord_lock;
     for (int i = 0; i < 18; ++i) {
         const uint32_t m = 1u << i;
         if (!(members & m)) continue;
         if (src & m) {
-            if (g_chord_lock & m) chorded[i] = true;
+            if (t.chord_lock & m) chorded[i] = true;
             ++held[i];
             if (!chorded[i] && held[i] >= kChordWait) out |= m;
         } else {
@@ -331,6 +347,53 @@ void stick2(SHORT x, SHORT y, float dead, float* ox, float* oy) {
     const float scale = std::fmin((len - dead) / (1.0f - dead), 1.0f) / len;
     *ox = fx * scale;
     *oy = fy * scale;
+}
+
+// Ein Pad nach [pad] in TS2-Bits, Wirt-Bits und Sticks (−1..1, Blick noch
+// unskaliert) übersetzen, mit eigenem Zustand je Pad (Akkorde, Zielen)
+PadOutput translate(const XINPUT_GAMEPAD& g, PadTrack& t) {
+    PadOutput o;
+    stick2(g.sThumbLX, g.sThumbLY, g_pad.deadzone, &o.lx, &o.ly);
+    stick2(g.sThumbRX, g.sThumbRY, g_pad.deadzone, &o.rx, &o.ry);
+    // Quellen (Knöpfe und Trigger); ein gehaltener Akkord (z. B. L3+R3)
+    // nimmt seine Knöpfe, bis alle losgelassen sind
+    uint32_t src = g.wButtons;
+    if (g.bLeftTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD) src |= kSrcLT;
+    if (g.bRightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD) src |= kSrcRT;
+    for (const auto& pb : g_pad_binds)
+        for (uint32_t c : pb.combo)
+            if ((c & (c - 1)) && (src & c) == c) t.chord_lock |= c;
+    for (const auto& pb : g_pad_binds)
+        for (uint32_t c : pb.combo)
+            if ((c & (c - 1)) && !(src & c)) t.chord_lock &= ~c;
+    const uint32_t single = chord_members_delay(src, t);
+    uint32_t bits = 0;
+    for (const auto& pb : g_pad_binds)
+        for (uint32_t c : pb.combo) {
+            if (!c) continue;
+            const bool on = (c & (c - 1)) ? (src & c) == c : (single & c) != 0;
+            if (on) bits |= pb.bits, o.host |= pb.host;
+        }
+    // Menüs: A OK, B zurück, Steuerkreuz (fest, wie die Konsole)
+    if (single & XINPUT_GAMEPAD_A) bits |= kCross;
+    if (single & XINPUT_GAMEPAD_B) bits |= kCircle;
+    if (single & XINPUT_GAMEPAD_START) bits |= kStart;
+    if (single & XINPUT_GAMEPAD_DPAD_UP) bits |= kUp;
+    if (single & XINPUT_GAMEPAD_DPAD_DOWN) bits |= kDown;
+    if (single & XINPUT_GAMEPAD_DPAD_LEFT) bits |= kLeft;
+    if (single & XINPUT_GAMEPAD_DPAD_RIGHT) bits |= kRight;
+    // Zielen: TS2 zielt, solange das Bit gehalten wird (rechte Maustaste).
+    // Am Pad schaltet ein Druck um wie auf der Xbox (R3); ein
+    // Waffenwechsel oder die freie Kamera beendet es.
+    if (g_pad.aim_toggle) {
+        const bool now = (bits & kZoom) != 0;
+        if (now && !t.aim_was) t.aim_latched = !t.aim_latched;
+        t.aim_was = now;
+        if (bits & (kNextWeapon | kPrevWeapon)) t.aim_latched = false;
+        bits = (bits & ~kZoom) | (t.aim_latched ? kZoom : 0);
+    }
+    o.bits = bits;
+    return o;
 }
 
 // Rüttelmotoren: zuletzt gesetzt und gewünscht (0..65535)
@@ -482,47 +545,18 @@ void input_frame() {
         }
     }
 
+    // Mehrspieler (multiplayer.cpp): nur Pads; Spieler 1 hat Pad 1, auch
+    // ohne dass es zuerst benutzt wurde; Tastatur und Maus zählen nicht
+    const bool mp = mp_active();
+    if (mp) g_use_pad = true;
+
     if (g_use_pad && pad) {
         const auto& g = xs.Gamepad;
-        stick2(g.sThumbLX, g.sThumbLY, g_pad.deadzone, &lx, &ly);
-        stick2(g.sThumbRX, g.sThumbRY, g_pad.deadzone, &rx, &ry);
-        // Quellen (Knöpfe und Trigger); ein gehaltener Akkord (z. B. L3+R3)
-        // nimmt seine Knöpfe, bis alle losgelassen sind
-        uint32_t src = g.wButtons;
-        if (g.bLeftTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD) src |= kSrcLT;
-        if (g.bRightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD) src |= kSrcRT;
-        for (const auto& pb : g_pad_binds)
-            for (uint32_t c : pb.combo)
-                if ((c & (c - 1)) && (src & c) == c) g_chord_lock |= c;
-        for (const auto& pb : g_pad_binds)
-            for (uint32_t c : pb.combo)
-                if ((c & (c - 1)) && !(src & c)) g_chord_lock &= ~c;
-        const uint32_t single = chord_members_delay(src);
-        for (const auto& pb : g_pad_binds)
-            for (uint32_t c : pb.combo) {
-                if (!c) continue;
-                const bool on = (c & (c - 1)) ? (src & c) == c : (single & c) != 0;
-                if (on) bits |= pb.bits, pad_host |= pb.host;
-            }
-        // Menüs: A OK, B zurück, Steuerkreuz (fest, wie die Konsole)
-        if (single & XINPUT_GAMEPAD_A) bits |= kCross;
-        if (single & XINPUT_GAMEPAD_B) bits |= kCircle;
-        if (single & XINPUT_GAMEPAD_START) bits |= kStart;
-        if (single & XINPUT_GAMEPAD_DPAD_UP) bits |= kUp;
-        if (single & XINPUT_GAMEPAD_DPAD_DOWN) bits |= kDown;
-        if (single & XINPUT_GAMEPAD_DPAD_LEFT) bits |= kLeft;
-        if (single & XINPUT_GAMEPAD_DPAD_RIGHT) bits |= kRight;
-        // Zielen: TS2 zielt, solange das Bit gehalten wird (rechte Maustaste).
-        // Am Pad schaltet ein Druck um wie auf der Xbox (R3); ein
-        // Waffenwechsel oder die freie Kamera beendet es.
-        if (g_pad.aim_toggle) {
-            static bool was = false;
-            const bool now = (bits & kZoom) != 0;
-            if (now && !was) g_aim_latched = !g_aim_latched;
-            was = now;
-            if (bits & (kNextWeapon | kPrevWeapon)) g_aim_latched = false;
-            bits = (bits & ~kZoom) | (g_aim_latched ? kZoom : 0);
-        }
+        const PadOutput o = translate(g, g_p1);
+        bits = o.bits;
+        pad_host = o.host;
+        if (mp) pad_host &= ~kHostFreecam;  // freie Kamera nur allein (eine Kamera)
+        lx = o.lx, ly = o.ly, rx = o.rx, ry = o.ry;
         bits |= g_pad_raw;
         capture(false);
         if (g_mode != 0) call(kSetMode, 0), g_mode = 0;
@@ -545,6 +579,16 @@ void input_frame() {
         call(kSetLeftY, ly);
         call(kLookX, rx);
         call(kLookY, ry);
+    } else if (mp) {
+        // Mehrspieler ohne Pad 1 (oder ohne Fokus): Spieler 1 steht
+        g_p1.aim_latched = false;
+        g_wheel = 0;
+        capture(false);
+        if (g_mode != 0) call(kSetMode, 0), g_mode = 0;
+        call(kSetLeftX, 0.0f);
+        call(kSetLeftY, 0.0f);
+        call(kLookX, 0.0f);
+        call(kLookY, 0.0f);
     } else {
         // Menümaus: Zeiger und Klicks im Menü (menumouse.cpp); Maustasten
         // gehen dann nicht als Feuern/Zielen an TS2
@@ -559,7 +603,7 @@ void input_frame() {
             ly = float(down(g_fwd)) - float(down(g_back));
             if (bits || lx || ly) g_use_pad = false;
         }
-        g_aim_latched = false;
+        g_p1.aim_latched = false;
         // Mausrad: beim Zielen (Zielen-Taste gehalten) die Zoomstufen,
         // sonst Waffenwechsel
         if (bits & kZoom) {
@@ -608,9 +652,17 @@ void input_frame() {
     }
     call(kSetButtons, int32_t(bits));
     motors_apply(g_use_pad && pad);
+    mp_frame();  // Spieler 2–4
 }
 
 void input_rumble(int small_motor, int large_motor) {
+    // Mehrspieler: features.cpp liest das Pad des zuletzt bewegten Spielers;
+    // Spieler 1 bekommt seine Motoren dann aus multiplayer.cpp
+    if (mp_active()) return;
+    input_rumble_p1(small_motor, large_motor);
+}
+
+void input_rumble_p1(int small_motor, int large_motor) {
     // TS2: je 0..127; XInput: links der große (tiefe), rechts der kleine Motor
     auto scale = [](int v) {
         const float f = std::clamp(float(v) / 127.0f * g_pad.vib_strength, 0.0f, 1.0f);
@@ -624,7 +676,7 @@ uint32_t input_host_bits() { return g_host_bits; }
 
 void input_set_freecam(bool on) {
     g_freecam = on;
-    g_aim_latched = false;
+    g_p1.aim_latched = false;
     g_fc = {};
 }
 
@@ -638,5 +690,25 @@ void input_reclip() {
     ClipCursor(&r);
 }
 bool input_uses_mouse() { return g_mode == 1; }
+
+PadOutput input_translate_pad(const XINPUT_GAMEPAD& g, int slot) {
+    PadOutput o = translate(g, g_tracks[std::clamp(slot, 1, kMaxPads - 1)]);
+    o.rx *= g_pad.look_sens;
+    o.ry *= g_pad.look_sens * (g_pad.invert ? -1.0f : 1.0f);
+    return o;
+}
+
+void input_reset_pad(int slot) { g_tracks[std::clamp(slot, 1, kMaxPads - 1)] = PadTrack{}; }
+
+bool input_pad_on() { return g_pad.on; }
+bool input_pad_vibration(float* strength) {
+    *strength = g_pad.vib_strength;
+    return g_pad.vibration;
+}
+int input_pad1_user() { return g_pad_present && !g_pad_scripted ? int(g_pad_port) : -1; }
+bool input_pad1_present() { return g_pad.on && g_pad_present; }
+bool input_pad_scripted() { return g_pad_scripted; }
+bool input_focused() { return focused(); }
+uint32_t input_frame_number() { return g_frame; }
 
 }  // namespace host

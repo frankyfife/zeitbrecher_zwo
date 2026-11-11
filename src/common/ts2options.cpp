@@ -103,6 +103,9 @@ const std::vector<IniOption>& ini_options() {
             {"pad", "rennen", "LB", "Rennen (Xbox-Fork: Black), Sprung (White), freie Kamera"},
             {"pad", "springen", "RB", ""},
             {"pad", "freecam", "L3+R3", ""},
+            {"mehrspieler", "an", "1",
+             "Auswahl der Spieleranzahl (Arcade 2-4 Spieler, Story Co-op), sobald mindestens zwei Pads stecken;\n"
+             "im Mehrspieler steuert jeder Spieler nur mit seinem Pad"},
             {"freischalten", "story", "0",
              "0: Fortschritt wie auf der Konsole (Level nacheinander, gespeichert in profil.bin);\n"
              "1: alle Story-Level sofort (wie die Konsolen-Codes)"},

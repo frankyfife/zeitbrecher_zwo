@@ -583,6 +583,79 @@ Geprüft per Menümaus-Skript (`--menuemaus`, Koordinaten aus `TS2_MENUSPUR`):
   (`l_35_AR`). Die Spieluhr zeigt nach 35,8 s Spielzeit 00:36,1 bei 60 Hz
   und 00:36,2 bei 120 Hz. Die Spielzeit läuft also auch bei 120 Hz richtig.
 
+## Mehrspieler mit geteiltem Bildschirm (`src/host/multiplayer.cpp`)
+
+Arcade mit 2–4 Spielern und Story Co-op zu zweit, wie auf der Xbox: jeder
+Spieler mit einem eigenen Pad (XInput). Tastatur und Maus gelten im
+Mehrspieler nicht (auch nicht F6, Sprung- und Renntaste in features.cpp).
+Mit höchstens einem Pad ändert sich nichts.
+
+**Befund.** Der ganze Mehrspieler steckt noch im Code: Spieleranzahl
+`0x143F35188` (Hauptmenü zeigt bei 2 "Story Co-op", sperrt Challenge bei >1
+und Story bei >2), ein Profil je Spieler (`0x14106A01C`), eine Kamera je
+Spieler (Spieler +8, Ansicht an Kamera +0x238) mit Teilung und HUD je
+Spieler. Die Homefront-Fassung hat nur die Seite "nplayers_page"
+(Beschreibung `0x1424F2E20`: +0 Takt `0x1410C8FDC`, +8 Zeichnen, +0x20
+Aufbau `0x1410C8FD4`) auf "1 Spieler, weiter ins Hauptmenü" verkürzt (`mov
+ecx,1` bei `0x1410C8FF9`, `mov [0x143F35188],1` bei `0x1410C8FFE`). Pads:
+8 Pad-Daten je 0x60 Byte ab `0x142515350` (+0x14 0x63 verbunden, +0x20/+0x24
+Knöpfe vorher/jetzt, +0x28/+0x2C gedrückt/losgelassen, +0x30/+0x38 linker
+Stick x/−y, +0x34/+0x3C rechter Stick x/−y, +0x44/+0x45 Motoren), Spieler i
+liest Port `0x142515C50[i]` (7 = keins). Diese Zuordnung kopiert
+`0x1411458F4` je Takt aus der Port-Suche `0x141225878`, die im PC-Port nur
+Eintrag 0 setzt; `scePadRead` (`0x141225898`) füllt nur diesen einen Port.
+
+**Spieleranzahl.** Stecken mindestens zwei Pads, zeigt die Seite "1 Player"
+bis "4 Players" (Texte 454–457, Titel 2116; Einträge über der Zahl der Pads
+ausgegraut), Kopf und Maße wie "Arcade Type", Zeichnen wie das Hauptmenü
+(`0x1410C1E9C`). Die Wahl führt den Original-Takt mit N statt 1 aus (beide
+Immediates werden für den Aufruf umgeschrieben). Kreis/B im Hauptmenü führt
+zurück zur Auswahl, wenn mindestens zwei Pads stecken oder schon mehrere
+spielen. `ts2.ini` `[mehrspieler] an=0` schaltet die Auswahl ab.
+
+**Pads.** Spieler 1 behält sein Pad (input.cpp, Pad-Modus Port 0), Spieler
+2–4 bekommen bei der Wahl die weiteren angeschlossenen Pads der Reihe nach;
+die Zuordnung bleibt bis zur nächsten Wahl. Hüllen um Port-Suche und
+`scePadRead` setzen Port i für Spieler i+1 und füllen die Ports 1–3 mit
+derselben Übersetzung wie `[pad]` (eigener Zustand je Pad: Akkorde,
+Zielen umschalten). Rütteln je Pad aus +0x44/+0x45, Springen und Rennen
+auch für Spieler 2–4. Profile: Spieler 1 bekommt profil.bin und seinen
+Windows-Namen, die übrigen "Player 2" … (nicht gespeichert).
+
+**Teilansicht löschen.** Das Löschen `0x14122A4FC(x0, y0, x1, y1, rgba)`
+löschte im PC-Port das ganze Ziel (ClearRenderTargetView) statt des
+Rechtecks; die zweite Ansicht löschte so die erste. Spielen mehrere, löscht
+ts2.exe nur das Rechteck (`ClearView`, D3D 11.1), die Tiefe ganz.
+
+**2D in Teilansichten.** TS2 zeichnet HUD, Texte und Bildschirmeffekte in
+Bildschirm-Pixeln (Konsole: vortransformierte Ecken, die der Bildausschnitt
+nur beschneidet). Der PC-Port rechnet sie im Zeichnen `0x141229434`
+(spec-Bit 0x20) mit einer festen Matrix für 1920×1080 in den Clip-Raum um
+(Maßstab `0x141220700` mit 2/1920, −2/1080; Verschiebung `0x1412206CC` mit
+−1, +1, Aufruf `0x141229681`). Das stimmt nur für einen Bildausschnitt über
+das ganze Bild: In Teilansichten saß das HUD gestaucht (2 Spieler: Munition
+in der Mitte der Ansicht; 3/4 Spieler: HUD im oberen linken Viertel), und
+das Nachbild der Sichtart (`0x141139844`: Kopie des vorigen Bilds,
+`0x14122B74C`, mit Alpha 0x19 über die Ansicht gelegt) erschien als
+verkleinertes Geisterbild (Munitionsanzeige doppelt, doppelte Kanten).
+Spielen mehrere, bildet ts2.exe die Matrix auf den gesetzten Ausschnitt ab
+(Ziel W×H, Ausschnitt x, y, w, h): sx' = sx·W/w, tx' = (tx+1)·W/w − 2x/w − 1,
+sy' = sy·H/h, ty' = ty·H/h + 1 − H/h + 2y/h; über das ganze Bild ist das die
+Original-Matrix. `TS2_MP2D_ALT=1` zeigt es wie vorher.
+
+**Testen ohne Pads:** `TS2_MPSKRIPT="spieler:takt:knoepfe,lx,ly,rx,ry,lt,rt[,ts2bits];…"`
+(Spieler 2–4, sonst wie `TS2_PADSKRIPT`, das Spieler 1 übernimmt),
+`TS2_MP=<n>` (Anzahl ohne Menü), `TS2_MPPROBE=1` (Knöpfe, Motoren, Lage).
+Geprüft: Arcade Custom Deathmatch mit 2, 3 und 4 Spielern (oben/unten bzw.
+Viertel, HUD je Spieler an Ort und Stelle; Gehen, Rennen ×1,6, Drehen,
+Sprung, Feuer, Rütteln), Story Co-op Siberia (Spieler 2 läuft aus dem
+Tunnel, kein Geisterbild), Rückweg zur Auswahl. Einzelspieler (Siberia mit
+Tastatur und nur mit Pad): pixelgleich zum Stand davor.
+
+**Offen:** mit echten Pads prüfen; Pausenmenü sitzt in Teilansichten etwas
+zu hoch (Überschrift oben abgeschnitten); Auflösungen ungleich 1920×1080;
+Pads müssen vor der Wahl stecken.
+
 ## Bildanpassung (`src/host/postfx.cpp`)
 
 `[grafik] gamma`, `kontrast`, `helligkeit` und `saettigung` passen das Bild

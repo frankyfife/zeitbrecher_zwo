@@ -7,6 +7,9 @@
 // Belegung steht in ts2.ini [pad]; Testskript: Umgebung TS2_PADSKRIPT.
 #pragma once
 #include <windows.h>
+#include <xinput.h>
+
+#include <cstdint>
 
 #include <filesystem>
 #include <string>
@@ -51,6 +54,29 @@ void input_reclip();
 // je Takt: TS2s Rüttelmotoren (kleiner/großer Motor, je 0..127); ts2.exe
 // gibt sie ans Pad, solange es das Gerät ist ([pad] vibration)
 void input_rumble(int small_motor, int large_motor);
+// dasselbe ohne Rücksicht auf den Mehrspieler (multiplayer.cpp: Pad von Spieler 1)
+void input_rumble_p1(int small_motor, int large_motor);
+
+// ---- Mehrspieler (multiplayer.cpp): bis zu vier Pads
+constexpr int kMaxPads = 4;
+struct PadOutput {
+    uint32_t bits = 0;             // an TS2
+    uint32_t host = 0;             // an ts2.exe (kHostJump, kHostRun, kHostFreecam)
+    float lx = 0, ly = 0;          // linker Stick −1..1 (rechts, vorwärts)
+    float rx = 0, ry = 0;          // rechter Stick; aus input_translate_pad mit [pad] empfindlichkeit/umkehren
+};
+// Pad von Spieler slot+1 (slot 1..3) mit der Belegung [pad] übersetzen,
+// eigener Zustand je slot (Akkorde, Zielen umschalten)
+PadOutput input_translate_pad(const XINPUT_GAMEPAD& g, int slot);
+void input_reset_pad(int slot);
+bool input_pad_on();                        // [pad] an
+bool input_pad_vibration(float* strength);  // [pad] vibration, vibration_staerke/100
+// XInput-Nummer des Pads von Spieler 1 (−1: keins oder Skript)
+int input_pad1_user();
+bool input_pad1_present();                  // Pad 1 da (echt oder TS2_PADSKRIPT) und Fenster vorn
+bool input_pad_scripted();                  // TS2_PADSKRIPT gesetzt
+bool input_focused();
+uint32_t input_frame_number();              // Takte seit dem Start (wie die Skripte zählen)
 
 
 }  // namespace host

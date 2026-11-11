@@ -11,6 +11,7 @@
 #include "hooks.h"
 #include "input.h"
 #include "log.h"
+#include "multiplayer.h"
 
 namespace host {
 
@@ -285,7 +286,8 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
         static int32_t saved_mode = 0;
         static float pos[3] = {}, yaw = 0, pitch = 0;
         const bool fg = GetForegroundWindow() == HWND(window);
-        const bool key = fg && (GetAsyncKeyState(s.freecam_key) & 0x8000) != 0;
+        // Mehrspieler: nur Pads, Tastatur wirkt nicht
+        const bool key = fg && !mp_active() && (GetAsyncKeyState(s.freecam_key) & 0x8000) != 0;
         const bool bit = (input_host_bits() & kHostFreecam) != 0;
         const bool toggle = (key && !was_key) || (bit && !was_bit);
         was_key = key;
@@ -358,7 +360,8 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
     // Rennen: Taste gehalten (oder umgeschaltet), Shift oder [pad] rennen (LB)
     {
         const bool fg = GetForegroundWindow() == HWND(window);
-        const bool run_down = (fg && (GetAsyncKeyState(s.run_key) & 0x8000) != 0) || (input_host_bits() & kHostRun);
+        const bool run_down = (fg && !mp_active() && (GetAsyncKeyState(s.run_key) & 0x8000) != 0) ||
+                              (input_host_bits() & kHostRun);
         static bool was = false, latched = false;
         if (s.run_toggle) {
             if (run_down && !was) latched = !latched;
@@ -415,7 +418,8 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
             log("[sprung]   %.3f %.3f %.3f Modus %d\n", pos[0], pos[1], pos[2],
                 *reinterpret_cast<int32_t*>(p + hf2::kPlayerMoveMode));
     }
-    const bool down = s.jump && (((GetAsyncKeyState(s.jump_key) & 0x8000) != 0 && GetForegroundWindow() == HWND(window)) ||
+    const bool down = s.jump && (((GetAsyncKeyState(s.jump_key) & 0x8000) != 0 && GetForegroundWindow() == HWND(window) &&
+                                  !mp_active()) ||
                                  (input_host_bits() & 0x80000000u));
     const bool pressed = down && !g_jump_was_down;
     g_jump_was_down = down;

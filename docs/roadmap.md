@@ -73,6 +73,10 @@ Funktionen von außen erreicht. Daraus:
 | Rote Figuren/Waffe in Chicago | behoben: Raumhelligkeit aus der .raw wie Xbox (PC-Textleser lief über einen festen Puffer); betrifft auch Level 41 |
 | Schriften unscharf: Buchstaben in höherer Auflösung nachzeichnen (Vektorquelle, gerendert in die Schrifttextur) | erledigt: SVG-Umrisse, 4fache Schrifttexturen, Umrechnung in ts2.exe (fontfix) |
 | Cheats: unbegrenzte Munition, kein Cooldown; eigener Launcher-Reiter "Freischalten" | erledigt (nur Spieler, KI unverändert) |
+| Hauptmenü "Quit" ohne Funktion | behoben: Aktion setzte nur Homefronts Flag; jetzt Fenster schließen wie mit X |
+| Mehrspieler fehlt (Arcade 2–4, Story Co-op) | erledigt: Spieleranzahl-Seite wieder da (ab 2 Pads), bis 4 XInput-Pads, nur Controller; Teilansichten löschen und 2D/HUD je Ansicht richtig; per Skript geprüft, echte Pads und Pausenmenü-Lage offen |
+| Brennendes Logo im ersten Bildschirm kaum sichtbar | behoben: Teilchengröße × Bildhöhe/480, Alpha-Test wie Xbox; FREE RADICAL/EIDOS-Logos (im PC-Code entfernt) nicht übernommen |
+| Schriftzug im Hauptmenü erneuern | Werkzeug `tools/hd/logo.py` (Export, Einspielen mit Schein) |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret

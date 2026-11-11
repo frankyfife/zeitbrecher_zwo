@@ -47,6 +47,7 @@
 #include "levelfix.h"
 #include "hudfix.h"
 #include "quit.h"
+#include "multiplayer.h"
 #include "ts2options.h"
 #include "timing.h"
 #include "postfx.h"
@@ -953,6 +954,7 @@ int wmain(int argc, wchar_t** argv) {
     hudfix_install(g_img, self_dir() / L"ts2.ini");
     profile_install(g_img, self_dir() / L"profil.bin");
     quit_install(g_img);
+    mp_install(g_img, self_dir() / L"ts2.ini");  // nach profile_install und features_install
     {
         wchar_t code[16] = {};
         GetPrivateProfileStringW(L"sprache", L"text", L"pc", code, 16, (self_dir() / L"ts2.ini").c_str());
