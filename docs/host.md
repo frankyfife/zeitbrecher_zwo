@@ -710,8 +710,21 @@ einem lokalen Spieler den 10-%-Rand (`0x1411B9331` → `0x1411C1668`, Faktor
 (+0x30/+0x34, gesetzt in `0x141222FF4`/`0x1412230DC`), und der Menücode
 fragt an vielen Stellen die Spielerzahl (`0x1411C1668`). Drei Ansätze
 (Rand wie allein, 2D-Ausschnitt erweitern, Menü virtuell auf dem ganzen
-Bild) ergaben kein Bild wie allein; ein Xbox-Soll fehlt (xemu bindet die
-Tastatur nur an einen Port).
+Bild) ergaben kein Bild wie allein.
+
+Soll (Xbox-PAL in xemu, 2 Spieler Story Co-op, eigene Aufnahme): Das Menü des
+pausierenden Spielers füllt dessen ganze Ansicht ohne Randbalken; Überschrift
+vollständig sichtbar (normiert y ≈ 0,82), Einträge auf ihren Balken, Bögen
+über die ganze Breite und innerhalb der Höhe (flacher als allein); Schrift in
+normaler Pixelgröße, nicht gestaucht. Der andere Spieler sieht „Spiel
+unterbrochen / Warte auf andere Spieler“ mittig. Aufnahme: xemu mit Port 1 =
+Tastatur, Port 2/3 = echte Pads (SDL-GUID, eigene Konfiguration), Eingaben
+für Spieler 2 über den gdbstub von QEMU (Haltepunkt am Pad-Lesen, PAL 0x1BA550
+und 0x1BA568, Pad-Daten 0x2CDB48 + 0x84·Port, Knopfbits für eine Lesung
+gesetzt); die Pads müssen dabei eingeschaltet sein.
+Die 2D-Abbildung auf Teilansichten (sx·W/w, sy·H/h) staucht 2D bei zwei
+Spielern senkrecht auf die Hälfte (Figurenwahl, RANK-Abzeichen breitgezogen);
+die Xbox behält die Pixelgröße. Umbau auf gleichen Maßstab je Achse offen.
 
 **Testen ohne Pads:** `TS2_MPSKRIPT="spieler:takt:knoepfe,lx,ly,rx,ry,lt,rt[,ts2bits];…"`
 (Spieler 2–4, sonst wie `TS2_PADSKRIPT`, das Spieler 1 übernimmt),
