@@ -506,6 +506,30 @@ QWidget* MainWindow::page_graphics() {
         ini_.set_int("grafik", "hoehe", s.height());
     });
     f.add(QStringLiteral("Render-Auflösung"), res);
+    track("grafik", "supersampling");
+    auto* ss = new QComboBox;
+    ss->addItem(QStringLiteral("Aus"), 1.0);
+    ss->addItem(QStringLiteral("1,5×"), 1.5);
+    ss->addItem(QStringLiteral("2× (empfohlen)"), 2.0);
+    ss->addItem(QStringLiteral("3×"), 3.0);
+    {
+        const double cur = std::max(1.0, ini_.get_double("grafik", "supersampling"));
+        int idx = -1;
+        for (int i = 0; i < ss->count(); ++i)
+            if (qAbs(ss->itemData(i).toDouble() - cur) < 0.01) idx = i;
+        if (idx < 0) {
+            ss->addItem(QStringLiteral("%1×").arg(QString::number(cur, 'g', 3).replace(QLatin1Char('.'), QLatin1Char(','))), cur);
+            idx = ss->count() - 1;
+        }
+        ss->setCurrentIndex(idx);
+    }
+    connect(ss, &QComboBox::currentIndexChanged, this, [this, ss](int) {
+        ini_.set("grafik", "supersampling", QString::number(ss->currentData().toDouble(), 'g', 3));
+    });
+    f.add(QStringLiteral("Supersampling"), ss);
+    f.add(QString(), hint(QStringLiteral("Zeichnet das Bild so viel größer und rechnet es gefiltert auf Fenster bzw. "
+                                             "Monitor: glattere Kanten (Zäune, Gitter). Das Spiel selbst rechnet weiter "
+                                             "in der Render-Auflösung.")));
     track("grafik", "takt");
     auto* rate = new QComboBox;
     rate->addItem(QStringLiteral("60 Hz (wie das Spiel)"), 60);

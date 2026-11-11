@@ -15,6 +15,7 @@
 #include "fixes.h"
 #include "input.h"
 #include "log.h"
+#include "supersample.h"
 
 namespace host {
 
@@ -80,6 +81,8 @@ constexpr uint64_t kClear = 0x14122A4FC;
 constexpr uint64_t kClearCalls[] = {0x14107C1BD, 0x14107C257, 0x14107C30F, 0x14107F410,
                                     0x14107F589, 0x1410B584D, 0x1410B5A1E};
 constexpr uint64_t kDeviceHolder = 0x143020AC8, kRtv = 0x143020AD8, kDsv = 0x142FE5930;
+// Bildgröße, mit der TS2 rechnet (gesetzt im DX11-Setup 0x14122B78C)
+constexpr uint64_t kScreenW = 0x142FFD9A4, kScreenH = 0x14301F9F4;
 
 struct Api {
     PadReadFn pad_read = nullptr;
@@ -668,12 +671,16 @@ void clear_hook(int x0, int y0, int x1, int y1, uint32_t rgba) {
     rtv->GetResource(&res);
     D3D11_TEXTURE2D_DESC d{};
     if (ID3D11Texture2D* tex = nullptr; res && SUCCEEDED(res->QueryInterface(&tex))) tex->GetDesc(&d), tex->Release();
+    // Supersampling: das Ziel ist k-fach, TS2s Rechteck in der Render-Auflösung
+    const bool scaled = ss_is_scaled(res);
     if (res) res->Release();
+    if (scaled) d.Width = *g_img->va<uint32_t>(kScreenW), d.Height = *g_img->va<uint32_t>(kScreenH);
     const bool full = x0 <= 0 && y0 <= 0 && x1 >= int(d.Width) && y1 >= int(d.Height);
     if (full || !g_ctx1) return g_api.clear(x0, y0, x1, y1, rgba);
     const float c[4] = {float((rgba >> 24) & 0xFF) / 255.0f, float((rgba >> 16) & 0xFF) / 255.0f,
                         float((rgba >> 8) & 0xFF) / 255.0f, float(rgba & 0xFF) / 255.0f};
-    const D3D11_RECT r{std::max(x0, 0), std::max(y0, 0), std::min(x1, int(d.Width)), std::min(y1, int(d.Height))};
+    D3D11_RECT r{std::max(x0, 0), std::max(y0, 0), std::min(x1, int(d.Width)), std::min(y1, int(d.Height))};
+    if (scaled) r = ss_rect(r);
     if (r.right > r.left && r.bottom > r.top) g_ctx1->ClearView(rtv, c, &r, 1);
     if (auto* dsv = *g_img->va<ID3D11DepthStencilView*>(kDsv)) {
         void** holder = *g_img->va<void**>(0x143020AD0);

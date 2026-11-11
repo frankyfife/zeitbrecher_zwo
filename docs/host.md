@@ -830,6 +830,45 @@ als letzten Schritt vor der Ausgabe an.
   ohne diesen Schritt. Geprüft: läuft auf einem HDR-Monitor ohne
   D3D-Meldungen; die Helligkeit am Gerät ist noch von Hand zu prüfen.
 
+## Supersampling (`src/host/supersample.cpp`, `[grafik] supersampling`)
+
+`[grafik] supersampling=k` (Vorgabe 2; 1 = aus, 1.5, 2, 3; `TS2_SUPERSAMPLING=k`
+hat Vorrang; Launcher: Grafik → Supersampling). TS2 und alle Korrekturen
+rechnen weiter in der Render-Auflösung (1920×1080: 2D-Matrix, Ansichten,
+Schere, Löschen, Bildkopien, Proben); gezeichnet wird k-fach so groß, die
+Ausgabe gefiltert auf Fenster bzw. Monitor (Flächenfilter; k=2 auf einem
+4K-Monitor 1:1, auf 1080 Zeilen Mittel aus 2×2; vergrößern Catmull-Rom).
+
+- k-fach angelegt: die Szene (postfx.cpp), TS2s Tiefenpuffer (0x14122B78C)
+  und seine beiden Bildkopien (0x14122B458 → 0x14122B334, Tabelle
+  0x142FE59A0), erkannt in CreateTexture2D an Größe, Bindung und Aufrufer
+  (TS2-Code). Geladene Texturen (0x14122B438, mit Mipmap-Erzeugung) nicht.
+- Kontext-Hülle: Ansichten und Scheren werden beim Setzen auf ein k-faches
+  Ziel umgerechnet, beim Lesen bekommt TS2 seine Werte zurück (0x14122A1D0
+  liest sie am Bildende, 0x14122B524 setzt sie wieder). Kopien zwischen
+  k-fachen Texturen (0x14122B384) mit k-fachem Rechteck; Kopien aus dem Bild
+  in kleine Texturen (Bildschirme mit Text 0x14122C5D0, Scanner) gefiltert
+  verkleinert. Verdeckungsabfragen (0x14123157C) melden Pixel / k².
+  Linien (Scanner, Handkarte) zeichnet ein Geometrie-Shader k Pixel breit,
+  sonst würden sie dünn und blass. Mehrspieler: ClearView der Teilansichten
+  rechnet das Rechteck um.
+- Der Bildpuffer hat mit k>1 die Fenstergröße und folgt ihr (ResizeBuffers,
+  Alt+Enter). k=1: alles wie vorher (Bildpuffer in Render-Auflösung).
+- Bildschirmfotos (--bild, --serie) bleiben 1920×1080 (verkleinert);
+  TS2_BILD_VOLL=1 speichert die k-fache Szene, TS2_AUSGABEBILD=1 (SDR) den
+  ausgegebenen Bildpuffer. TS2_SSPROBE=1 zählt Zeichnungen je Grundform.
+- Geprüft: k=1 pixelgleich zu vorher (Startbild, Menü, Siberia bis 4600,
+  Pausenmenü). k=2/3: Menü, Startbild, Siberia (Zaun, Scanner), Chicago,
+  NeoTokyo (Regen auf der Kamera), Wild West (Mündungslicht), Sichtart 7,
+  Zielfernrohr, Mehrspieler 2 Spieler (Teilansichten, HUD, Pause): gleiche
+  Bilder mit glatteren Kanten, keine D3D-Meldungen. Vollbild 4K mit k=2:
+  Ausgabe gleich der Szene (1:1); Alt+Enter 4× hin und zurück.
+  GPU-Zeit je Bild (Siberia draußen, RTX): k=1 0,24 ms, k=2 0,51 ms,
+  k=3 0,86 ms; Bildtakt in allen Fällen 60,0 Bilder/s.
+- Kleiner Unterschied: Kanten mit Alpha-Test werden geglättet (brennendes
+  Logo: leuchtende Fläche 3,1 % → 2,8 %). Offen: HDR-Helligkeit am Gerät,
+  Fenster ziehen von Hand, Verdeckungsabfragen an einem Lichthof gegenprüfen.
+
 ## Schatten (`src/host/shadowfix.cpp`, Kontext-Hülle `ctxproxy.h`)
 
 Kisten warfen im PC-Port schwarze Flecken (Xbox: schwache, weiche

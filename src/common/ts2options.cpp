@@ -140,6 +140,9 @@ const std::vector<IniOption>& ini_options() {
             {"kamera", "freecam_taste", "117", "virtueller Tastencode, 117 = F6"},
             {"grafik", "breite", "1920", "Render-Aufloesung"},
             {"grafik", "hoehe", "1080", ""},
+            {"grafik", "supersampling", "2",
+             "Supersampling: k-fach so gross zeichnen und gefiltert auf Fenster bzw. Monitor bringen (glattere Kanten);\n"
+             "das Spiel rechnet weiter in der Render-Aufloesung. 1 = aus, 1.5, 2, 3 (2 auf einem 4K-Monitor: 1:1)"},
             {"grafik", "takt", "60", "Bildtakt: 60 oder 120 (120: Spieler und Kamera nativ, Gegner in 60er-Schritten)"},
             {"grafik", "bildsync", "0", "1: zusaetzlich auf den Bildwechsel des Monitors warten (TS2 taktet selbst)"},
             {"grafik", "vollbild", "0", "1: randloses Vollbild beim Start (Alt+Enter schaltet um)"},

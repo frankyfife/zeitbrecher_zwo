@@ -11,7 +11,11 @@ echten Kontexts. Einzelne Methoden (Hooks) überschreibt ctxproxy.h.
 import re
 import sys
 
-HOOKED = {'OMSetBlendState', 'DrawIndexed', 'Draw', 'ClearRenderTargetView'}
+HOOKED = {'OMSetBlendState', 'DrawIndexed', 'Draw', 'ClearRenderTargetView',
+          # Supersampling (src/host/supersample.h)
+          'OMSetRenderTargets', 'OMSetRenderTargetsAndUnorderedAccessViews', 'RSSetViewports',
+          'RSGetViewports', 'RSSetScissorRects', 'RSGetScissorRects', 'CopySubresourceRegion',
+          'CopyResource', 'UpdateSubresource', 'GetData', 'ClearState'}
 
 
 def split_top(s):

@@ -16,6 +16,7 @@
 #include <d3dcompiler.h>
 #include <dxgi1_6.h>
 #include <d3d11sdklayers.h>
+#include <intrin.h>
 #include <map>
 #include <set>
 #include <timeapi.h>
@@ -53,6 +54,7 @@
 #include "ts2options.h"
 #include "timing.h"
 #include "postfx.h"
+#include "supersample.h"
 #include "audio.h"
 #include "hf2.h"
 #include "log.h"
@@ -276,11 +278,28 @@ HRESULT STDMETHODCALLTYPE probe_create_tex2d(ID3D11Device* d, const D3D11_TEXTUR
     if (td && g_blend_log)
         log("[textur] %ux%u Format %d Bind %X Mips %u\n", td->Width, td->Height, int(td->Format), td->BindFlags,
             td->MipLevels);
+    // Supersampling: bildgroße Tiefe und Bildkopien, die TS2 anlegt, k-fach
+    // (nur Aufrufe aus dem TS2-Code; eigene Texturen bleiben, wie sie sind)
+    D3D11_TEXTURE2D_DESC big;
+    bool scaled = false;
+    if (td && !init && ss_on()) {
+        const uint64_t ret = uint64_t(_ReturnAddress());
+        if (ret >= uint64_t(g_img.base) && ret < uint64_t(g_img.base) + g_img.size) {
+            big = *td;
+            if ((scaled = ss_scale_desc(&big))) td = &big;
+        }
+    }
     const HRESULT hr = g_create_tex2d(d, td, init, out);
     if (SUCCEEDED(hr) && out && *out) {
         shadowfix_forget(*out);
         alphafix_forget(*out);
+        ss_forget(*out);
         g_tex_hash.erase(*out);
+        if (scaled) {
+            ss_register(*out);
+            log("[supersampling] TS2-Textur %ux%u (Format %d, Bind %X) k-fach angelegt\n", big.Width, big.Height,
+                int(big.Format), big.BindFlags);
+        }
     }
     return hr;
 }
@@ -664,7 +683,9 @@ struct Gfx {
     bool hdr = false;  // Ausgabe scRGB (FP16, linear), weil der Monitor im HDR-Modus läuft
 };
 
-bool make_gfx(Gfx* g, int width, int height, bool want_hdr) {
+// window_sized: Bildpuffer in Fenstergröße (Supersampling; er wächst mit dem
+// Fenster, siehe resize_output), sonst in der Render-Auflösung
+bool make_gfx(Gfx* g, int width, int height, bool want_hdr, bool window_sized) {
     WNDCLASSW wc{};
     wc.lpfnWndProc = wndproc;
     wc.hInstance = GetModuleHandleW(nullptr);
@@ -773,6 +794,11 @@ bool make_gfx(Gfx* g, int width, int height, bool want_hdr) {
     DXGI_SWAP_CHAIN_DESC1 sd{};
     sd.Width = UINT(width);
     sd.Height = UINT(height);
+    if (window_sized) {
+        RECT cr{};
+        GetClientRect(g->wnd, &cr);
+        if (cr.right > 0 && cr.bottom > 0) sd.Width = UINT(cr.right), sd.Height = UINT(cr.bottom);
+    }
     sd.Scaling = DXGI_SCALING_STRETCH;
     sd.Format = g->hdr ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R8G8B8A8_UNORM;
     sd.SampleDesc.Count = 1;
@@ -979,9 +1005,19 @@ int wmain(int argc, wchar_t** argv) {
     audio_install(g_img, load_audio_config(self_dir() / L"ts2.ini"));
     fake_set(fields[0xD0 / 8], 0x100, reinterpret_cast<const void*>(&audio_open_stream));
 
+    // Supersampling ([grafik] supersampling, TS2_SUPERSAMPLING=k hat Vorrang;
+    // supersample.h): TS2 rechnet weiter in der Render-Auflösung, gezeichnet
+    // wird k-fach, die Ausgabe gefiltert auf Fenster- bzw. Monitorgröße
+    {
+        wchar_t buf[32] = {};
+        if (GetEnvironmentVariableW(L"TS2_SUPERSAMPLING", buf, 32) == 0)
+            GetPrivateProfileStringW(L"grafik", L"supersampling", L"2", buf, 32, (self_dir() / L"ts2.ini").c_str());
+        ss_init(float(_wtof(buf)), UINT(settings.width), UINT(settings.height));
+    }
+
     Gfx gfx;
     if (!make_gfx(&gfx, settings.width, settings.height,
-                  GetPrivateProfileIntW(L"grafik", L"hdr", 1, (self_dir() / L"ts2.ini").c_str()) != 0)) {
+                  GetPrivateProfileIntW(L"grafik", L"hdr", 1, (self_dir() / L"ts2.ini").c_str()) != 0, ss_on())) {
         log("D3D11 nicht verfügbar\n");
         return 1;
     }
@@ -1006,11 +1042,14 @@ int wmain(int argc, wchar_t** argv) {
     // brennendes Logo im ersten Bildschirm (logofix.h)
     static const bool logo_on = logofix_init(g_img, gfx.dev);
     static const bool menulogo_on = menulogo_init(g_img, gfx.dev, game);
-    const bool use_proxy = g_dump_tick >= 0 || shadow_on || alpha_on || effect_on || logo_on || menulogo_on;
+    const bool use_proxy =
+        g_dump_tick >= 0 || shadow_on || alpha_on || effect_on || logo_on || menulogo_on || ss_on() || ss_probe_on();
     if (use_proxy) {
-        static bool shadow_drawn = false, alpha_drawn = false, effect_drawn = false, logo_drawn = false, menulogo_drawn = false;
+        static bool shadow_drawn = false, alpha_drawn = false, effect_drawn = false, logo_drawn = false, menulogo_drawn = false,
+                    line_drawn = false;
         proxy.on_blend = [](ID3D11BlendState* st, const FLOAT*) { g_cur_blend = st; };
         proxy.on_draw = [](ID3D11DeviceContext* real, UINT n, UINT st, INT b) {
+            if (ss_probe_on()) ss_probe_draw(real);
             if (g_dump_tick >= 0 && !draw_probe(real, n, st, b)) return false;
             auto k = g_blend_kind.find(g_cur_blend);
             const bool alpha_blend = k != g_blend_kind.end() && k->second == 1;  // SRC_ALPHA/INV_SRC_ALPHA
@@ -1019,6 +1058,8 @@ int wmain(int argc, wchar_t** argv) {
             effect_drawn = effect_on && !shadow_drawn && effectfix_before(real);
             logo_drawn = logo_on && logofix_before(real);
             menulogo_drawn = menulogo_on && menulogo_before(real);
+            // Supersampling: Linien k-fach breit (nur mit TS2s Vertex-Shader)
+            line_drawn = ss_on() && !effect_drawn && ss_line_before(real);
             return true;
         };
         proxy.after_draw = [](ID3D11DeviceContext* real) {
@@ -1027,6 +1068,7 @@ int wmain(int argc, wchar_t** argv) {
             if (effect_drawn) effectfix_after(real), effect_drawn = false;
             if (logo_drawn) logofix_after(real), logo_drawn = false;
             if (menulogo_drawn) menulogo_after(real), menulogo_drawn = false;
+            if (line_drawn) ss_line_after(real), line_drawn = false;
         };
         proxy.on_clear = [](ID3D11RenderTargetView* v, const FLOAT* c) {
             if (g_tick_now == g_dump_tick)
@@ -1077,9 +1119,45 @@ int wmain(int argc, wchar_t** argv) {
         // HDR: TS2 zeichnet in eine UNORM-Textur, der Schritt legt sie
         // linear auf das gewählte Weiß (Nits) in den scRGB-Bildpuffer
         if (gfx.hdr) pf.hdr_scale = std::clamp(getf(L"hdr_weiss", L"200"), 80.0f, 1000.0f) / 80.0f;
-        if (!postfx_init(gfx.dev, back, pf, &scene_rtv, &scene_tex) && gfx.hdr)
-            log("HDR: Ausgabeschritt fehlt, das Bild wird falsch\n");
+        // Supersampling: die Szene k-fach, gefiltert auf den Bildpuffer
+        const bool post = postfx_init(gfx.dev, back, pf, &scene_rtv, &scene_tex, ss_on() ? ss_width() : 0,
+                                      ss_on() ? ss_height() : 0);
+        if (!post && gfx.hdr) log("HDR: Ausgabeschritt fehlt, das Bild wird falsch\n");
+        if (!post && ss_on()) {
+            log("Supersampling: Ausgabeschritt nicht verfügbar\n");
+            return 6;
+        }
+        if (ss_on()) ss_register(scene_tex);
     }
+    // Supersampling: der Bildpuffer folgt der Fenstergröße (Alt+Enter, Ziehen)
+    D3D11_TEXTURE2D_DESC back_desc{};
+    back->GetDesc(&back_desc);
+    UINT out_w = back_desc.Width, out_h = back_desc.Height;
+    auto resize_output = [&] {
+        RECT cr{};
+        GetClientRect(gfx.wnd, &cr);
+        if (cr.right <= 0 || cr.bottom <= 0 || (UINT(cr.right) == out_w && UINT(cr.bottom) == out_h)) return;
+        rtv->Release();
+        back->Release();
+        rtv = nullptr;
+        back = nullptr;
+        const HRESULT hr = gfx.swap->ResizeBuffers(0, UINT(cr.right), UINT(cr.bottom), DXGI_FORMAT_UNKNOWN, 0);
+        if (FAILED(hr)) log("[supersampling] Bildpuffer nicht anpassbar (%08lX)\n", hr);
+        gfx.swap->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back));
+        gfx.dev->CreateRenderTargetView(back, nullptr, &rtv);
+        back->GetDesc(&back_desc);
+        out_w = back_desc.Width;
+        out_h = back_desc.Height;
+        log("[supersampling] Ausgabe %ux%u\n", out_w, out_h);
+    };
+    // Bildschirmfotos (--bild, --serie) in Render-Auflösung wie ohne
+    // Supersampling (verkleinert); TS2_BILD_VOLL=1: die k-fache Szene
+    const bool full_shots = GetEnvironmentVariableW(L"TS2_BILD_VOLL", nullptr, 0) > 0;
+    auto shot_tex = [&]() -> ID3D11Texture2D* {
+        if (!ss_on() || full_shots) return scene_tex;
+        ID3D11Texture2D* t = ss_shot(gfx.ctx, scene_tex);
+        return t ? t : scene_tex;
+    };
 
     // Bildzeiten protokollieren (alle 600 Bilder): Mittel, Spanne, Ausreißer
     LARGE_INTEGER qf, q0;
@@ -1147,21 +1225,27 @@ int wmain(int argc, wchar_t** argv) {
                 gfx.ctx->ClearRenderTargetView(scene_rtv, c);
             }
         }
+        if (ss_on()) resize_output();
         if (!call_render(obj, &devh, &ctxh, scene_rtv, scene_tex)) {
             log("Bild %d ist abgestürzt\n", t);
             return 5;
         }
-        postfx_apply(gfx.ctx, rtv);
-        if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, scene_tex, shot);
+        postfx_apply(gfx.ctx, rtv, out_w, out_h);
+        ss_probe_frame_end();
+        if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, shot_tex(), shot);
+        // TS2_AUSGABEBILD=1: auch den Bildpuffer, wie er ausgegeben wird
+        // (<bild>.ausgabe.bmp; nur SDR, RGBA8)
+        if (t + 1 == ticks && !shot.empty() && !gfx.hdr && GetEnvironmentVariableW(L"TS2_AUSGABEBILD", nullptr, 0) > 0)
+            save_bmp(gfx, back, fs::path(shot).replace_extension(L".ausgabe.bmp"));
         if (series_step > 0 && t >= series_from && (t - series_from) % series_step == 0 && !shot.empty()) {
             fs::path p = shot;
             p.replace_filename(shot.stem().wstring() + L"_" + std::to_wstring(t) + L".bmp");
-            save_bmp(gfx, scene_tex, p);
+            save_bmp(gfx, shot_tex(), p);
         }
         // TS2_BILDPAAR=1: auch das vorletzte Bild (<bild>.vorher.bmp), um zu
         // prüfen, ob sich das Bild in jedem Takt ändert
         if (t + 2 == ticks && !shot.empty() && GetEnvironmentVariableW(L"TS2_BILDPAAR", nullptr, 0) > 0)
-            save_bmp(gfx, scene_tex, fs::path(shot).replace_extension(L".vorher.bmp"));
+            save_bmp(gfx, shot_tex(), fs::path(shot).replace_extension(L".vorher.bmp"));
         // TS2 hält seine 60 Takte selbst ein (Sleep, dann Warteschleife,
         // 0x14107CC64); ein zusätzliches Warten auf den Monitor liefe gegen
         // diesen Takt. Ohne bildsync zeigt das Flip-Modell jedes Bild ab dem

@@ -1,7 +1,9 @@
 // Untersuchungs-Hülle um den D3D11-Kontext: TS2 bekommt sie statt des
 // echten Kontexts (nur mit einer Probe wie TS2_DRAWDUMP). Alle Methoden
 // leiten weiter (ctxproxy.inc, erzeugt aus d3d11.h); OMSetBlendState,
-// DrawIndexed, Draw und ClearRenderTargetView rufen vorher die Haken unten.
+// DrawIndexed, Draw und ClearRenderTargetView rufen vorher die Haken unten;
+// Ziele, Ansichten, Scheren, Kopien und Abfragen rechnet mit Supersampling
+// supersample.cpp um.
 // Nötig, weil die D3D11-Laufzeit die Funktionstabelle ihres Kontexts selbst
 // umschreibt und eine umgelenkte vtable nicht hält.
 #pragma once
@@ -9,6 +11,8 @@
 
 #include <climits>
 #include <functional>
+
+#include "supersample.h"
 
 namespace host {
 
@@ -61,6 +65,59 @@ public:
     void STDMETHODCALLTYPE ClearRenderTargetView(ID3D11RenderTargetView* v, const FLOAT c[4]) override {
         if (on_clear) on_clear(v, c);
         ClearRenderTargetView_real(v, c);
+    }
+
+    // Supersampling (supersample.h): TS2 sieht Ansichten, Scheren und Kopien
+    // in der Render-Auflösung; ohne Supersampling nur Weiterleitung
+    void STDMETHODCALLTYPE OMSetRenderTargets(UINT n, ID3D11RenderTargetView* const* v,
+                                              ID3D11DepthStencilView* d) override {
+        OMSetRenderTargets_real(n, v, d);
+        if (ss_on()) ss_set_targets(real_, n && v ? v[0] : nullptr, d);
+    }
+    void STDMETHODCALLTYPE OMSetRenderTargetsAndUnorderedAccessViews(UINT n, ID3D11RenderTargetView* const* v,
+                                                                     ID3D11DepthStencilView* d, UINT us, UINT un,
+                                                                     ID3D11UnorderedAccessView* const* u,
+                                                                     const UINT* uc) override {
+        OMSetRenderTargetsAndUnorderedAccessViews_real(n, v, d, us, un, u, uc);
+        if (ss_on() && n != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL) ss_set_targets(real_, n && v ? v[0] : nullptr, d);
+    }
+    void STDMETHODCALLTYPE RSSetViewports(UINT n, const D3D11_VIEWPORT* v) override {
+        if (ss_on()) ss_set_viewports(real_, n, v);
+        else RSSetViewports_real(n, v);
+    }
+    void STDMETHODCALLTYPE RSGetViewports(UINT* n, D3D11_VIEWPORT* v) override {
+        if (ss_on()) ss_get_viewports(n, v);
+        else RSGetViewports_real(n, v);
+    }
+    void STDMETHODCALLTYPE RSSetScissorRects(UINT n, const D3D11_RECT* r) override {
+        if (ss_on()) ss_set_scissors(real_, n, r);
+        else RSSetScissorRects_real(n, r);
+    }
+    void STDMETHODCALLTYPE RSGetScissorRects(UINT* n, D3D11_RECT* r) override {
+        if (ss_on()) ss_get_scissors(n, r);
+        else RSGetScissorRects_real(n, r);
+    }
+    void STDMETHODCALLTYPE CopySubresourceRegion(ID3D11Resource* dst, UINT dsub, UINT x, UINT y, UINT z,
+                                                 ID3D11Resource* src, UINT ssub, const D3D11_BOX* box) override {
+        if (!ss_on() || !ss_copy_region(real_, dst, dsub, x, y, z, src, ssub, box))
+            CopySubresourceRegion_real(dst, dsub, x, y, z, src, ssub, box);
+    }
+    void STDMETHODCALLTYPE CopyResource(ID3D11Resource* dst, ID3D11Resource* src) override {
+        if (!ss_on() || !ss_copy_resource(real_, dst, src)) CopyResource_real(dst, src);
+    }
+    void STDMETHODCALLTYPE UpdateSubresource(ID3D11Resource* dst, UINT sub, const D3D11_BOX* box, const void* data,
+                                             UINT row, UINT depth) override {
+        if (ss_on()) ss_update_subresource(dst);
+        UpdateSubresource_real(dst, sub, box, data, row, depth);
+    }
+    HRESULT STDMETHODCALLTYPE GetData(ID3D11Asynchronous* a, void* data, UINT size, UINT flags) override {
+        const HRESULT hr = GetData_real(a, data, size, flags);
+        if (hr == S_OK && ss_on()) ss_get_data(a, data, size);
+        return hr;
+    }
+    void STDMETHODCALLTYPE ClearState() override {
+        ClearState_real();
+        if (ss_on()) ss_clear_state();
     }
 
 #include "ctxproxy.inc"
