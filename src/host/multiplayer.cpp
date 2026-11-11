@@ -401,8 +401,58 @@ void set_fw_factor(uint64_t float_va) {
     VirtualProtect(ins + 4, 4, old, &old);
     FlushInstructionCache(GetCurrentProcess(), ins, 8);
 }
+// Radar (0x141137244): Halbmesser 35 allein (0x1411376B6, movss xmm8,
+// [rip+x]), 30 mit mehreren Spielern (0x1411376AB, Ansicht +0x30), dazu der
+// Breitenfaktor 3,75 (0x141137710). TS2 Redux setzt für allein 64 und 1,0
+// (runder Radar in 1080er Pixeln), der Mehrspieler-Zweig blieb bei 30: ein
+// winziger Kreis. Xbox (Soll): im Mehrspieler etwa dieselbe Pixelgröße wie
+// allein. Mit mehreren Spielern lädt der Mehrspieler-Zweig deshalb denselben
+// Wert wie der Einzelspieler-Zweig (Redux 64).
+constexpr uint64_t kRadarMpIns = 0x1411376AB, kRadarSpIns = 0x1411376B6;  // je F3 44 0F 10 05 disp32 (9 Byte)
+void set_radar_mp(bool mp) {
+    uint8_t* mpi = g_img->va(kRadarMpIns);
+    const uint8_t* spi = g_img->va(kRadarSpIns);
+    static const uint8_t head[5] = {0xF3, 0x44, 0x0F, 0x10, 0x05};
+    if (std::memcmp(mpi, head, 5) != 0 || std::memcmp(spi, head, 5) != 0) return;
+    static const int32_t orig = *reinterpret_cast<const int32_t*>(mpi + 5);
+    const uint8_t* sp_target = spi + 9 + *reinterpret_cast<const int32_t*>(spi + 5);
+    const int32_t disp = mp ? int32_t(sp_target - (mpi + 9)) : orig;
+    DWORD old;
+    VirtualProtect(mpi + 5, 4, PAGE_EXECUTE_READWRITE, &old);
+    std::memcpy(mpi + 5, &disp, 4);
+    VirtualProtect(mpi + 5, 4, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), mpi, 9);
+}
+
+// Porträts der Figurenwahl (0x1410BC8D4): halbe Höhe h = Zellenhöhe/2 · 0,95,
+// halbe Breite = h · 0,95 · 1920 · 1/512 (mulss bei 0x1410BC98D/0x1410BC995,
+// je F3 0F 59 3D disp32) – ein Viereck 3,56-mal so breit wie hoch, das die
+// Zelle abschneidet: Gesichter breitgezogen und angeschnitten. Redux rechnet
+// allein mit eigenen Registern (gilt nur für das Einzelspieler-Layout). Mit
+// mehreren Spielern gelten die Originalbytes, und beide Faktoren laden 1,0
+// (0x141F8E630): quadratische Porträts wie auf der Xbox.
+constexpr uint64_t kPortraitMul1 = 0x1410BC98D, kPortraitMul2 = 0x1410BC995, kFloat1 = 0x141F8E630;
+void set_mul_target(uint64_t ins_va, uint64_t float_va, bool on) {
+    uint8_t* ins = g_img->va(ins_va);
+    static const uint8_t head[4] = {0xF3, 0x0F, 0x59, 0x3D};
+    if (std::memcmp(ins, head, 4) != 0) return;
+    static int32_t orig[2] = {};
+    static bool have[2] = {};
+    const int k = ins_va == kPortraitMul1 ? 0 : 1;
+    if (!have[k]) orig[k] = *reinterpret_cast<const int32_t*>(ins + 4), have[k] = true;
+    const int32_t disp = on ? int32_t(g_img->va(float_va) - (ins + 8)) : orig[k];
+    DWORD old;
+    VirtualProtect(ins + 4, 4, PAGE_EXECUTE_READWRITE, &old);
+    std::memcpy(ins + 4, &disp, 4);
+    VirtualProtect(ins + 4, 4, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), ins, 8);
+}
+
 void apply_mp_layout(int n) {
     const bool mp = n > 1;
+    set_radar_mp(mp);
+    set_mul_target(kPortraitMul1, kFloat1, mp);
+    set_mul_target(kPortraitMul2, kFloat1, mp);
     fixes_original(kFwRows, kFwRows, mp);
     fixes_original(kFwPortraitLo, kFwPortraitHi, mp);
     set_fw_factor(!mp ? kFloat3 : n == 2 ? kFloat275 : kFloat25);

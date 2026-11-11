@@ -737,7 +737,23 @@ Bildschirmpixel richtig ab; die Abweichungen (Radar klein bzw. gestaucht,
 Rang-Abzeichen gestaucht, Porträts verzerrt, Pausenmenü zu groß) entstehen
 in den Größenrechnungen der Elemente (Ansicht +0x28/+0x2C, Merker
 +0x30/+0x34; Radar 0x141138BC4, HUD 0x141140A00, Redux-Gruppe „anzeige“).
-Offen.
+
+**HUD und Figurenwahl mit mehreren Spielern.** Radar (0x141137244):
+Halbmesser 35 allein (0x1411376B6), 30 mit mehreren Spielern (0x1411376AB,
+Ansicht +0x30), Breitenfaktor 3,75 (0x141137710); TS2 Redux setzt für
+allein 64 und 1,0, der Mehrspieler-Zweig blieb bei 30 (winziger Kreis). Mit
+mehreren Spielern lädt dieser Zweig denselben Wert wie allein: rundes Radar
+in gleicher Pixelgröße wie auf der Xbox. Rang und Munition stimmten schon
+(feste Abstände von der Ansichtsecke; die Xbox rückt sie weiter ein, Rand
+für Fernseher). Figurenwahl-Porträts (0x1410BC8D4): halbe Breite = halbe
+Höhe · 0,95 · 1920/512 (0x1410BC98D, 0x1410BC995), ein 3,56-fach breites
+Viereck, von der Zelle abgeschnitten; mit mehreren Spielern laden beide
+Faktoren 1,0 (quadratisch wie Xbox). Alles nur bei der Wahl von 2–4
+Spielern, mit einem Spieler wieder Original/Redux. RANK: Das „=“ ist TS2s
+Gleichstand-Anzeige; auf der Xbox trat im aufgenommenen Match kein
+Gleichstand mit „=“ auf. Offen: Pausenmenü, Porträtleiste eines
+bestätigten Spielers (leer), Ergebnisliste („GAME OVER“ je Ansicht) am PC
+prüfen.
 
 **Testen ohne Pads:** `TS2_MPSKRIPT="spieler:takt:knoepfe,lx,ly,rx,ry,lt,rt[,ts2bits];…"`
 (Spieler 2–4, sonst wie `TS2_PADSKRIPT`, das Spieler 1 übernimmt),
