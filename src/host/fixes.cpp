@@ -6,6 +6,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "log.h"
 #include "replace.h"
@@ -47,13 +48,35 @@ void write(uint8_t* at, const void* src, size_t len) {
     VirtualProtect(at, len, old, &old);
 }
 
+// Originalbytes der gepatchten Stellen (für fixes_original, Mehrspieler)
+struct SavedFix {
+    uint32_t rva;
+    uint16_t len;
+    const uint8_t* fix;
+    uint8_t orig[16];
+};
+std::vector<SavedFix> g_saved;
+const Ts2Image* g_fix_img = nullptr;
+
 // eigene Seite für die umgelenkten Konstanten: in Homefronts Code-Bereich,
 // den ts2.bin nicht belegt (innerhalb ±2 GB der Befehle)
 constexpr uint32_t kConstPoolRva = 0x00040000;
 
 }  // namespace
 
+void fixes_original(uint64_t va_lo, uint64_t va_hi, bool original) {
+    if (!g_fix_img) return;
+    for (const auto& sv : g_saved) {
+        const uint64_t va = 0x140000000ull + sv.rva;
+        if (va < va_lo || va > va_hi) continue;
+        uint8_t* at = g_fix_img->rva(sv.rva);
+        write(at, original ? sv.orig : sv.fix, sv.len);
+        FlushInstructionCache(GetCurrentProcess(), at, sv.len);
+    }
+}
+
 void fixes_install(const Ts2Image& img, const std::filesystem::path& game) {
+    g_fix_img = &img;
     std::map<std::string, int> applied, skipped;
     for (const auto& f : kFixBytes) {
         uint8_t* at = img.rva(f.rva);
@@ -65,6 +88,11 @@ void fixes_install(const Ts2Image& img, const std::filesystem::path& game) {
             log("Fehlerbehebung %s: Stelle 0x%X hat andere Bytes, ausgelassen\n", f.group, 0x140000000u + f.rva);
             ++skipped[f.group];
             continue;
+        }
+        if (f.len <= sizeof SavedFix::orig) {
+            SavedFix sv{f.rva, f.len, f.bytes, {}};
+            std::memcpy(sv.orig, at, f.len);
+            g_saved.push_back(sv);
         }
         write(at, f.bytes, f.len);
         ++applied[f.group];

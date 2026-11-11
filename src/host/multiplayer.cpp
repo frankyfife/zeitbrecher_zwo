@@ -12,6 +12,7 @@
 
 #include "hf2.h"
 #include "hooks.h"
+#include "fixes.h"
 #include "input.h"
 #include "log.h"
 
@@ -371,6 +372,42 @@ void write_imm(uint64_t va, int32_t v) {
     FlushInstructionCache(GetCurrentProcess(), at, 4);
 }
 
+// Figurenwahl im Mehrspieler. TS2 Redux (Gruppe "menue", fixes.inc) legt die
+// Figurenwahl für einen Spieler wie auf der Konsole aus; mit mehreren
+// Spielern zerfiel sie damit (Felder zu niedrig, Name und Figur
+// abgeschnitten, Porträtleiste leer):
+// - Aufbau 0x1410D216C: Höhe eines Spielerfelds = (1 bzw. 0,7) · 70 · 3,0
+//   (Faktor bei 0x1410D21E8) · Zeilen, Zeilen = 4 allein bzw. 3 mit mehreren;
+//   Redux setzt 3/2 (0x1410D21F2).
+// - Porträts 0x1410BC8D4: Redux ändert die Eckenberechnung (0x1410BC9C8,
+//   9CB, 9D4, 9DD); mit mehreren Spielern entstanden leere Vierecke.
+// Mit mehreren Spielern gelten an beiden Stellen die Originalbytes (3 Zeilen,
+// Porträts wie im PC-Port), und der Faktor sinkt auf 2,75 (2 Spieler) bzw.
+// 2,5 (3–4 Spieler, schmalere Felder), damit beide Feldreihen über die
+// Fußzeile der Redux-Seite (Seitenhöhe 992, 0x1410D22A6, bleibt) passen. Mit
+// einem Spieler wieder Redux und 3,0.
+constexpr uint64_t kFwRows = 0x1410D21F2, kFwPortraitLo = 0x1410BC9C8, kFwPortraitHi = 0x1410BC9DD;
+constexpr uint64_t kFwFactorIns = 0x1410D21E8;  // F3 0F 59 0D disp32: mulss xmm1, [rip+disp] (3,0 bei 0x141FECE74)
+constexpr uint64_t kFloat3 = 0x141FECE74, kFloat275 = 0x1420F16AC, kFloat25 = 0x141FE89B4;  // vorhandene .rdata-Werte
+void set_fw_factor(uint64_t float_va) {
+    uint8_t* ins = g_img->va(kFwFactorIns);
+    static const bool ok = ins[0] == 0xF3 && ins[1] == 0x0F && ins[2] == 0x59 && ins[3] == 0x0D &&
+                           ins + 8 + *reinterpret_cast<const int32_t*>(ins + 4) == g_img->va(kFloat3);
+    if (!ok) return;
+    const int32_t disp = int32_t(int64_t(g_img->va(float_va)) - int64_t(ins + 8));
+    DWORD old;
+    VirtualProtect(ins + 4, 4, PAGE_EXECUTE_READWRITE, &old);
+    std::memcpy(ins + 4, &disp, 4);
+    VirtualProtect(ins + 4, 4, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), ins, 8);
+}
+void apply_mp_layout(int n) {
+    const bool mp = n > 1;
+    fixes_original(kFwRows, kFwRows, mp);
+    fixes_original(kFwPortraitLo, kFwPortraitHi, mp);
+    set_fw_factor(!mp ? kFloat3 : n == 2 ? kFloat275 : kFloat25);
+}
+
 // Der Takt der Homefront-Fassung macht alles Nötige für einen Spieler
 // (Profile, Spielerzustände im Menü, weiter ins Hauptmenü); mit der
 // gewählten Anzahl an Stelle der festen 1 tut er es für alle.
@@ -404,6 +441,7 @@ void nplayers_tick(uint8_t* page) {
     if (!g_applied) {
         g_applied = true;
         g_players = n;
+        apply_mp_layout(n);
         freeze_pads();
         for (int p = 1; p < kMaxPads; ++p) input_reset_pad(p), g_slot[p].prev = 0;
         log("[mehrspieler] Takt %u: %d Spieler\n", input_frame_number(), n);

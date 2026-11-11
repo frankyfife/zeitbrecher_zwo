@@ -14,5 +14,9 @@ namespace host {
 // Liegt game/hd/ vor (hochaufgelöste Texturen, tools/re/hd_textures.py), liest
 // TS2 seine Dateien zuerst dort.
 void fixes_install(const Ts2Image& img, const std::filesystem::path& game);
+// Für die gepatchten Bytestellen im Bereich [va_lo, va_hi]: Originalbytes
+// (true) oder wieder die Redux-Bytes (false). Mehrspieler (multiplayer.cpp):
+// Stellen, die nur für einen Spieler ausgelegt sind.
+void fixes_original(uint64_t va_lo, uint64_t va_hi, bool original);
 
 }  // namespace host

@@ -688,6 +688,31 @@ Spielen mehrere, bildet ts2.exe die Matrix auf den gesetzten Ausschnitt ab
 sy' = sy·H/h, ty' = ty·H/h + 1 − H/h + 2y/h; über das ganze Bild ist das die
 Original-Matrix. `TS2_MP2D_ALT=1` zeigt es wie vorher.
 
+**Figurenwahl mit mehreren Spielern.** TS2 Redux (fixes.inc, Gruppe
+„menue“) legt die Figurenwahl für einen Spieler wie auf der Konsole aus.
+Mit mehreren Spielern zerfiel sie damit: Der Aufbau `0x1410D216C` rechnet
+die Höhe eines Spielerfelds als (1 bzw. 0,7) · 70 · 3,0 (Faktor bei
+`0x1410D21E8`) · Zeilen, Zeilen = 4 allein bzw. 3 mit mehreren; Redux setzt
+3/2 (`0x1410D21F2`), die Felder waren zu niedrig (Name, Figur abgeschnitten).
+Die Porträts (`0x1410BC8D4`, Redux-Stellen `0x1410BC9C8`/`9CB`/`9D4`/`9DD`)
+blieben leere Vierecke. fixes.cpp merkt sich die Originalbytes jeder Stelle
+(`fixes_original`); bei mehreren Spielern gelten an diesen Stellen die
+Originalbytes, und der Faktor sinkt auf 2,75 (2 Spieler) bzw. 2,5 (3–4,
+eigene Wahl), damit beide Feldreihen über die Fußzeile der Redux-Seite
+(Höhe 992, `0x1410D22A6`, bleibt) passen. Mit einem Spieler wieder Redux.
+Geprüft: 2/3/4 Spieler vollständig, Match startet; Einzelspieler
+unverändert. Offen: bei 3/4 Spielern liegen die Wertezeilen eng; die
+Ergebnisliste nach dem Match ist ungeprüft.
+
+**Pausenmenü in Teilansichten (offen).** Die Menüansicht bekommt nur mit
+einem lokalen Spieler den 10-%-Rand (`0x1411B9331` → `0x1411C1668`, Faktor
+0,1 bei `0x1422B7938`), Ansichten tragen ein Mehrspieler-Merkmal
+(+0x30/+0x34, gesetzt in `0x141222FF4`/`0x1412230DC`), und der Menücode
+fragt an vielen Stellen die Spielerzahl (`0x1411C1668`). Drei Ansätze
+(Rand wie allein, 2D-Ausschnitt erweitern, Menü virtuell auf dem ganzen
+Bild) ergaben kein Bild wie allein; ein Xbox-Soll fehlt (xemu bindet die
+Tastatur nur an einen Port).
+
 **Testen ohne Pads:** `TS2_MPSKRIPT="spieler:takt:knoepfe,lx,ly,rx,ry,lt,rt[,ts2bits];…"`
 (Spieler 2–4, sonst wie `TS2_PADSKRIPT`, das Spieler 1 übernimmt),
 `TS2_MP=<n>` (Anzahl ohne Menü), `TS2_MPPROBE=1` (Knöpfe, Motoren, Lage).
@@ -697,8 +722,7 @@ Sprung, Feuer, Rütteln), Story Co-op Siberia (Spieler 2 läuft aus dem
 Tunnel, kein Geisterbild), Rückweg zur Auswahl. Einzelspieler (Siberia mit
 Tastatur und nur mit Pad): pixelgleich zum Stand davor.
 
-**Offen:** mit echten Pads prüfen; Pausenmenü sitzt in Teilansichten etwas
-zu hoch (Überschrift oben abgeschnitten); Auflösungen ungleich 1920×1080;
+**Offen:** mit echten Pads prüfen; Pausenmenü in Teilansichten (oben); Auflösungen ungleich 1920×1080;
 Pads müssen vor der Wahl stecken.
 
 ## Bildanpassung (`src/host/postfx.cpp`)
