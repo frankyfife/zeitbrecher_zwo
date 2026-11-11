@@ -724,7 +724,20 @@ und 0x1BA568, Pad-Daten 0x2CDB48 + 0x84·Port, Knopfbits für eine Lesung
 gesetzt); die Pads müssen dabei eingeschaltet sein.
 Die 2D-Abbildung auf Teilansichten (sx·W/w, sy·H/h) staucht 2D bei zwei
 Spielern senkrecht auf die Hälfte (Figurenwahl, RANK-Abzeichen breitgezogen);
-die Xbox behält die Pixelgröße. Umbau auf gleichen Maßstab je Achse offen.
+die Xbox behält die Pixelgröße.
+
+**Xbox-Soll Arcade** (eigene Aufnahmen, 2 und 3 Spieler, Deathmatch
+Mexiko). 2 Spieler oben/unten, 3–4 in Vierteln (PC 0x1411D4734 wie Xbox
+0x1409F0). HUD-Elemente (Rang, Radar, Munition) in jeder Ansicht in
+derselben Pixelgröße wie allein, in festen Abständen von den Ecken der
+Ansicht; Pausenmenü füllt die Ansicht des pausierenden Spielers;
+Figurenwahl mit schmaleren Feldern (2: übereinander, 3–4: 2×2), Porträts
+quadratisch. Nach genauerer Messung bildet die 2D-Hülle TS2s
+Bildschirmpixel richtig ab; die Abweichungen (Radar klein bzw. gestaucht,
+Rang-Abzeichen gestaucht, Porträts verzerrt, Pausenmenü zu groß) entstehen
+in den Größenrechnungen der Elemente (Ansicht +0x28/+0x2C, Merker
++0x30/+0x34; Radar 0x141138BC4, HUD 0x141140A00, Redux-Gruppe „anzeige“).
+Offen.
 
 **Testen ohne Pads:** `TS2_MPSKRIPT="spieler:takt:knoepfe,lx,ly,rx,ry,lt,rt[,ts2bits];…"`
 (Spieler 2–4, sonst wie `TS2_PADSKRIPT`, das Spieler 1 übernimmt),
