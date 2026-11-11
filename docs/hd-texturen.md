@@ -157,3 +157,26 @@ Waffe ansehen.
 gezeigt, welche Texturen sich lohnen und welche Größen das Spiel verträgt.
 Deren Quelldateien werden hier nicht verwendet; die eigenen Fassungen sind
 aus den Originalen gemessen bzw. vergrößert.
+
+## Schriften
+
+TS2 zeichnet Text mit drei Schrift-Texturen: `misc/impact` (256², HUD,
+Waffennamen, Ziffern, Menütitel), `misc/book` (128×256, Menüs, Untertitel)
+und `misc/booklight` (128×192). Sie sind weiß, die Form steckt im Alpha.
+`tools/hd/make_fonts.py` zeichnet sie als Umrisse nach: Es schätzt eine
+glatte, harte Form, deren Kantenglättung auf Originalgröße das Original
+ergibt, dann Marching Squares, Glättung und spitze Ecken. Die Umrisse stehen
+als SVG in `game/hd_eigen/schrift/<name>.svg` (bearbeitbar, Ebene „vorlage“
+zeigt das Original); daraus werden 4fache Texturen mit derselben
+Zeichenanordnung (`hd_eigen/ts2/textures/misc/`). `--messen` zeigt die
+Abweichung (RMS 2,6/4,5/5,2 von 255), `--vergleich <Ordner>` Original und
+neu nebeneinander, `--installieren` kopiert nach `game/hd`. Die
+Zeichentabellen im Programm zählen in Pixeln des Originals; ts2.exe rechnet
+sie auf die geladene Größe um (`src/host/fontfix.cpp`); ohne diese
+Umrechnung zeigt eine größere Schrift-Textur nur ihr oberes linkes Viertel.
+SVGs und Texturen sind aus Spieldaten abgeleitet: nie committen.
+
+```
+python -I tools/hd/make_fonts.py
+python -I tools/hd/make_fonts.py --installieren
+```

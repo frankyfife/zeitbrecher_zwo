@@ -113,6 +113,10 @@ const std::vector<IniOption>& ini_options() {
             {"freischalten", "unverwundbar", "0", ""},
             {"freischalten", "alles", "0", "jede Freischalt-Bedingung gilt als erfuellt (Figuren, Level, Extras)"},
             {"freischalten", "optionen", "1", "Hauptmenue mit \"Options\" (in der Homefront-Fassung gestrichen)"},
+            {"cheats", "munition", "0", "1: unbegrenzte Munition (nur Spieler; Magazin und Vorrat bleiben stehen)"},
+            {"cheats", "kein_cooldown", "0",
+             "1: kein Schussabstand (ein Schuss je Takt), Magazin sofort aus dem Vorrat nachgefuellt\n"
+             "(kein Nachladen), Waffenwechsel ohne Senken/Heben (nur Spieler, die KI bleibt wie sie ist)"},
             {"ton", "an", "1", ""},
             {"ton", "gesamt", "1.0", "Lautstaerken (1.0 = wie das Spiel)"},
             {"ton", "musik", "1.0", ""},

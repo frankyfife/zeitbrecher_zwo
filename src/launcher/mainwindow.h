@@ -30,11 +30,12 @@ public:
     void show_page(int i);
 
 private:
-    static constexpr int kTabs = 6;
+    static constexpr int kTabs = 7;
     static QString tab_name(int i);
     QWidget* build_tab(int i);
     QWidget* build_header();
     QWidget* page_game();
+    QWidget* page_unlock();
     QWidget* page_graphics();
     QWidget* page_controls();
     QWidget* page_weapons();

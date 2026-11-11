@@ -46,6 +46,14 @@ void write_code(uint8_t* at, const void* bytes, size_t n) {
 }
 }  // namespace
 
+void* jump_stub(const Ts2Image& img, const void* fn) {
+    // jmp [rip+0] mit dem Ziel dahinter
+    uint8_t code[14] = {0xFF, 0x25, 0, 0, 0, 0};
+    const uint64_t to = reinterpret_cast<uint64_t>(fn);
+    std::memcpy(code + 6, &to, 8);
+    return stub_alloc(img, code, sizeof code);
+}
+
 void* hook_call(const Ts2Image& img, uint64_t call_va, uint64_t expected_target, const void* fn) {
     uint8_t* site = img.va(call_va);
     int32_t rel;
@@ -56,11 +64,7 @@ void* hook_call(const Ts2Image& img, uint64_t call_va, uint64_t expected_target,
             static_cast<unsigned long long>(call_va), static_cast<unsigned long long>(expected_target));
         return nullptr;
     }
-    // jmp [rip+0] mit dem Ziel dahinter
-    uint8_t code[14] = {0xFF, 0x25, 0, 0, 0, 0};
-    const uint64_t to = reinterpret_cast<uint64_t>(fn);
-    std::memcpy(code + 6, &to, 8);
-    uint8_t* stub = stub_alloc(img, code, sizeof code);
+    uint8_t* stub = static_cast<uint8_t*>(jump_stub(img, fn));
     if (!stub) return nullptr;
     const int32_t nrel = int32_t(int64_t(stub) - int64_t(site + 5));
     write_code(site + 1, &nrel, 4);  // Aufruf bleibt Aufruf, Sprung bleibt Sprung

@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "fake.h"
+#include "cheats.h"
 #include "features.h"
 #include "input.h"
 #include "ctxproxy.h"
@@ -40,6 +41,7 @@
 #include "menu.h"
 #include "menumouse.h"
 #include "subtitles.h"
+#include "fontfix.h"
 #include "watchdog.h"
 #include "levelfix.h"
 #include "hudfix.h"
@@ -941,7 +943,9 @@ int wmain(int argc, wchar_t** argv) {
     features_install(g_img, settings);
     timing_install(g_img, settings.tick_rate);
     unlock_install(g_img, load_unlock_config(self_dir() / L"ts2.ini"));
+    cheats_install(g_img, load_cheat_config(self_dir() / L"ts2.ini"));
     subtitles_install(g_img, self_dir() / L"ts2.ini");
+    fontfix_install(g_img);
     watchdog_install(g_img, self_dir() / L"ts2.ini");
     levelfix_install(g_img);
     hudfix_install(g_img, self_dir() / L"ts2.ini");
@@ -1097,6 +1101,7 @@ int wmain(int argc, wchar_t** argv) {
         }
         input_frame();
         features_tick(g_img, settings, gfx.wnd);
+        cheats_tick(g_img);
         if (!call_vfunc(obj, hf2::kTick, &devh)) {
             log("Takt %d ist abgestürzt\n", t);
             return 4;

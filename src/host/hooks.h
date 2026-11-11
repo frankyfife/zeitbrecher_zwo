@@ -14,6 +14,11 @@ namespace host {
 // Auch ein Sprung (E9 rel32, Endaufruf) geht.
 void* hook_call(const Ts2Image& img, uint64_t call_va, uint64_t expected_target, const void* fn);
 
+// Sprung (jmp [rip]) auf `fn` in der Stub-Seite, also in Reichweite eines
+// rel32 aus dem TS2-Code (z. B. als neues Ziel eines lea auf einen
+// Rückruf); nullptr bei Fehler.
+void* jump_stub(const Ts2Image& img, const void* fn);
+
 // Ersetzt den Befehl an `va` (genau `expected`, n ≥ 5 Byte) durch einen
 // Aufruf eines Code-Stücks `stub_code` (wird in die Stub-Seite kopiert, endet
 // mit ret) und füllt den Rest mit nop.

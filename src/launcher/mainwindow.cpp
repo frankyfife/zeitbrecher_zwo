@@ -226,7 +226,7 @@ void MainWindow::show_page(int i) {
 }
 
 QString MainWindow::tab_name(int i) {
-    static const char* const names[kTabs] = {"Spiel", "Grafik", "Steuerung", "Waffen", "Ton", "Über"};
+    static const char* const names[kTabs] = {"Spiel", "Freischalten", "Grafik", "Steuerung", "Waffen", "Ton", "Über"};
     return QString::fromUtf8(names[i]);
 }
 
@@ -235,10 +235,11 @@ QWidget* MainWindow::build_tab(int i) {
     tab_keys_[i].clear();
     switch (i) {
         case 0: return page_game();
-        case 1: return page_graphics();
-        case 2: return page_controls();
-        case 3: return page_weapons();
-        case 4: return page_sound();
+        case 1: return page_unlock();
+        case 2: return page_graphics();
+        case 3: return page_controls();
+        case 4: return page_weapons();
+        case 5: return page_sound();
         default: return page_about();
     }
 }
@@ -341,6 +342,22 @@ QWidget* MainWindow::page_game() {
     v->addWidget(setup_group());
     v->addWidget(language_group());
 
+    QGroupBox* dbg;
+    auto d = form_group(QStringLiteral("Debug-Optionen"), &dbg);
+    d.span(hint(QStringLiteral("Watchdog: meldet in ts2.log, wo das Spiel hängt, wenn es länger als die "
+                               "Wartezeit nicht weiterläuft (Fehlersuche, z. B. Robot Factory).")));
+    d.span(check(QStringLiteral("Watchdog"), "debug", "watchdog"));
+    d.add(QStringLiteral("Wartezeit"), spin("debug", "watchdog_ms", 200, 60000, QStringLiteral(" ms")));
+    v->addWidget(dbg);
+    return scroll_page(content, v);
+}
+
+// Freischaltungen ([freischalten]) und Cheats ([cheats], dazu die
+// Cheat-Schalter aus [freischalten])
+QWidget* MainWindow::page_unlock() {
+    auto* content = new QWidget;
+    auto* v = new QVBoxLayout(content);
+
     QGroupBox* box;
     auto f = form_group(QStringLiteral("Freischalten"), &box);
     f.span(hint(QStringLiteral("Ohne Haken: Fortschritt wie auf der Konsole – Level, Karten, Figuren und "
@@ -351,18 +368,20 @@ QWidget* MainWindow::page_game() {
     f.span(check(QStringLiteral("Alle Challenges"), "freischalten", "challenge"));
     f.span(check(QStringLiteral("Alle Figuren"), "freischalten", "figuren"));
     f.span(check(QStringLiteral("Hauptmenü mit „Options“"), "freischalten", "optionen"));
-    f.span(check(QStringLiteral("Alle Cheats/Extras"), "freischalten", "cheats"));
-    f.span(check(QStringLiteral("Unverwundbar"), "freischalten", "unverwundbar"));
     f.span(check(QStringLiteral("Alles (Figuren, Level, Extras)"), "freischalten", "alles"));
     v->addWidget(box);
 
-    QGroupBox* dbg;
-    auto d = form_group(QStringLiteral("Debug-Optionen"), &dbg);
-    d.span(hint(QStringLiteral("Watchdog: meldet in ts2.log, wo das Spiel hängt, wenn es länger als die "
-                               "Wartezeit nicht weiterläuft (Fehlersuche, z. B. Robot Factory).")));
-    d.span(check(QStringLiteral("Watchdog"), "debug", "watchdog"));
-    d.add(QStringLiteral("Wartezeit"), spin("debug", "watchdog_ms", 200, 60000, QStringLiteral(" ms")));
-    v->addWidget(dbg);
+    QGroupBox* cheats;
+    auto c = form_group(QStringLiteral("Cheats"), &cheats);
+    c.span(hint(QStringLiteral("Munition und Cooldown gelten nur für die Spieler, die Gegner bleiben wie sie "
+                               "sind. „Alle Cheats/Extras“ schaltet die Liste im Optionsmenü des Spiels frei "
+                               "(Optionen → Cheats, dort auch TS2s eigene „Infinite Ammo“ für alle).")));
+    c.span(check(QStringLiteral("Unbegrenzte Munition"), "cheats", "munition"));
+    c.span(check(QStringLiteral("Kein Cooldown (Schussabstand, Nachladen, Waffenwechsel)"), "cheats",
+                 "kein_cooldown"));
+    c.span(check(QStringLiteral("Unverwundbar"), "freischalten", "unverwundbar"));
+    c.span(check(QStringLiteral("Alle Cheats/Extras"), "freischalten", "cheats"));
+    v->addWidget(cheats);
     return scroll_page(content, v);
 }
 

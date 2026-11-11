@@ -266,4 +266,35 @@ constexpr uint64_t kPadMotor45 = 0x141144E24;      // int (pad): Pad +0x45
 // bewegen im Spiel nichts.
 constexpr uint64_t kControlDefaults = 0x1411DCBAC;
 
+// ---- Cheats (src/host/cheats.cpp; docs/host.md "Cheats")
+// TS2s eigene Cheats (Optionen → Cheats, 13 Stück, Tabelle 0x142507A58 je
+// 0x28, Text-Nr. davor): Bit i von 0x143F2F998 ist der Schalter (setzen
+// 0x141109FE8, löschen 0x141109FF8), wirksam nur zusammen mit "frei"
+// (0x141109F60 über 0x14111164C) und der Maske der Spielart 0x143F2F99C
+// (0x14110A07C). Bit 4 "Infinite Ammo" (Text 1422) prüft allein
+// 0x141126A80 vor dem Verbrauch, für jeden Schützen (auch die KI).
+// Verbrauch 0x1411213D8(Figur, Hand, Munitionsart, Menge, Art): Art 0/1 aus
+// dem Vorrat Figur +0x10A8 + 4·Art, sonst aus dem Magazin Hand +0x34 + 4·Art.
+// Aufrufe aus 0x141126A80 (Schüsse) und 0x141121424 (über 0x1411276E0).
+constexpr uint64_t kAmmoConsume = 0x1411213D8;
+constexpr uint64_t kAmmoConsumeCallShot = 0x141126B11;
+constexpr uint64_t kAmmoConsumeCallOther = 0x141121471;
+constexpr uint32_t kCharAmmoPool = 0x10A8;     // int32[] Vorrat je Munitionsart (Figur)
+// Hände der Figur (Figur = [Spieler +0x1C8] +0x140): +0xE0 und +0x680; je
+// Hand +0x30 Waffenzeile, +0x34 + 4·Art Magazin, +0xB8/+0xBC Takte seit dem
+// letzten Schuss je Feuermodus (der Handautomat 0x14112D4A0 feuert, wenn sie
+// den Abstand +0x10 bzw. beim Halten +0x14 des Modus erreichen).
+constexpr uint32_t kCharHands[2] = {0xE0, 0x680};
+constexpr uint32_t kHandRow = 0x30, kHandClip = 0x34, kHandSinceShot = 0xB8;
+// Waffe des Spielers (Handautomat, Spieler +0x1E8 für Hand +0xE0, +0x7B0 für
+// +0x680): +0x34 Zustand (1 halten, 2 senken, 3 tauschen, 4/5 Modell, 6 heben,
+// 7 nachladen), +0x38 Fortschritt (Senken/Heben 0 → 1 mit 20/7 je Sekunde).
+// Nachladen beginnt 0x141129D94 → 0x141125634, wenn das Magazin leer ist;
+// 0x141122DEC füllt am Ende über 0x141121A70 aus dem Vorrat nach.
+constexpr uint32_t kPlayerGuns[2] = {0x1E8, 0x7B0};
+constexpr uint32_t kGunState = 0x34, kGunProgress = 0x38;
+// Waffenzeile (ab kWeaponTable): +0x08 Munitionsart, +0x0C Magazingröße,
+// +0x10 zweite Munitionsart, +0x14 deren Schalter (0/1: ohne Magazin)
+constexpr uint32_t kRowAmmoType = 0x08, kRowClipSize = 0x0C, kRowAmmoType2 = 0x10, kRowClip2 = 0x14;
+
 }  // namespace hf2

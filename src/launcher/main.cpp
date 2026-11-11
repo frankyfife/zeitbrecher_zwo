@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
         return xboxtext::extract(pre[t + 1].toStdWString(), pre[t + 2].toStdWString()).error.empty() ? 0 : 1;
     MainWindow w;
     w.resize(1040, 820);
-    // --seite N: mit Reiter N öffnen (0 Spiel … 5 Über; für Tests)
+    // --seite N: mit Reiter N öffnen (0 Spiel, 1 Freischalten, 2 Grafik, 3 Steuerung, 4 Waffen, 5 Ton, 6 Über; für Tests)
     const QStringList args = app.arguments();
     const int i = int(args.indexOf(QStringLiteral("--seite")));
     if (i >= 0 && i + 1 < args.size()) w.show_page(args[i + 1].toInt());

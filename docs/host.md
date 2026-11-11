@@ -228,6 +228,42 @@ Options (Spieler, Ton, Abspann, Zwischensequenzen, Cheats) öffnen sich,
 "Zurück" führt ins Hauptmenü; die Story-Levelwahl zeigt mehr als zwei
 Level.
 
+## Cheats (`src/host/cheats.cpp`)
+
+`ts2.ini` [cheats] `munition`, `kein_cooldown` (Vorgabe 0; Launcher: Reiter
+„Freischalten“, Gruppe „Cheats“, dort auch Unverwundbar und Alle
+Cheats/Extras aus [freischalten]). Beide gelten nur für die Spieler (Figuren
+der Spielertabelle); Waffentabelle und KI bleiben unverändert.
+
+TS2s eigene Cheats (Optionen → Cheats, Tabelle `0x142507A58`, 13 Einträge)
+schaltet Bit i von `0x143F2F998`; wirksam nur, wenn der Cheat frei ist
+(`0x14111164C`) und die Spielart ihn erlaubt (`0x143F2F99C`). „Infinite
+Ammo“ (Bit 4) prüft allein `0x141126A80` vor dem Verbrauch, für jeden
+Schützen. Der eigene Cheat nutzt ihn deshalb nicht.
+
+**Munition:** Der Verbrauch `0x1411213D8(Figur, Hand, Art, Menge, Art2)`
+(Vorrat Figur +0x10A8 + 4·Art, Magazin Hand +0x34 + 4·Art; Aufrufe
+`0x141126B11`, `0x141121471`) wird für Spieler übersprungen.
+
+**Kein Cooldown:** vor jedem Takt, je Hand (Figur +0xE0/+0x680):
+- Schussabstand: Der Handautomat `0x14112D4A0` feuert, wenn die Takte seit
+  dem Schuss (+0xB8/+0xBC je Modus) den Abstand des Modus (+0x10 neu
+  gedrückt, +0x14 gehalten) erreichen; sie stehen mindestens auf dem größten
+  Abstand der Waffe: ein Schuss je Takt.
+- Nachladen: Das Magazin wird sofort aus dem Vorrat aufgefüllt (wie
+  `0x141121A70` am Ende des Nachladens, auch gleich nach jedem Schuss); es
+  wird nie leer, TS2 beginnt kein Nachladen (`0x141129D94` → `0x141125634`,
+  Zustand 7). Waffen ohne Magazin (Größe 0/1) bleiben wie sie sind.
+- Waffenwechsel: Die Waffe (Spieler +0x1E8/+0x7B0; +0x34 Zustand, +0x38
+  Fortschritt) springt beim Senken (2) und Heben (6) ans Ende: 4 Takte
+  statt 2 × 0,35 s.
+
+`TS2_WAFFENPROBE=1` protokolliert Schüsse, Magazin, Vorrat und Zustand der
+Waffe von Spieler 1. Geprüft (Siberia, Scharfschützengewehr): Magazin und
+Vorrat bleiben bei 5/5 über 30 Schüsse; ohne Munitions-Cheat 10 Schüsse in 10
+Takten, Magazin voll bis der Vorrat leer ist, kein Nachladen; Wechsel in 4
+statt 32 Takten; beide aus: Bild gleich wie vorher.
+
 ## Fortschritt (`src/host/profile.cpp`)
 
 TS2 führt den Fortschritt im Profil: 16 Profile je 0x20E4 Byte ab
@@ -288,6 +324,29 @@ den PC-Text. Geprüft: Hauptmenü ("Herausforderung", "Optionen",
 Texten ersetzt (ab Eintrag 2425 hat die Xbox-Tabelle einen Eintrag mehr; ts2.exe gleicht das aus, sonst stand am Container in Siberia "%d/%d Spieler"). Die Sprachausgabe bleibt englisch.
 
 Die Dateien aus `game/sprache` gehören nie ins Repository.
+
+## Schriften (`src/host/fontfix.cpp`)
+
+Vier Schriften ab `0x14259BF60` (je 0x30 Byte: +0 Texturname, +0x10
+Zeichentabelle: je Zeichen ab ' ' u16 x0,y0,x1,y1 in Pixeln der Textur und
+s8 y-Versatz, +0x18 Akzenttabelle für Umlaute, +0x20 Zeilenhöhe, +0x24
+Leerzeichen, +0x2C Texturnummer): impact, fontcaps (unbenutzt), book und
+booklight. 24 Stile ab `0x14259C020` (+0 Schrift, +8/+0xC Maßstab); laufend
+`*0x142F999E0` (Schrift) und `*0x142F999E8` (Stil). 0x14121CEC0 setzt die
+Schrift-Textur (Nummer `0x1424EDFF0`, Beschreiber `*0x142EE6510`) und ruft je
+Zeichen einen Rückruf mit Bildschirm-Rechteck und Texturrechteck in 1/16
+Pixel: 0x14121BEFC (Text, auch Umriss-Text 0x14121D740), 0x14121BF68
+(Verlauf) und 0x14121C418 (3D-Menüs). Die Rückrufe teilen durch die Größe
+des Beschreibers (+0x26/+0x2A), also der geladenen Textur. ts2.exe lenkt die
+vier `lea` auf diese Rückrufe (0x14121D574, 0x14121D5FD, 0x14121D6AE,
+0x14121DA06) auf Hüllen um: Ist die gesetzte Textur eine Schrift und größer
+als ihr Original (Größe aus dem SGI-Kopf der Originaldatei), werden u/v im
+Verhältnis vergrößert. Andere Texturen (Tastensymbole über Zeichen 0x0B)
+bleiben unberührt; Lage, Breiten und Zeilen ändern sich nicht. Die scharfen
+Schriften selbst erzeugt `tools/hd/make_fonts.py` (siehe
+docs/hd-texturen.md). Geprüft mit 4fachen Schriften: Hauptmenü,
+Pause-3D-Menü, Waffenname, Munition, Untertitel und Umlaute (ö, ü) an
+denselben Stellen wie vorher, scharf.
 
 ## Untertitel (`src/host/subtitles.cpp`)
 
