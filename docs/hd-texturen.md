@@ -211,3 +211,15 @@ python -I tools/hd/logo.py --zuruecksetzen --schein
 
 `--schein` erzeugt ts2glow aus dem neuen Alpha (Gauß, gegen das Original
 RMS 13/255), damit Menü-Schein und Feuer zum neuen Schriftzug passen.
+
+ts2glow formt auch das brennende Logo im ersten Bildschirm. Soll das so
+bleiben, erzeugt `--menueschein` statt `--schein` einen eigenen Schein nur
+für das Hauptmenü (`game/hd/ts2/textures/misc/ts2glow_menue.rgba`, Format
+"TS2R" + Breite/Höhe + RGBA8 in Zeilenfolge der .rgb): ts2.exe
+(`src/host/menulogo.cpp`) bindet ihn für die beiden ts2glow-Zeichnungen des
+Hauptmenüs (Schein 0x1410B5C76; Alpha-Maske für Feuer und dunklen Hof in
+0x1410B59A8, Aufruf 0x1410B5A55). Fehlt die Datei, bleibt alles wie bisher.
+Eigener Schriftzug des Nutzers: 1500×527 (2,85:1), unverzerrt auf
+1138×400 Bildpunkte bei y 35..435 in die Anzeigefläche gesetzt
+(`game/hd_eigen/logo/neu_schriftzug_3680x1080.png`), dann
+`--installieren … --menueschein`.

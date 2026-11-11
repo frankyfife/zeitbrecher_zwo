@@ -27,8 +27,11 @@ Aufrufe (aus dem Repo-Ordner):
       PNG -> game/hd_eigen/ts2/textures/misc/<textur>.rgb -> game/hd (alte Datei
       nach game/hd_backup); Größe 2:1 als Zweierpotenz bis 2048x1024, mit
       --groesse beliebig (1840x540 = 1:1 bei 1080 Zeilen, geprüft);
-      --schein erzeugt ts2glow passend zum neuen Schriftzug
-  python -I tools/hd/logo.py --zuruecksetzen [--textur ...]
+      --schein erzeugt ts2glow passend zum neuen Schriftzug (ändert auch das
+      brennende Logo im ersten Bildschirm); --menueschein erzeugt stattdessen
+      einen eigenen Schein nur für das Hauptmenü (ts2glow_menue.rgba,
+      src/host/menulogo.cpp), das brennende Logo bleibt wie es ist
+  python -I tools/hd/logo.py --zuruecksetzen [--textur ...] [--schein] [--menueschein]
   python -I tools/hd/logo.py --probe <bild.png>
       Prüfbild: Original 4fach (2048x1024) mit rotem Rahmen
 
@@ -114,7 +117,20 @@ def schein_aus(logo):
     return Image.merge('RGBA', [Image.fromarray(g)] * 4)
 
 
-def installieren(spiel, png, textur, schein, groesse=None):
+MENUESCHEIN = 'ts2glow_menue.rgba'
+
+
+def rgba_speichern(bild, pfad):
+    """eigenes Format für src/host/menulogo.cpp: "TS2R", Breite, Höhe (u32),
+    RGBA8 in der Zeilenfolge der .rgb-Dateien (unterste Zeile zuerst)"""
+    import struct
+    b = bild.convert('RGBA').transpose(Image.FLIP_TOP_BOTTOM)
+    with open(pfad, 'wb') as f:
+        f.write(b'TS2R' + struct.pack('<II', b.width, b.height))
+        f.write(b.tobytes())
+
+
+def installieren(spiel, png, textur, schein, groesse=None, menueschein=False):
     hd = make_hd()
     im = Image.open(png)
     im.load()
@@ -146,6 +162,13 @@ def installieren(spiel, png, textur, schein, groesse=None):
         hd.sgi_speichern(b.transpose(Image.FLIP_TOP_BOTTOM), p)
         print(f'  {p}  {b.width}x{b.height} RGBA')
     hd.installieren(spiel, ['misc/' + n for n, _ in bilder])
+    if menueschein:
+        g = schein_aus(im)
+        for wurzel in ('hd_eigen', 'hd'):
+            p = os.path.join(spiel, wurzel, MISC, MENUESCHEIN)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            rgba_speichern(g, p)
+            print(f'  {p}  {g.width}x{g.height} (Schein nur im Hauptmenü)')
 
 
 def probe(spiel, ausgabe):
@@ -168,6 +191,8 @@ def main():
     ap.add_argument('--installieren', metavar='PNG', help='PNG als Ersatztextur einspielen')
     ap.add_argument('--textur', default='ts2newlogo', choices=TEXTUREN, help='welche Textur (Standard ts2newlogo)')
     ap.add_argument('--schein', action='store_true', help='ts2glow aus dem neuen Schriftzug erzeugen und mit einspielen')
+    ap.add_argument('--menueschein', action='store_true',
+                    help='eigenen Schein nur für das Hauptmenü erzeugen (brennendes Logo bleibt)')
     ap.add_argument('--groesse', metavar='BxH', help='Texturgröße erzwingen, z. B. 1840x540 (Standard: 2:1, Zweierpotenz)')
     ap.add_argument('--zuruecksetzen', action='store_true', help='game/hd aus game/hd_backup wiederherstellen')
     ap.add_argument('--probe', metavar='PNG', help='Prüfbild (4fach, Rahmen) schreiben')
@@ -179,9 +204,14 @@ def main():
         export(spiel, args.ziel or os.path.join(spiel, 'hd_eigen', 'logo'))
     elif args.installieren:
         groesse = tuple(int(x) for x in args.groesse.lower().split('x')) if args.groesse else None
-        installieren(spiel, args.installieren, args.textur, args.schein, groesse)
+        installieren(spiel, args.installieren, args.textur, args.schein, groesse, args.menueschein)
     elif args.zuruecksetzen:
         make_hd().zuruecksetzen(spiel, ['misc/' + args.textur] + (['misc/ts2glow'] if args.schein else []))
+        if args.menueschein:
+            p = os.path.join(spiel, 'hd', MISC, MENUESCHEIN)
+            if os.path.exists(p):
+                os.remove(p)
+                print(f'  entfernt: {p}')
     elif args.probe:
         probe(spiel, args.probe)
     else:
