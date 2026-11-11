@@ -1072,7 +1072,15 @@ int wmain(int argc, wchar_t** argv) {
     QueryPerformanceCounter(&q0);
     double ft_sum = 0, ft_min = 1e9, ft_max = 0;
     int ft_n = 0, ft_slow = 0;
+    // Spielspeicher (Arena, 0x1411A9A10): frei bleibt der Abstand zwischen
+    // unten (0x142F438E8) und oben (0x142F438F8) belegtem Teil, gezählt in
+    // 0x142F438E4; Größe 0x1424E23D8. Das Minimum zeigt den höchsten Bedarf.
+    const int32_t* arena_free = g_img.va<int32_t>(0x142F438E4);
+    const uint32_t arena_size = *g_img.va<uint32_t>(0x1424E23D8);
+    int32_t arena_min = INT32_MAX, arena_min_all = INT32_MAX;
     auto frame_stats = [&] {
+        // 0: Arena noch nicht angelegt oder gerade neu aufgesetzt (Levelwechsel)
+        if (*arena_free > 0) arena_min = std::min(arena_min, *arena_free);
         LARGE_INTEGER q;
         QueryPerformanceCounter(&q);
         const double ms = double(q.QuadPart - q0.QuadPart) * 1000.0 / double(qf.QuadPart);
@@ -1084,6 +1092,11 @@ int wmain(int argc, wchar_t** argv) {
         if (++ft_n == 600) {
             log("[bild] 600 Bilder: Mittel %.2f ms (%.1f fps), %.2f-%.2f ms, %d über 20 ms\n", ft_sum / ft_n,
                 1000.0 * ft_n / ft_sum, ft_min, ft_max, ft_slow);
+            arena_min_all = std::min(arena_min_all, arena_min);
+            log("[speicher] Spielspeicher %u MB: frei %.1f MB, seit dem letzten Eintrag mindestens %.1f MB, "
+                "seit Start mindestens %.1f MB\n", arena_size >> 20, *arena_free / 1048576.0,
+                arena_min / 1048576.0, arena_min_all / 1048576.0);
+            arena_min = INT32_MAX;
             ft_sum = 0, ft_min = 1e9, ft_max = 0, ft_n = 0, ft_slow = 0;
         }
     };

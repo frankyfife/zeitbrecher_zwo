@@ -347,6 +347,13 @@ Schriften selbst erzeugt `tools/hd/make_fonts.py` (siehe
 docs/hd-texturen.md). Geprüft mit 4fachen Schriften: Hauptmenü,
 Pause-3D-Menü, Waffenname, Munition, Untertitel und Umlaute (ö, ü) an
 denselben Stellen wie vorher, scharf.
+Speicher: Die drei 4fachen Schriften liegen dauerhaft im Spielspeicher
+(Arena, 192 MB) und belegen 7 MB mehr als die Originale (7,6 statt 0,5 MB).
+Gemessen mit dem Protokolleintrag `[speicher]` (alle 600 Bilder, freier Teil
+der Arena `0x142F438E4`): belegt im Menü 36,5 statt 29,5 MB, Siberia 64 statt
+57 MB, Chicago 65 statt 58 MB; frei bleiben rund 127 MB. Die D3D-Texturen
+werden ersetzt, nicht zusätzlich angelegt (Tabelle mit 4096 Plätzen
+unverändert).
 
 ## Untertitel (`src/host/subtitles.cpp`)
 
