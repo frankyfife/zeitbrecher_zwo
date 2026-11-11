@@ -180,3 +180,22 @@ SVGs und Texturen sind aus Spieldaten abgeleitet: nie committen.
 python -I tools/hd/make_fonts.py
 python -I tools/hd/make_fonts.py --installieren
 ```
+
+## Schriftzug im Hauptmenü (`tools/hd/logo.py`)
+
+Das Hauptmenü (0x1410B5A8C) zeichnet misc/ts2newlogo (Schriftzug, Form im
+Alpha) und darüber misc/ts2glow (Schein, RGB = Alpha, additiv; formt auch
+das brennende Logo), beide 512×256 RGBA, als Viereck x 40..1880,
+y −48..492 (1840×540, 3,41:1; Textur 2:1, waagerecht 1,70fach gestreckt,
+oberste 48 Zeilen außerhalb). Keine HD-Fassung (Redux ohne Logo).
+TS2 nimmt die Größe aus der Datei; 2048×1024 und 1840×540 (keine
+Zweierpotenz) sind geprüft. TS2s .rgb stehen für Pillow auf dem Kopf.
+
+```
+python -I tools/hd/logo.py --export        # PNGs + README nach game/hd_eigen/logo
+python -I tools/hd/logo.py --installieren neu.png --schein [--groesse 1840x540]
+python -I tools/hd/logo.py --zuruecksetzen --schein
+```
+
+`--schein` erzeugt ts2glow aus dem neuen Alpha (Gauß, gegen das Original
+RMS 13/255), damit Menü-Schein und Feuer zum neuen Schriftzug passen.

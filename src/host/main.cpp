@@ -37,6 +37,7 @@
 #include "shadowfix.h"
 #include "alphafix.h"
 #include "effectfix.h"
+#include "logofix.h"
 #include "fixes.h"
 #include "menu.h"
 #include "menumouse.h"
@@ -997,9 +998,11 @@ int wmain(int argc, wchar_t** argv) {
     }
     // Bildschirmeffekte (Regentropfen, Kamera, Licht; effectfix.h)
     static const bool effect_on = effectfix_install(g_img, gfx.dev);
-    const bool use_proxy = g_dump_tick >= 0 || shadow_on || alpha_on || effect_on;
+    // brennendes Logo im ersten Bildschirm (logofix.h)
+    static const bool logo_on = logofix_init(g_img, gfx.dev);
+    const bool use_proxy = g_dump_tick >= 0 || shadow_on || alpha_on || effect_on || logo_on;
     if (use_proxy) {
-        static bool shadow_drawn = false, alpha_drawn = false, effect_drawn = false;
+        static bool shadow_drawn = false, alpha_drawn = false, effect_drawn = false, logo_drawn = false;
         proxy.on_blend = [](ID3D11BlendState* st, const FLOAT*) { g_cur_blend = st; };
         proxy.on_draw = [](ID3D11DeviceContext* real, UINT n, UINT st, INT b) {
             if (g_dump_tick >= 0 && !draw_probe(real, n, st, b)) return false;
@@ -1008,12 +1011,14 @@ int wmain(int argc, wchar_t** argv) {
             shadow_drawn = shadow_on && alpha_blend && shadowfix_before(real);
             alpha_drawn = alpha_on && alpha_blend && !shadow_drawn && alphafix_before(real);
             effect_drawn = effect_on && !shadow_drawn && effectfix_before(real);
+            logo_drawn = logo_on && logofix_before(real);
             return true;
         };
         proxy.after_draw = [](ID3D11DeviceContext* real) {
             if (shadow_drawn) shadowfix_after(real), shadow_drawn = false;
             if (alpha_drawn) alphafix_after(real), alpha_drawn = false;
             if (effect_drawn) effectfix_after(real), effect_drawn = false;
+            if (logo_drawn) logofix_after(real), logo_drawn = false;
         };
         proxy.on_clear = [](ID3D11RenderTargetView* v, const FLOAT* c) {
             if (g_tick_now == g_dump_tick)

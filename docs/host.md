@@ -264,6 +264,28 @@ Vorrat bleiben bei 5/5 über 30 Schüsse; ohne Munitions-Cheat 10 Schüsse in 10
 Takten, Magazin voll bis der Vorrat leer ist, kein Nachladen; Wechsel in 4
 statt 32 Takten; beide aus: Bild gleich wie vorher.
 
+## Brennendes Logo (`src/host/logofix.cpp`)
+
+Der erste Bildschirm (0x1410B5800, Xbox PAL 0x88CB0, gleiche Logik) zeichnet
+400 Feuerteilchen (Klasse 1, misc/fireb1..8, Mischart 3) nur in den
+Alphakanal (0x14122A6A0: gesetzte Bytes sperren Kanäle), dann misc/ts2glow
+mit DEST_ALPHA/ONE nur in RGB: sichtbar ist Schein × Ziel-Alpha. Auf dem PC
+leuchtete ein Drittel der Fläche mit halber Helligkeit:
+- Teilchengröße (0x14112F3C0: (Alter·[+0x3C]+[+0x38])·Kamera+0x27C/z,
+  höchstens [+0x40]) zählt in Bildpunkten der 640×480-Konsolensicht; der
+  Port rechnet nur die Lage auf 1920×1080 um. Teilchen 2,25-mal zu klein.
+- Xbox Art 7: ALPHAREF 0x7E (GREATER) statt 0,33; ihre Art 0 lässt den
+  Alpha-Test an, auch für den Schein (PC: aus).
+
+ts2.exe lenkt die Aufrufe 0x1410B586F (Teilchen) und 0x1410B58EF (Schein)
+um: Größe und Obergrenze × Bildhöhe/480, alphaRef 127/255 (0x14259D554),
+danach zurück. TS2_LOGOFIX=0 aus; TS2_LOGOPROBE=<n> schreibt beim n-ten
+Bild Ziel-Alpha und Farbe vor/nach dem Schein. Gemessen (Takte 100–200):
+leuchtende Fläche 2,0 % → 4,6 % (Xbox 5,6 %), Rot-Median 36 → 67 (Xbox 65).
+Hauptmenü und Siberia unverändert. Nicht übernommen: die Logos
+FREE RADICAL/EIDOS der Xbox (0x88D8A–0x88E2C, im PC-Code entfernt).
+Vermutlich sind alle Teilchen dieses Systems im Port zu klein (ungeprüft).
+
 ## Beenden (`src/host/quit.cpp`)
 
 Die Aktion von "Quit" im Hauptmenü (`0x1410C0D80`) setzt nur ein Flag
