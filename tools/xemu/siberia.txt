@@ -1,0 +1,52 @@
+# Beispiel: Xbox-PAL-Fassung vom Start bis Story -> Siberia (Normal), dort kurz steuern.
+# Aufruf:  python -I tools/xemu/xemu_skript.py tools/xemu/siberia.txt
+# Vergleichsbilder (ref/*.png) liegen im Arbeitsordner game/xemu/ref (nicht im Repo).
+# 'warte' setzt die Uhr auf den Treffer; folgende '+x'-Zeiten zählen ab dort.
+
+0     serie 1.0
+0     warte ref/titel.png 440,560,840,760 max=10 frist=40
++0.8  tippe START                      # Titel: 1 Spieler
++0.3  warte ref/controller.png 400,300,880,380 max=12 frist=15
++0.8  tippe A                          # Controller 1
++0.3  warte ref/spieler1.png 380,300,900,440 max=12 frist=15
++0.8  tippe A                          # Neuer Spieler
++0.3  warte ref/namen.png 400,300,880,380 max=10 frist=15
++0.8  tippe A                          # vorgeschlagener Name (zufällig) -> ENDE
++0.3  warte ref/festplatte.png 380,300,900,420 max=12 frist=15
++0.8  tippe A                          # Festplatte; Profil wird gespeichert
++0.3  warte ref/hauptmenue.png 480,350,800,720 max=12 frist=20
++0.8  tippe A                          # Story -> Vorspann (über 60 s), mit A überspringen:
++4    tippe A
++2    tippe A
++2    tippe A
++2    tippe A
++2    tippe A
+0.9   warte ref/level.png 100,100,700,160 max=5 frist=60
++0.8  tippe A                          # Level 1 (Sibirien)
++0.3  warte ref/schwierigkeit.png 100,100,700,160 max=5 frist=15
++0.8  tippe A                          # Normal
++0.3  warte ref/briefing.png 100,100,700,160 max=9 frist=15
++0.8  tippe A                          # Einsatzbesprechung bestätigen -> Laden, Zwischensequenz
++8    tippe A                          # Zwischensequenz in Sibirien überspringen
++2    tippe A
++2    tippe A
+0.9   warte ref/siberia_tunnel.png 0,0,1280,960 max=12 frist=50   # Spiel läuft (Tunnel, Uplink in der Hand)
+0     speichere siberia_start          # Zustand -> game/xemu/zustand_siberia_start.qcow2
+# --- im Level: Spieler steuern (gleich wie in siberia_steuern.txt) ---
+0     serie 0.25 12
+0     bild start
+0.5   halte LS_HOCH                    # vorwärts
+3.5   lasse LS_HOCH
+3.6   halte RS_RECHTS                  # nach rechts drehen
+4.4   lasse RS_RECHTS
+4.5   tippe RT 0.2                     # schießen
+5.0   tippe RT 0.2
+5.5   tippe RT 0.2
+6.0   halte RS_LINKS                   # zurück nach links drehen
+7.6   lasse RS_LINKS
+7.7   halte LS_HOCH+RT                 # vorwärts und Dauerfeuer
+9.7   lasse alle
+10.0  tippe Y                          # Y (Waffenwechsel, falls belegt)
+11.0  tippe RT 0.5
+12    bild ende
+12.5  ende

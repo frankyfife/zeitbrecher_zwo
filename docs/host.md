@@ -1040,6 +1040,22 @@ geprüft.
 - **Offen:** Raster mit Spalten (falls es sie gibt; in den geprüften Menüs
   keine), Schieberegler, ein eigener Zeiger.
 
+## Xbox-Vergleich mit xemu (`tools/xemu/`)
+
+`tools/xemu/xemu_skript.py` startet die Xbox-PAL-Fassung in xemu (eigene
+Konfiguration und HDD-Kopie unter `game/xemu/`, Fenster 1280×960, Port 1 =
+Tastatur; die Konfiguration und Festplatte des Nutzers bleiben unberührt),
+steuert sie per Skript (Zeitpunkte in Sekunden, `tippe/halte/lasse`,
+Bildvergleich `warte` für Menüs) und schreibt PNG-Serien nach
+`game/xemu_ref/`. Zustände werden per QMP `savevm`/`loadvm` gesichert
+(`speichere NAME` bzw. `--laden NAME`); `siberia_start` steht am
+Spielbeginn in Siberia (Normal). Ab einem Zustand ohne Eingaben sind
+Aufnahmen pixelgleich; mit Eingaben kann es ±1 Spielbild (20 ms, PAL 50 Hz)
+Versatz geben, deshalb Vergleichsszenen als Zustand sichern und ohne oder
+mit kurzen Eingaben aufnehmen. Die PC-Entsprechung ist das Siberia-Skript
+mit `--eingabe` (Takt ~4400). Während eines Laufs braucht xemu die
+Tastatur. Bedienung: `tools/xemu/README.md`.
+
 ## Watchdog (`src/host/watchdog.cpp`)
 
 `ts2.ini` `[debug] watchdog=1` (Launcher: Spiel → Debug-Optionen) oder

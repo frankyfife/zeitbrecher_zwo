@@ -1,0 +1,21 @@
+# Ab gesichertem Zustand im Tunnel von Siberia (erst siberia.txt laufen lassen):
+#   python -I tools/xemu/xemu_skript.py tools/xemu/siberia_steuern.txt --laden siberia_start
+# Zeiten in Sekunden ab dem Laden des Zustands.
+# --- im Level: Spieler steuern (gleich wie in siberia_steuern.txt) ---
+0     serie 0.25 12
+0     bild start
+0.5   halte LS_HOCH                    # vorwärts
+3.5   lasse LS_HOCH
+3.6   halte RS_RECHTS                  # nach rechts drehen
+4.4   lasse RS_RECHTS
+4.5   tippe RT 0.2                     # schießen
+5.0   tippe RT 0.2
+5.5   tippe RT 0.2
+6.0   halte RS_LINKS                   # zurück nach links drehen
+7.6   lasse RS_LINKS
+7.7   halte LS_HOCH+RT                 # vorwärts und Dauerfeuer
+9.7   lasse alle
+10.0  tippe Y                          # Y (Waffenwechsel, falls belegt)
+11.0  tippe RT 0.5
+12    bild ende
+12.5  ende
