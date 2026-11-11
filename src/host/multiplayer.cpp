@@ -448,9 +448,12 @@ void set_mul_target(uint64_t ins_va, uint64_t float_va, bool on) {
     FlushInstructionCache(GetCurrentProcess(), ins, 8);
 }
 
+void set_pause_layout(bool mp);  // unten (Pausenmenü)
+
 void apply_mp_layout(int n) {
     const bool mp = n > 1;
     set_radar_mp(mp);
+    set_pause_layout(mp);
     set_mul_target(kPortraitMul1, kFloat1, mp);
     set_mul_target(kPortraitMul2, kFloat1, mp);
     fixes_original(kFwRows, kFwRows, mp);
@@ -589,49 +592,55 @@ void jump_tick(int p, bool down) {
     }
 }
 
-// 2D in Teilansichten. TS2 zeichnet HUD, Texte und Bildschirmeffekte mit
-// Bildschirmkoordinaten (Konsole: vortransformierte Ecken, die der
-// Bildausschnitt nur beschneidet). Der PC-Port rechnet sie im Zeichnen
-// 0x141229434 (spec-Bit 0x20) mit einer festen Matrix für 1920×1080 in den
-// Clip-Raum um (Maßstab 0x141220700 mit 2/1920, −2/1080, Verschiebung
-// 0x1412206CC mit −1, 1); das gilt nur für eine Ansicht über das ganze Bild.
-// In einer Teilansicht landete das HUD von Spieler 1 halb so hoch in der
-// oberen Hälfte, und das Nachbild der Sichtart (Kopie des vorigen Bilds,
-// über die ganze Ansicht) lag verkleinert als Geisterbild darüber. Mit
-// mehreren Spielern bildet die Matrix die Bildschirmkoordinaten deshalb auf
-// den gesetzten Bildausschnitt ab (Ziel W×H, Ausschnitt x, y, w, h):
-//   sx' = sx·W/w,  tx' = (tx+1)·W/w − 2x/w − 1
-//   sy' = sy·H/h,  ty' = ty·H/h + 1 − H/h + 2y/h
-// Über das ganze Bild ist das die Original-Matrix.
-constexpr uint64_t kOrtho2dTranslateCall = 0x141229681, kMatTranslate = 0x1412206CC;
-using MatTranslateFn = void (*)(float* m, float tx, float ty, float tz);
-MatTranslateFn g_mat_translate = nullptr;
+// 2D in Teilansichten. TS2 zeichnet HUD, Texte, Menübögen und
+// Bildschirmeffekte mit Bildschirmkoordinaten (Konsole: vortransformierte
+// Ecken, die nur die Schere beschneidet, nicht der Bildausschnitt). Der
+// PC-Port rechnet sie im Zeichenzustand 0x141229434 (spec-Bit 0x20) mit einer
+// festen Matrix für 1920×1080 in den Clip-Raum um (Maßstab 0x141220700,
+// Verschiebung 0x1412206CC) und zeichnet sie im gesetzten Bildausschnitt
+// (0x14122AA04, einziger Aufruf 0x141088C88 aus "Ansicht setzen"
+// 0x141223230). In einer Teilansicht wurde 2D dadurch in den Ausschnitt
+// gestaucht (HUD halb so hoch, Nachbild der Sichtart als verkleinertes
+// Geisterbild) und an seinen Rändern abgeschnitten. Mit mehreren Spielern
+// merkt sich ts2.exe den Ausschnitt des Spiels und setzt vor jeder Zeichnung
+// (Aufrufe von 0x141229434 bei 0x141229953 und 0x141229EB4) für 2D einen
+// Ausschnitt über das ganze Ziel, für 3D wieder den des Spiels: 2D liegt in
+// Bildschirmpixeln wie auf der Konsole und wird nur von der Schere des
+// Spiels begrenzt. (Vorher bildete ts2.exe die 2D-Matrix beim Bau auf den
+// Ausschnitt ab; die Matrix wird aber nur bei neuer Zeichenart gebaut, so
+// dass nach einem Wechsel des Ausschnitts die des vorigen galt: Bögen des
+// Pausenmenüs verschoben und gestaucht.) TS2_MP2D_ALT=1 zeigt 2D wie im
+// PC-Port (im Ausschnitt gestaucht).
+constexpr uint64_t kSetViewport = 0x14122AA04, kSetViewportCall = 0x141088C88;
+constexpr uint64_t kDrawState = 0x141229434, kDrawStateCall1 = 0x141229953, kDrawStateCall2 = 0x141229EB4;
+using SetViewportFn = void (*)(int x, int y, int w, int h, float zmin, float zmax);
+using DrawStateFn = void (*)(uint32_t spec);
+SetViewportFn g_set_viewport = nullptr;
+DrawStateFn g_draw_state = nullptr;
+struct GameViewport {
+    int x, y, w, h;
+    float zmin, zmax;
+} g_game_vp{};
+bool g_vp_full = false;  // gerade gesetzt: Ausschnitt über das ganze Ziel (für 2D)
+bool g_2d_alt = false;   // TS2_MP2D_ALT
 
-void ortho2d_translate_hook(float* m, float tx, float ty, float tz) {
-    g_mat_translate(m, tx, ty, tz);
-    static const bool off = GetEnvironmentVariableW(L"TS2_MP2D_ALT", nullptr, 0) > 0;  // Vergleich: wie vorher
-    if (g_players <= 1 || off) return;
-    void** holder = *g_img->va<void**>(0x143020AD0);
-    auto* ctx = holder ? static_cast<ID3D11DeviceContext*>(holder[0]) : nullptr;
-    auto* rtv = *g_img->va<ID3D11RenderTargetView*>(kRtv);
-    if (!ctx || !rtv) return;
-    D3D11_VIEWPORT vp{};
-    UINT n = 1;
-    ctx->RSGetViewports(&n, &vp);
-    if (n < 1 || vp.Width <= 0.0f || vp.Height <= 0.0f) return;
-    ID3D11Resource* res = nullptr;
-    rtv->GetResource(&res);
-    D3D11_TEXTURE2D_DESC d{};
-    if (ID3D11Texture2D* tex = nullptr; res && SUCCEEDED(res->QueryInterface(&tex))) tex->GetDesc(&d), tex->Release();
-    if (res) res->Release();
-    const float W = float(d.Width), H = float(d.Height);
-    if (W <= 0.0f || H <= 0.0f) return;
-    if (vp.TopLeftX == 0.0f && vp.TopLeftY == 0.0f && vp.Width == W && vp.Height == H) return;
-    const float kx = W / vp.Width, ky = H / vp.Height;
-    m[0] *= kx;                                                            // +0x00 sx
-    m[5] *= ky;                                                            // +0x14 sy
-    m[12] = (m[12] + 1.0f) * kx - 2.0f * vp.TopLeftX / vp.Width - 1.0f;   // +0x30 tx
-    m[13] = m[13] * ky + 1.0f - ky + 2.0f * vp.TopLeftY / vp.Height;     // +0x34 ty
+void set_viewport_hook(int x, int y, int w, int h, float zmin, float zmax) {
+    g_set_viewport(x, y, w, h, zmin, zmax);
+    g_game_vp = {x, y, w, h, zmin, zmax};
+    g_vp_full = false;
+}
+
+void draw_state_hook(uint32_t spec) {
+    if (g_players > 1 && !g_2d_alt && g_game_vp.w > 0) {
+        const bool want_full = (spec & 0x20) != 0;
+        if (want_full != g_vp_full) {
+            const GameViewport& v = g_game_vp;
+            if (want_full) g_set_viewport(0, 0, 0x780, 0x438, v.zmin, v.zmax);
+            else g_set_viewport(v.x, v.y, v.w, v.h, v.zmin, v.zmax);
+            g_vp_full = want_full;
+        }
+    }
+    g_draw_state(spec);
 }
 
 // Teilansicht löschen: Farbe nur im Rechteck (ClearView, D3D 11.1), Tiefe
@@ -671,6 +680,175 @@ void clear_hook(int x0, int y0, int x1, int y1, uint32_t rgba) {
         auto* ctx = holder ? static_cast<ID3D11DeviceContext*>(holder[0]) : nullptr;
         if (ctx) ctx->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
     }
+}
+
+// ---- Pausenmenü in Teilansichten
+// TS2 rechnet das Pausenmenü (und die anderen 3D-Menüs: Tod, Levelende,
+// Spielende) wie auf der Xbox: Menüansicht (Menüspieler *0x143F359D0 +0x27C)
+// = Ansicht des Spielers, mit einem Spieler 10 % Rand oben/unten. Mit
+// mehreren Spielern rückt 0x14122AF60(Ziel, 0) sie an den Bildschirmrändern
+// um 38 Pixel ein (Fernseh-Rand; nur die Kanten, die am Bildschirmrand
+// liegen) und setzt sie als aktuelle Ansicht: in der Aktualisierung
+// (0x1411B8FC0, Aufruf 0x1411B93CD) für Projektion und Texte, beim Zeichnen
+// (0x1411B1700, Aufruf 0x1411B1741) für Bildausschnitt, Bögen, Balken und
+// Texte. Die 38 sind Xbox-Pixel (640×480, auch im Xbox-Code 38,0); der
+// PC-Port rechnet in 1920×1080 und rückt ebenfalls nur 38 ein. Die
+// Menüansicht war dadurch im Verhältnis höher und breiter als auf der Xbox:
+// Überschrift (Balkenmitte v = 0,45, Bildschirm y = Mitte − Halbhöhe·1,732·v)
+// am oberen Rand der Ansicht, vom Bildausschnitt abgeschnitten. Mit
+// mehreren Spielern rückt ts2.exe deshalb um 38·1920/640 = 114 bzw.
+// 38·1080/480 = 85,5 Pixel ein (gleiche Anteile wie auf der Xbox).
+constexpr uint64_t kSafeView = 0x14122AF60, kSafeViewCallUpdate = 0x1411B93CD, kSafeViewCallDraw = 0x1411B1741;
+constexpr uint64_t kViewSet = 0x141222FF4;   // (Ansicht, x0, y0, x1, y1): setzt Mitte, Größen, Merker
+constexpr uint64_t kCurView = 0x143F0F508;   // Ansicht* (aktuelle)
+using SafeViewFn = void (*)(int32_t* dst, int flag);
+using ViewSetFn = void (*)(int32_t* view, int x0, int y0, int x1, int y1);
+SafeViewFn g_safe_view = nullptr;
+bool g_pause_alt = false;  // TS2_PAUSE_ALT: Pausenmenü wie vorher (Vergleich)
+
+void safe_view_hook(int32_t* dst, int flag) {
+    const int32_t* src = *g_img->va<int32_t*>(kCurView);
+    int32_t s[7] = {};
+    if (src) std::memcpy(s, src, sizeof s);
+    g_safe_view(dst, flag);
+    if (g_players <= 1 || g_pause_alt || !src || *g_img->va<int32_t*>(kCurView) != dst) return;
+    // eingerückte Kanten (Ansicht: +0 x0, +4 x1, +0x14 y0, +0x18 y1)
+    constexpr int kx = 114, ky = 85;  // 38 Xbox-Pixel in 1920×1080
+    const int x0 = dst[0] != s[0] ? s[0] + kx : s[0];
+    const int x1 = dst[1] != s[1] ? s[1] - kx : s[1];
+    const int y0 = dst[5] != s[5] ? s[5] + ky : s[5];
+    const int y1 = dst[6] != s[6] ? s[6] - ky : s[6];
+    if (x1 <= x0 || y1 <= y0) return;
+    reinterpret_cast<ViewSetFn>(g_img->va<void>(kViewSet))(dst, x0, y0, x1, y1);
+}
+
+// Bögen und Sicheln des Pausenmenüs (0x14113C478, Aufruf 0x1411B17F6, wie
+// Xbox 0xC4F80): halbe Breite = (562 bis 2, 300 ab 3 Spielern) · 3 · 0,5 ·
+// (1,2 bzw. 1,08) · Maßstab, halbe Höhe = (220 mit mehreren Spielern, 340
+// allein; mov ecx, 0xDC bei 0x14113C53A, lea edx, [rcx+0x78]) · 2,109375 ·
+// 0,5 · Maßstab; Mitte = Mitte der eingerückten Ansicht. TS2 Redux (Gruppe
+// "anzeige") setzt 0xDC auf 0xFF (allein 375). Gemessen (2 Spieler, 2D
+// unverstaucht): Breite wie Xbox (Ring 0,46 der Ansichtsbreite), Höhe aber
+// 0,65 der Ansichtshöhe statt 0,46 (Xbox): Ring und Sicheln ragten oben und
+// unten aus der Ansicht. Allein staucht die 2D-Abbildung in die Menüansicht
+// (80 % der Bildhöhe) sie, daher dort passend. Mit mehreren Spielern lädt
+// der Befehl 180 (Ring 0,46 der Höhe wie auf der Xbox); allein bleibt der
+// Wert von Redux.
+constexpr uint64_t kArcHeightImm = 0x14113C53B;  // imm32 von mov ecx, 0xDC
+constexpr int32_t kArcHeightMp = 180;
+void set_arc_height(bool mp) {
+    const uint8_t* ins = g_img->va<const uint8_t>(kArcHeightImm - 1);
+    if (ins[0] != 0xB9 || ins[5] != 0x8D) return;
+    static const int32_t orig = *reinterpret_cast<const int32_t*>(ins + 1);  // Redux: 255
+    write_imm(kArcHeightImm, mp && !g_pause_alt ? kArcHeightMp : orig);
+}
+
+// Abstände der 2D-Teile (Seitenstriche, Pfeile, Kopfzeilen) von den
+// Bildschirmrändern im Mehrspieler: 0x14122AD80(–, &links, &oben, &rechts,
+// &unten) liefert je nach Spielerzahl und Menüspieler (*0x143F1A388) 0 oder
+// ±48, 0x14122AE48(–, &x, &y) die Ansichtsmitte ±24 (Hintergrund
+// 0x1411AD084). Auch das sind Xbox-Pixel, im PC-Port unverändert: Pfeil
+// und Seitenstriche saßen in 1080 Zeilen nahe am oberen Rand, die Striche
+// über statt unter der Überschrift. ts2.exe ersetzt beide (gleiche Logik)
+// und rechnet mit mehreren Spielern waagrecht ·3, senkrecht ·2,25; mit einem
+// Spieler liefern sie wie bisher 0 bzw. die Ansichtsmitte. Die Seitenstriche
+// (0x1411AC9CC) liegen mit mehreren Spielern bei oben + 28 bzw. 38
+// (addss/movss bei 0x1411ACC1D/0x1411ACC27); mit mehreren Spielern zeigen
+// die beiden Befehle auf vorhandene Werte 63,0 (0x1421D4440) und 85,0
+// (0x14210ED18).
+constexpr uint64_t kEdgeOffsets = 0x14122AD80, kViewCenter = 0x14122AE48;
+constexpr uint64_t kLocalPlayers = 0x1411C1668, kMenuPlayerIndex = 0x143F1A388;
+constexpr uint64_t kDashTopAdd = 0x1411ACC1D, kDashTopMov = 0x1411ACC27;  // F3 0F 58/10 15 disp32
+constexpr uint64_t kFloat63 = 0x1421D4440, kFloat85 = 0x14210ED18, kFloat28 = 0x14213D728, kFloat38 = 0x1421DC9C4;
+
+int local_players() { return reinterpret_cast<int (*)()>(g_img->va<void>(kLocalPlayers))(); }
+int menu_player() {
+    const int32_t* p = *g_img->va<int32_t*>(kMenuPlayerIndex);
+    return p ? *p : 0;
+}
+bool pause_scaled() { return g_players > 1 && !g_pause_alt; }
+
+void edge_offsets(int, float* left, float* top, float* right, float* bottom) {
+    const int n = local_players();
+    const float kx = pause_scaled() ? 144.0f : 48.0f, ky = pause_scaled() ? 108.0f : 48.0f;
+    *left = *top = *right = *bottom = 0.0f;
+    if (n == 1) return;
+    const int p = menu_player();
+    if (n == 2) {
+        if (p == 0) *top = ky;
+        else *bottom = -ky;
+        return;
+    }
+    if (p == 0) *left = kx, *top = ky;
+    else if (p == 1) *top = ky, *right = -kx;
+    else if (p == 2) *left = kx, *bottom = -ky;
+    else if (p == 3) *right = -kx, *bottom = -ky;
+}
+
+void view_center(int, float* x, float* y) {
+    const int32_t* v = *g_img->va<int32_t*>(kCurView);  // +8 Mitte x, +0x1C Mitte y
+    const int n = local_players();
+    const int dx = pause_scaled() ? 72 : 24, dy = pause_scaled() ? 54 : 24;
+    int cx = v[2], cy = v[7];
+    if (n == 2) {
+        cy += menu_player() == 0 ? dy : -dy;
+    } else if (n != 1) {
+        const int p = menu_player();
+        if (p < 0 || p > 3) return;  // wie das Original: nichts schreiben
+        cx += (p == 0 || p == 2) ? dx : -dx;
+        cy += p < 2 ? dy : -dy;
+    }
+    *x = float(cx);
+    *y = float(cy);
+}
+
+bool replace_with_jump(const Ts2Image& img, uint64_t va, const uint8_t* expect, size_t n, const void* fn) {
+    uint8_t* at = img.va(va);
+    if (std::memcmp(at, expect, n) != 0) return false;
+    uint8_t code[14] = {0xFF, 0x25, 0, 0, 0, 0};
+    const uint64_t to = reinterpret_cast<uint64_t>(fn);
+    std::memcpy(code + 6, &to, 8);
+    DWORD old;
+    VirtualProtect(at, sizeof code, PAGE_EXECUTE_READWRITE, &old);
+    std::memcpy(at, code, sizeof code);
+    VirtualProtect(at, sizeof code, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, sizeof code);
+    return true;
+}
+
+// disp32 eines movss/addss xmm2, [rip+disp] (8 Byte) auf float_va lenken
+void set_float_operand(uint64_t ins_va, uint64_t orig_float, uint64_t new_float) {
+    uint8_t* ins = g_img->va(ins_va);
+    if (ins[0] != 0xF3 || ins[1] != 0x0F || (ins[2] != 0x58 && ins[2] != 0x10) || ins[3] != 0x15) return;
+    const uint8_t* cur = ins + 8 + *reinterpret_cast<const int32_t*>(ins + 4);
+    if (cur != g_img->va(orig_float) && cur != g_img->va(new_float)) return;
+    const int32_t disp = int32_t(int64_t(g_img->va(new_float)) - int64_t(ins + 8));
+    DWORD old;
+    VirtualProtect(ins + 4, 4, PAGE_EXECUTE_READWRITE, &old);
+    std::memcpy(ins + 4, &disp, 4);
+    VirtualProtect(ins + 4, 4, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), ins, 8);
+}
+
+void set_pause_layout(bool mp) {
+    set_arc_height(mp);
+    const bool on = mp && !g_pause_alt;
+    set_float_operand(kDashTopAdd, kFloat28, on ? kFloat63 : kFloat28);
+    set_float_operand(kDashTopMov, kFloat38, on ? kFloat85 : kFloat38);
+}
+
+bool pause_install(const Ts2Image& img) {
+    g_pause_alt = GetEnvironmentVariableW(L"TS2_PAUSE_ALT", nullptr, 0) > 0;
+    void* a = hook_call(img, kSafeViewCallUpdate, kSafeView, reinterpret_cast<const void*>(&safe_view_hook));
+    void* b = hook_call(img, kSafeViewCallDraw, kSafeView, reinterpret_cast<const void*>(&safe_view_hook));
+    g_safe_view = reinterpret_cast<SafeViewFn>(a ? a : b);
+    // 0x14122AD80: mov [rsp+8], rbx; mov [rsp+0x10], rsi; push rdi; sub rsp, 0x20
+    static constexpr uint8_t kEdgeHead[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20};
+    // 0x14122AE48: mov [rsp+8], rbx; push rdi; sub rsp, 0x20; mov rbx, r8
+    static constexpr uint8_t kCenterHead[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x49, 0x8B, 0xD8};
+    const bool c = replace_with_jump(img, kEdgeOffsets, kEdgeHead, sizeof kEdgeHead, reinterpret_cast<const void*>(&edge_offsets));
+    const bool d = replace_with_jump(img, kViewCenter, kCenterHead, sizeof kCenterHead, reinterpret_cast<const void*>(&view_center));
+    return a && b && c && d;
 }
 
 }  // namespace
@@ -795,9 +973,17 @@ void mp_install(const Ts2Image& img, const std::filesystem::path& ini) {
     for (uint64_t va : kClearCalls)
         if (void* orig = hook_call(img, va, kClear, reinterpret_cast<const void*>(&clear_hook)))
             g_api.clear = reinterpret_cast<ClearFn>(orig), ++clears;
-    g_mat_translate = reinterpret_cast<MatTranslateFn>(hook_call(img, kOrtho2dTranslateCall, kMatTranslate,
-                                                                 reinterpret_cast<const void*>(&ortho2d_translate_hook)));
-    if (!g_mat_translate) log("[mehrspieler] 2D-Matrix (0x141229681) nicht gefunden, HUD in Teilansichten verschoben\n");
+    g_2d_alt = GetEnvironmentVariableW(L"TS2_MP2D_ALT", nullptr, 0) > 0;
+    g_set_viewport = reinterpret_cast<SetViewportFn>(
+        hook_call(img, kSetViewportCall, kSetViewport, reinterpret_cast<const void*>(&set_viewport_hook)));
+    {
+        void* a = hook_call(img, kDrawStateCall1, kDrawState, reinterpret_cast<const void*>(&draw_state_hook));
+        void* b = hook_call(img, kDrawStateCall2, kDrawState, reinterpret_cast<const void*>(&draw_state_hook));
+        g_draw_state = reinterpret_cast<DrawStateFn>(a ? a : b);
+        if (!g_set_viewport || !a || !b)
+            log("[mehrspieler] Bildausschnitt/Zeichenzustand nicht gefunden, 2D in Teilansichten gestaucht\n");
+    }
+    if (!pause_install(img)) log("[mehrspieler] Pausenmenü in Teilansichten: Stellen nicht wie erwartet\n");
     g_desc = page;
     g_desc_draw = page[1];
     g_api.tick = reinterpret_cast<PageFn>(page[0]);

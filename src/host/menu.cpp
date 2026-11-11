@@ -12,6 +12,7 @@
 #include "hf2.h"
 #include "hooks.h"
 #include "log.h"
+#include "multiplayer.h"
 #include "profile.h"
 
 namespace host {
@@ -186,7 +187,9 @@ void language_install(const Ts2Image& img, const std::filesystem::path& game, co
 using Text3dFn = void (*)(void*, float*, void*, void*, void*, void*);
 Text3dFn g_text3d = nullptr;
 void text3d_hook(void* a, float* pos, void* c, void* d, void* e, void* f) {
-    if (pos) {
+    // Mehrspieler: 2D liegt unverstaucht in Bildschirmpixeln
+    // (multiplayer.cpp), Texte und Balken liegen ohne Umrechnung aufeinander
+    if (pos && !mp_active()) {
         float moved[2] = {pos[0], 0.0142f + 1.2462f * pos[1]};
         g_text3d(a, moved, c, d, e, f);
         return;

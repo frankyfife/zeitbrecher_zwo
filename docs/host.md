@@ -697,21 +697,20 @@ löschte im PC-Port das ganze Ziel (ClearRenderTargetView) statt des
 Rechtecks; die zweite Ansicht löschte so die erste. Spielen mehrere, löscht
 ts2.exe nur das Rechteck (`ClearView`, D3D 11.1), die Tiefe ganz.
 
-**2D in Teilansichten.** TS2 zeichnet HUD, Texte und Bildschirmeffekte in
-Bildschirm-Pixeln (Konsole: vortransformierte Ecken, die der Bildausschnitt
-nur beschneidet). Der PC-Port rechnet sie im Zeichnen `0x141229434`
-(spec-Bit 0x20) mit einer festen Matrix für 1920×1080 in den Clip-Raum um
-(Maßstab `0x141220700` mit 2/1920, −2/1080; Verschiebung `0x1412206CC` mit
-−1, +1, Aufruf `0x141229681`). Das stimmt nur für einen Bildausschnitt über
-das ganze Bild: In Teilansichten saß das HUD gestaucht (2 Spieler: Munition
-in der Mitte der Ansicht; 3/4 Spieler: HUD im oberen linken Viertel), und
-das Nachbild der Sichtart (`0x141139844`: Kopie des vorigen Bilds,
-`0x14122B74C`, mit Alpha 0x19 über die Ansicht gelegt) erschien als
-verkleinertes Geisterbild (Munitionsanzeige doppelt, doppelte Kanten).
-Spielen mehrere, bildet ts2.exe die Matrix auf den gesetzten Ausschnitt ab
-(Ziel W×H, Ausschnitt x, y, w, h): sx' = sx·W/w, tx' = (tx+1)·W/w − 2x/w − 1,
-sy' = sy·H/h, ty' = ty·H/h + 1 − H/h + 2y/h; über das ganze Bild ist das die
-Original-Matrix. `TS2_MP2D_ALT=1` zeigt es wie vorher.
+**2D in Teilansichten.** TS2 zeichnet HUD, Texte, Menübögen und
+Bildschirmeffekte in Bildschirmpixeln (Konsole: vortransformierte Ecken, nur
+von der Schere begrenzt). Der PC-Port rechnet sie im Zeichenzustand
+`0x141229434` (spec-Bit 0x20) mit einer festen Matrix für 1920×1080 in den
+Clip-Raum um und zeichnet sie im gesetzten Bildausschnitt (`0x14122AA04`,
+einziger Aufruf `0x141088C88`). In Teilansichten wurde 2D dadurch in den
+Ausschnitt gestaucht (HUD halb so hoch, Nachbild der Sichtart als
+Geisterbild) und an dessen Rändern abgeschnitten. Mit mehreren Spielern
+merkt sich ts2.exe den Ausschnitt des Spiels und setzt vor jeder Zeichnung
+(Aufrufe von `0x141229434` bei `0x141229953`/`0x141229EB4`) für 2D einen
+Ausschnitt über das ganze Ziel, für 3D wieder den des Spiels. (Eine frühere
+Abbildung der 2D-Matrix auf den Ausschnitt griff nur beim Neubau der Matrix;
+die Matrix wird nur bei neuer Zeichenart gebaut, `0x142FE3828`.)
+`TS2_MP2D_ALT=1` zeigt 2D wie im PC-Port.
 
 **Figurenwahl mit mehreren Spielern.** TS2 Redux (fixes.inc, Gruppe
 „menue“) legt die Figurenwahl für einen Spieler wie auf der Konsole aus.
@@ -729,13 +728,31 @@ Geprüft: 2/3/4 Spieler vollständig, Match startet; Einzelspieler
 unverändert. Offen: bei 3/4 Spielern liegen die Wertezeilen eng; die
 Ergebnisliste nach dem Match ist ungeprüft.
 
-**Pausenmenü in Teilansichten (offen).** Die Menüansicht bekommt nur mit
-einem lokalen Spieler den 10-%-Rand (`0x1411B9331` → `0x1411C1668`, Faktor
-0,1 bei `0x1422B7938`), Ansichten tragen ein Mehrspieler-Merkmal
-(+0x30/+0x34, gesetzt in `0x141222FF4`/`0x1412230DC`), und der Menücode
-fragt an vielen Stellen die Spielerzahl (`0x1411C1668`). Drei Ansätze
-(Rand wie allein, 2D-Ausschnitt erweitern, Menü virtuell auf dem ganzen
-Bild) ergaben kein Bild wie allein.
+**Pausenmenü in Teilansichten.** Der Menücode ist derselbe wie auf der
+Xbox (Update `0x1411B8FC0` = Xbox `0xD9380`, Seite `0x1411B33D8`/`0x1411B36DC`
+= `0xD3A70`/`0xD3CC0`, Bögen `0x14113C478` = `0xC4F80`). Mit mehreren
+Spielern rückt `0x14122AF60` die Menüansicht an den Bildschirmrändern ein
+(Fernsehrand), `0x14122AD80` liefert Randabstände ±48, `0x14122AE48` die
+Ansichtsmitte ±24, die Seitenstriche liegen bei oben + 28 bzw. 38. Das sind
+Xbox-Pixel (640×480), im PC-Port unverändert: Die Überschrift lag am oberen
+Rand und wurde abgeschnitten, die Striche über der Überschrift. Mit mehreren
+Spielern rechnet ts2.exe sie ·3 waagrecht und ·2,25 senkrecht: Einrückung
+114/85 (Hülle um die Aufrufe `0x1411B93CD`, `0x1411B1741`), beide
+Funktionen ersetzt, Striche über die Operanden bei
+`0x1411ACC1D`/`0x1411ACC27` (63,0 und 85,0). Ring und Sicheln sind am PC
+1,3-mal so hoch wie auf der Xbox (Mehrspieler-Höhe 220, Redux 255, imm bei
+`0x14113C53B`); allein staucht die 2D-Abbildung in die Menüansicht (80 % der
+Bildhöhe) sie passend, im Mehrspieler lädt der Befehl 180. Dieselbe
+Stauchung ist der Grund für die Textkorrektur in menu.cpp
+(`v' = 0,0142 + 1,2462·v`): Texte sind 2D, Balken 3D; im Mehrspieler
+entfällt sie. `TS2_PAUSE_ALT=1` zeigt das Pausenmenü wie vorher. Geprüft
+(Arcade 2 Spieler Pause P1/P2, 3 Spieler P1/P3, 4 Spieler P4, Story Co-op
+P1/P2): wie Xbox; Einzelspieler (Arcade, Siberia; Pause und Spiel)
+pixelgleich. Porträtleiste eines bestätigten Spielers: auf der Xbox
+ebenfalls leer. Rang-Blase: Größenverhältnisse wie Xbox (RANK 0,57 der
+Blasenbreite, Xbox 0,58); das englische „1st=“ ist nur breiter als das
+deutsche „6.“. Offen: Ergebnisseite „GAME OVER“ im Mehrspieler – Ring
+passt, Überschrift/Rang liegen falsch.
 
 Soll (Xbox-PAL in xemu, 2 Spieler Story Co-op, eigene Aufnahme): Das Menü des
 pausierenden Spielers füllt dessen ganze Ansicht ohne Randbalken; Überschrift
@@ -747,9 +764,6 @@ Tastatur, Port 2/3 = echte Pads (SDL-GUID, eigene Konfiguration), Eingaben
 für Spieler 2 über den gdbstub von QEMU (Haltepunkt am Pad-Lesen, PAL 0x1BA550
 und 0x1BA568, Pad-Daten 0x2CDB48 + 0x84·Port, Knopfbits für eine Lesung
 gesetzt); die Pads müssen dabei eingeschaltet sein.
-Die 2D-Abbildung auf Teilansichten (sx·W/w, sy·H/h) staucht 2D bei zwei
-Spielern senkrecht auf die Hälfte (Figurenwahl, RANK-Abzeichen breitgezogen);
-die Xbox behält die Pixelgröße.
 
 **Xbox-Soll Arcade** (eigene Aufnahmen, 2 und 3 Spieler, Deathmatch
 Mexiko). 2 Spieler oben/unten, 3–4 in Vierteln (PC 0x1411D4734 wie Xbox
@@ -776,9 +790,7 @@ Viereck, von der Zelle abgeschnitten; mit mehreren Spielern laden beide
 Faktoren 1,0 (quadratisch wie Xbox). Alles nur bei der Wahl von 2–4
 Spielern, mit einem Spieler wieder Original/Redux. RANK: Das „=“ ist TS2s
 Gleichstand-Anzeige; auf der Xbox trat im aufgenommenen Match kein
-Gleichstand mit „=“ auf. Offen: Pausenmenü, Porträtleiste eines
-bestätigten Spielers (leer), Ergebnisliste („GAME OVER“ je Ansicht) am PC
-prüfen.
+Gleichstand mit „=“ auf.
 
 **Testen ohne Pads:** `TS2_MPSKRIPT="spieler:takt:knoepfe,lx,ly,rx,ry,lt,rt[,ts2bits];…"`
 (Spieler 2–4, sonst wie `TS2_PADSKRIPT`, das Spieler 1 übernimmt),
@@ -789,7 +801,7 @@ Sprung, Feuer, Rütteln), Story Co-op Siberia (Spieler 2 läuft aus dem
 Tunnel, kein Geisterbild), Rückweg zur Auswahl. Einzelspieler (Siberia mit
 Tastatur und nur mit Pad): pixelgleich zum Stand davor.
 
-**Offen:** mit echten Pads prüfen; Pausenmenü in Teilansichten (oben); Auflösungen ungleich 1920×1080;
+**Offen:** mit echten Pads prüfen; GAME-OVER-Seite (oben); Auflösungen ungleich 1920×1080;
 Pads müssen vor der Wahl stecken.
 
 ## Bildanpassung (`src/host/postfx.cpp`)
