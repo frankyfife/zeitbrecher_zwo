@@ -313,8 +313,23 @@ TS2_TEILCHENFIX=0 aus; TS2_SPRITEPROBE=1 zählt die zehn Größenrechnungen.
 Gemessen: brennendes Logo unverändert gegenüber dem früheren Sonderfall
 (leuchtende Fläche 4,6 %, Xbox 4,1–5,6 %). In Siberia (Tunnel, Schüsse,
 Beschuss durch Wachen), Chicago-Start und Glass Smash läuft keine dieser
-Rechnungen: Bilder dort unverändert. Ungeprüft: Level-Effekte,
-Mündungsfeuer anderer Figuren, Lichthöfe, Explosionen.
+Rechnungen: Bilder dort unverändert.
+
+Nutzer von Kamera+0x27C: Teilchen (Rauchfahnen der Raketen, Startbild,
+Menü), Geschoss-Sprites über die Geschoss-Tabelle 0x142509300 (je 0x40
+Byte, +0x20 Fortschreibung, +0x28 Zeichnen; Waffentabelle Modus-Block +4 =
+Geschoss + 1): glow_64-Leuchtpunkt von Raketen und Zielsuchraketen
+(0x141115044), ElectroTool-Geschoss (0x1411160A2), Geschosse 25/32 und
+Explosionen (0x1410F4494, Obergrenze 250), Effekt-Objekte (Pool
+*0x142F19500, Listen 0x142F190B0+Typ·8, Typen 3/24/34/35). Gemessen in
+Arcade (Mexican Mission, Waffensatz Rockets, `TS2_SPRITEPROBE=1`): Teilchen,
+glow_64, 0x1410F4494 und Effekt-Typ 24 laufen; Rauchfahne der eigenen
+Rakete bei gleichen Takten mit Fix 1,8- bis 2,5-mal so hoch wie ohne (Puffs
+überlappen). xemu (Zustand arcade_rockets, gleiche Menüfolge): dicke
+Rauchwolke von 0,14–0,165 Bildhöhe wie mit Fix; ohne Fix nur ein dünner
+Strich. Arcade läuft nicht taktgleich zwischen PC und Xbox, deshalb nur
+Augenschein. Nicht im Spiel ausgelöst: ElectroTool, Scifi Handgun
+(zweiter Modus), Effekt-Typen 3/34/35, 0x1411D81B4.
 
 ## Beenden (`src/host/quit.cpp`)
 
