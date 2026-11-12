@@ -203,6 +203,73 @@ void object_update_hook(uint8_t* obj, int slot, int64_t arg) {
     g_obj_update(obj, slot, arg);
 }
 
+// ---- Takt vor der Eingabe (beide Takte, 60 und 120 Hz)
+// TS2s Begrenzer 0x14107CC64 läuft am Ende von Render: Zeitfortschreibung,
+// dann warten bis zur nächsten Periode, Takte zählen. Damit lag zwischen dem
+// Einlesen der Maus (vor Tick) und Present fast eine ganze Periode Warten
+// (gemessen 16,5 ms bei 60 Hz, 8,2 ms bei 120 Hz). Jetzt wartet ts2.exe am
+// Anfang des Bildes (timing_wait) bis zur nächsten Periode und liest danach
+// die Eingabe. Der Begrenzer bekommt für seine Uhr (QPC-Aufrufe 0x14107CC8C
+// am Anfang, 0x14107CDE8 am Ende) die Periodengrenze, bis zu der ts2.exe
+// gewartet hat: Er sieht dann ganze Perioden (Takte wie bisher, Rest in
+// seinem Übertrag 0x142EE3A00) und wartet selbst nicht mehr.
+constexpr uint64_t kQpcAtStart = 0x14107CC8C, kQpcAtEnd = 0x14107CDE8, kQpcFn = 0x141069BD0;
+constexpr uint64_t kLimLast = 0x142EE39D8;    // uint64: Uhr am Ende des letzten Begrenzers
+constexpr uint64_t kLimTarget = 0x142EE39F8;  // uint64: Mindestabstand (Periode beim letzten Mal)
+using QpcFn = uint64_t (*)();
+QpcFn g_qpc = nullptr;
+bool g_pace = false;        // Umwege gesetzt
+bool g_lim_ran = false;     // Begrenzer lief im letzten Bild (nur dann wartet ts2.exe)
+bool g_v_valid = false;     // dieses Bild hat ts2.exe gewartet: g_v gilt
+uint64_t g_v = 0;           // Uhr für den Begrenzer in diesem Bild
+uint64_t g_grid = 0;        // zuletzt an den Begrenzer gegebene Uhr
+uint64_t g_real_prev = 0;   // Monitor-Kopplung: echte Zeit beim letzten Aufwachen
+uint64_t g_qpf = 0;
+int g_display_interval = 0; // Monitor-Kopplung: Bildwechsel je Bild (0 = aus)
+
+uint64_t qpc_now() {
+    LARGE_INTEGER q;
+    QueryPerformanceCounter(&q);
+    return uint64_t(q.QuadPart);
+}
+
+// genau bis `until` (QPC) warten: hochauflösender Zeitgeber bis ~1 ms davor,
+// den Rest aktiv
+void wait_until(uint64_t until) {
+    static HANDLE timer =
+        CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    for (;;) {
+        const uint64_t now = qpc_now();
+        if (now >= until) return;
+        const uint64_t left = until - now;
+        if (timer && left > g_qpf / 600) {  // > 1,67 ms
+            LARGE_INTEGER due;
+            due.QuadPart = -LONGLONG((left - g_qpf / 1000) * 10000000 / g_qpf);  // 100 ns, relativ, 1 ms früher
+            SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
+            WaitForSingleObject(timer, INFINITE);
+        } else {
+            YieldProcessor();
+        }
+    }
+}
+
+uint64_t qpc_at_start_hook() {
+    g_lim_ran = true;
+    if (!g_v_valid) return g_qpc();  // wie bisher: der Begrenzer wartet selbst
+    // nie unter dem Mindestabstand: sonst wartete der Begrenzer (mit dieser
+    // Uhr für immer)
+    const uint64_t floor_v = *va<uint64_t>(kLimLast) + *va<uint64_t>(kLimTarget);
+    if (g_v < floor_v) g_v = floor_v;
+    return g_v;
+}
+
+uint64_t qpc_at_end_hook() {
+    const uint64_t v = g_v_valid ? g_v : g_qpc();
+    g_grid = v;
+    g_v_valid = false;
+    return v;
+}
+
 // bei 60 Hz mit Objektprobe: nur die Bilder zählen
 void time_probe_hook() {
     g_time();
@@ -235,6 +302,19 @@ void time_hook() {
 
 void timing_install(const Ts2Image& img, int hz) {
     g_img = &img;
+    {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        g_qpf = uint64_t(f.QuadPart);
+        // TS2_TAKTALT=1: wie bisher (Begrenzer wartet nach dem Zeichnen; Vergleiche)
+        if (GetEnvironmentVariableW(L"TS2_TAKTALT", nullptr, 0) == 0) {
+            g_qpc = reinterpret_cast<QpcFn>(
+                hook_call(img, kQpcAtStart, kQpcFn, reinterpret_cast<const void*>(&qpc_at_start_hook)));
+            if (g_qpc && hook_call(img, kQpcAtEnd, kQpcFn, reinterpret_cast<const void*>(&qpc_at_end_hook)))
+                g_pace = true;
+            log("Takt: %s\n", g_pace ? "Warten vor der Eingabe (kurze Latenz)" : "Umweg fehlgeschlagen, Begrenzer wie bisher");
+        }
+    }
     if (hz != 120) {
         // TS2_OBJPROBE bei 60 Hz: nur beobachten (Vergleichswerte)
         if (GetEnvironmentVariableW(L"TS2_OBJPROBE", nullptr, 0) > 0) {
@@ -301,6 +381,48 @@ void timing_install(const Ts2Image& img, int hz) {
     g_on = true;
     log("Bildtakt 120 Hz (Spieler und Kamera nativ, Welt in 60-Hz-Takten): Periode %llu QPC-Einheiten, %d/7 Teilungen abgesichert\n",
         static_cast<unsigned long long>(g_period), patched);
+}
+
+void timing_set_display_interval(int n) { g_display_interval = n; }
+
+void timing_wait() {
+    if (!g_pace) return;
+    const bool ran = g_lim_ran;
+    g_lim_ran = false;
+    g_v_valid = false;
+    // Begrenzer lief im letzten Bild nicht (Laden, Start): kein Warten, er
+    // nimmt beim nächsten Mal wieder die echte Uhr
+    const uint64_t P = *va<uint64_t>(kTickPeriod);
+    if (!ran || !g_grid || !P) {
+        g_real_prev = 0;
+        return;
+    }
+    if (g_display_interval > 0) {
+        // Monitor-Kopplung: main.cpp hat schon auf den Bildwechsel gewartet
+        // (Waitable Object). Takte = vergangene Zeit in Perioden, gerundet:
+        // bei Bildwechsel = Takt genau einer je Bild, ohne Schwebung.
+        uint64_t now = qpc_now();
+        if (g_real_prev && now - g_real_prev < P / 2) {
+            // zu früh (Monitor schneller als gedacht): nach der Uhr warten
+            wait_until(g_real_prev + P);
+            now = qpc_now();
+        }
+        int64_t n = g_real_prev ? (int64_t(now - g_real_prev) + int64_t(P / 2)) / int64_t(P) : 1;
+        n = std::clamp<int64_t>(n, 1, 4);
+        g_real_prev = now;
+        g_v = g_grid + uint64_t(n) * P;
+    } else {
+        const uint64_t target = g_grid + P;
+        const uint64_t now = qpc_now();
+        if (now < target) {
+            wait_until(target);
+            g_v = target;
+        } else {
+            const uint64_t n = (now - g_grid) / P;
+            g_v = n > 4 ? now : g_grid + n * P;  // weit zurück (Ladepause): neu aufsetzen
+        }
+    }
+    g_v_valid = true;
 }
 
 void timing_frame() {

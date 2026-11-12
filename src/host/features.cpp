@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <utility>
 
 #include "hf2.h"
 #include "hooks.h"
@@ -51,6 +52,8 @@ Settings load_settings(const std::filesystem::path& ini) {
     s.fov_percent = std::clamp(int(GetPrivateProfileIntW(L"grafik", L"sichtfeld", 100, p.c_str())), 70, 150);
     s.freecam = GetPrivateProfileIntW(L"kamera", L"freecam", 1, p.c_str()) != 0;
     s.freecam_key = int(GetPrivateProfileIntW(L"kamera", L"freecam_taste", 0x75, p.c_str()));
+    s.freecam_rooms = std::clamp(int(GetPrivateProfileIntW(L"kamera", L"freecam_raeume", 1, p.c_str())), 0, 2);
+    s.teleport_key = int(GetPrivateProfileIntW(L"kamera", L"teleport_taste", 0x76, p.c_str()));
     return s;
 }
 
@@ -111,6 +114,70 @@ float g_run_factor = 1.0f;
 bool g_running = false;
 int g_frame_no = 0;  // Bilder seit dem Start (Proben)
 
+// Räume in der freien Kamera ([kamera] freecam_raeume). TS2 zeichnet nur, was
+// die Portale ab dem Kameraraum zeigen (hf2::kRoomVis): Der Raum muss über
+// eine Kette von Portalen erreichbar sein, deren Vorderseite zur Kamera zeigt
+// und deren Bildrechteck sich mit dem des Vorgängers überschneidet. Findet die
+// Raumsuche an der Kamera keinen Raum (über dem Level, außerhalb), bleibt der
+// alte Raum, und von dort stimmt die Kette nicht mehr: ganze Teile fehlen.
+// Dann (Stufe 1, oder immer bei Stufe 2) bekommt nach jeder
+// Sichtbarkeitsrechnung jeder Raum das volle Bild als Rechteck und eine Tiefe
+// nach dem Abstand der Kamera zu seinem Kasten (so bleibt die Reihenfolge des
+// Zeichners sinnvoll: undurchsichtig von vorn nach hinten, durchsichtig von
+// hinten nach vorn). Nicht immer, weil das Level dann durch die Kulisse
+// (Raum 0xDE: Himmel, ferner Schnee in Siberia; ohne Tiefe gezeichnet) die
+// Räume dahinter zeigt, z. B. die Eiswände unter dem Schnee. Nur solange die
+// freie Kamera fliegt; sonst bleibt alles wie das Spiel.
+using VoidFn = void (*)();
+VoidFn g_room_vis = nullptr;
+bool g_fc_all_rooms = false;  // in diesem Bild alle Räume
+int g_vis_game = 0, g_vis_after = 0;  // sichtbare Räume laut Spiel / nach dem Öffnen (Probe)
+
+int visible_rooms(const uint8_t* cam, int n) {
+    int c = 0;
+    for (int r = 1; r <= n; ++r) {
+        const uint8_t* e = cam + hf2::kCamRoomVis + 12 * r;
+        const auto* rc = reinterpret_cast<const int16_t*>(e + 4);
+        c += *reinterpret_cast<const int32_t*>(e) >= 0 && *reinterpret_cast<const int32_t*>(e) <= 0x4F &&
+             rc[2] > rc[0] && rc[3] > rc[1];
+    }
+    return c;
+}
+
+void room_vis() {
+    g_room_vis();
+    uint8_t* cam = *g_img->va<uint8_t*>(hf2::kCamera);
+    const int n = *g_img->va<int32_t>(hf2::kRoomCount);
+    if (!cam || n <= 0 || n >= 0xDE) return;
+    g_vis_game = g_vis_after = visible_rooms(cam, n);
+    if (!g_fc_all_rooms) return;
+    const uint8_t* rooms = *g_img->va<uint8_t*>(hf2::kRoomTable);
+    const int32_t* vp = *g_img->va<int32_t*>(hf2::kViewport);
+    if (!rooms || !vp) return;
+    const float* cp = reinterpret_cast<const float*>(cam + hf2::kCamPos);
+    std::pair<float, int> order[0xDE];
+    int m = 0;
+    for (int r = 1; r <= n; ++r) {
+        const auto* box = reinterpret_cast<const float*>(rooms + size_t(r) * 0xC0 + 0x78);  // min xyz, max xyz
+        float d2 = 0.0f;
+        for (int k = 0; k < 3; ++k) {
+            const float d = cp[k] < box[k] ? box[k] - cp[k] : cp[k] > box[k + 3] ? cp[k] - box[k + 3] : 0.0f;
+            d2 += d * d;
+        }
+        order[m++] = {d2, r};
+    }
+    std::sort(order, order + m);
+    const int max_depth = std::min(m - 1, 0x4F);
+    for (int k = 0; k < m; ++k) {
+        uint8_t* e = cam + hf2::kCamRoomVis + 12 * order[k].second;
+        *reinterpret_cast<int32_t*>(e) = m > 1 ? k * max_depth / (m - 1) : 0;
+        auto* rc = reinterpret_cast<int16_t*>(e + 4);
+        rc[0] = int16_t(vp[0]), rc[1] = int16_t(vp[5]), rc[2] = int16_t(vp[1]), rc[3] = int16_t(vp[6]);
+    }
+    *reinterpret_cast<int32_t*>(cam + hf2::kCamMaxDepth) = max_depth;
+    g_vis_after = visible_rooms(cam, n);
+}
+
 void run_walk(void* ctx, float* a, float step1, float* b, float* c, float step2) {
     uint8_t* now = *g_img->va<uint8_t*>(hf2::kPlayerNow);
     float* cap = nullptr;
@@ -138,6 +205,88 @@ void run_walk(void* ctx, float* a, float step1, float* b, float* c, float step2)
     }
     g_walk(ctx, a, step1, b, c, step2);
     if (cap) *cap = cap_was;
+}
+
+// Spieler an die freie Kamera setzen ([kamera] teleport_taste, Pad: Benutzen
+// während der freien Kamera). Wie die Startplatzierung 0x1411D6E70, aber ohne
+// deren Startwaffe: Lage, Augenlage, Vorlagen der Kollision (+0x1A0/+0x1AC),
+// Lage/Gier des Objekts +0x1C8, Raum; Fall und Fallschaden zurückgesetzt.
+// Fuß auf Boden + 0,01 wie die Startpunkte (0x1411D4695); den Boden sucht
+// floor_below. Steht der Spieler danach nicht (fällt > 1 s, kein Raum), setzt
+// features_tick ihn zurück.
+struct Placement {
+    float pos[3];
+    float yaw, pitch;  // Grad, wie der Spieler (+0x154/+0x158)
+};
+
+// Boden unter der Kamera: von ihr abwärts (je 0,5) den ersten Punkt suchen,
+// der im Kasten des gefundenen Raums liegt, und dessen Boden nehmen. Die
+// Raumsuche allein nimmt auch Räume, deren Kasten nur in der Fläche passt,
+// und deren Boden kann weit unter dem Raum liegen (über der Schlucht in
+// Siberia: die flache Auffangfläche Raum 9, y −51,8, unter dem Level).
+int32_t floor_below(const Ts2Image& img, const float cam[3], float radius, float* floor) {
+    const auto find_room = reinterpret_cast<FindRoomFn>(img.va<uint8_t>(hf2::kFindRoom));
+    const uint8_t* rooms = *img.va<uint8_t*>(hf2::kRoomTable);
+    const int n = *img.va<int32_t>(hf2::kRoomCount);
+    if (!rooms) return 0;
+    for (float y = cam[1]; y > cam[1] - 400.0f; y -= 0.5f) {
+        const float q[3] = {cam[0], y, cam[2]};
+        const int32_t room = find_room(q, 1.0f, radius);
+        if (room <= 0 || room > n) continue;
+        // Bodenhöhe mit Objekten (Kisten, Glasböden in Challenges); die der
+        // Raumsuche kennt nur die Raumgeometrie
+        using GroundFn = float (*)(const float*, float, float, void**, void**, int);
+        const float h = reinterpret_cast<GroundFn>(img.va<uint8_t>(hf2::kGroundHeight))(q, 1.0f, radius, nullptr, nullptr, 0);
+        const auto* b = reinterpret_cast<const float*>(rooms + size_t(room) * 0xC0 + 0x78);
+        constexpr float m = 0.5f;
+        const bool inside = q[0] >= b[0] - m && q[0] <= b[3] + m && q[1] >= b[1] - m && q[1] <= b[4] + m &&
+                            q[2] >= b[2] - m && q[2] <= b[5] + m;
+        // Räume, in denen man stehen kann: Kasten nicht flach (Siberia hat
+        // flache Räume, z. B. die Auffangfläche), Boden im Kasten
+        const bool solid = b[3] - b[0] >= 1.0f && b[4] - b[1] >= 1.0f && b[5] - b[2] >= 1.0f;
+        static const bool probe = GetEnvironmentVariableW(L"TS2_TPPROBE", nullptr, 0) > 0;
+        if (probe)
+            log("[teleport] y %.1f: Raum %d, Boden %.2f, Kasten %.1f..%.1f\n", y, room, h, b[1], b[4]);
+        if (inside && solid && h >= b[1] - m && h <= y + 1.0f) {
+            *floor = h;
+            return room;
+        }
+    }
+    return 0;
+}
+
+uint8_t* player_sub(uint8_t* p) { return *reinterpret_cast<uint8_t**>(p + hf2::kPlayerSub); }
+
+int32_t place_player(const Ts2Image& img, uint8_t* p, const Placement& to) {
+    auto f = [p](uint32_t off) { return reinterpret_cast<float*>(p + off); };
+    std::memcpy(f(hf2::kPlayerPos), to.pos, 12);
+    using SetEyeFn = void (*)(void*, float, float, float);
+    reinterpret_cast<SetEyeFn>(img.va<uint8_t>(hf2::kSetEye))(p, to.pos[0], to.pos[1] + *f(hf2::kPlayerEyeHeight),
+                                                              to.pos[2]);
+    std::memcpy(f(hf2::kPlayerPrevPos), to.pos, 12);
+    std::memcpy(f(hf2::kPlayerPrevEye), f(hf2::kPlayerEye), 12);
+    *f(hf2::kPlayerYaw) = *f(hf2::kPlayerYaw2) = to.yaw;
+    *f(hf2::kPlayerPitch) = to.pitch;
+    *f(hf2::kPlayerFallSpeedX) = *f(hf2::kPlayerFallSpeedZ) = 0.0f;
+    *reinterpret_cast<int32_t*>(p + hf2::kPlayerMoveMode) = 0;
+    *reinterpret_cast<uint64_t*>(p + hf2::kPlayerStandOn) = 0;
+    const auto find_room = reinterpret_cast<FindRoomFn>(img.va<uint8_t>(hf2::kFindRoom));
+    const int32_t room = find_room(f(hf2::kPlayerEye), 0.1f, 0.1f);  // wie 0x1411D7216
+    if (room > 0) {
+        *reinterpret_cast<int32_t*>(p + hf2::kPlayerRoom) = room;
+        *reinterpret_cast<int32_t*>(p + hf2::kPlayerRoom2) = room;
+    }
+    if (uint8_t* sub = player_sub(p)) {
+        std::memcpy(sub + hf2::kSubPos, to.pos, 12);
+        std::memcpy(sub + hf2::kSubPrevPos, to.pos, 12);
+        *reinterpret_cast<float*>(sub + hf2::kSubYaw) = to.yaw;
+        if (room > 0) *reinterpret_cast<int32_t*>(sub + hf2::kSubRoom) = room;
+    }
+    if (uint8_t* c = character_of(p)) {
+        *reinterpret_cast<float*>(c + hf2::kCharVerticalSpeed) = 0.0f;
+        *reinterpret_cast<float*>(c + hf2::kCharFallStartY) = hf2::kNoFall;
+    }
+    return room;
 }
 
 }  // namespace
@@ -198,6 +347,15 @@ void features_install(const Ts2Image& img, const Settings& s) {
         std::memcpy(stub + 10, rest, sizeof rest);
         g_fc_ready = patch_with_call(img, hf2::kCamMode8Room, expected, sizeof expected, stub, sizeof stub);
         log("Freie Kamera: Taste %d%s\n", s.freecam_key, g_fc_ready ? "" : " (FEHLER: Stelle 0x1410828EE unerwartet, aus)");
+        if (g_fc_ready) {  // auch ohne die Einstellung (Probe), dann ohne Wirkung
+            const auto fn = reinterpret_cast<const void*>(&room_vis);
+            auto* a = hook_call(img, hf2::kRoomVisJmp1, hf2::kRoomVis, fn);
+            auto* b = hook_call(img, hf2::kRoomVisJmp2, hf2::kRoomVis, fn);
+            g_room_vis = reinterpret_cast<VoidFn>(a ? a : b);
+            static const char* const kRoomsName[] = {"wie das Spiel", "alle außerhalb des Levels", "immer alle"};
+            log("Freie Kamera: Räume %s%s\n", kRoomsName[s.freecam_rooms],
+                a && b ? "" : " (FEHLER: Sprung auf 0x141078598 nicht gefunden)");
+        }
     }
     // Render-Auflösung: die festen 1920/1080 im Aufruf des DX11-Setups ersetzen.
     auto* w = img.va<uint32_t>(hf2::kResWidthImm);
@@ -285,6 +443,12 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
         static bool on = false, was_key = false, was_bit = false;
         static int32_t saved_mode = 0;
         static float pos[3] = {}, yaw = 0, pitch = 0;
+        static int fc_ticks = 0;  // Takte seit dem Einschalten (Testlagen)
+        static bool was_tkey = false, was_use = false;
+        static bool fc_outside = false;  // Raumsuche an der Kamera ohne Ergebnis
+        static Placement tp_back{};          // Lage vor dem Teleport
+        static int tp_watch = 0, tp_fall = 0;  // Takte seit dem Teleport (0 = keiner), davon fallend
+        static float tp_floor = 0.0f;
         const bool fg = GetForegroundWindow() == HWND(window);
         // Mehrspieler: nur Pads, Tastatur wirkt nicht
         const bool key = fg && !mp_active() && (GetAsyncKeyState(s.freecam_key) & 0x8000) != 0;
@@ -309,18 +473,48 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
             yaw = std::atan2(cd[0], cd[2]);
             pitch = std::atan2(cd[1], std::sqrt(cd[0] * cd[0] + cd[2] * cd[2]));
             saved_mode = *mode;
+            fc_ticks = 0;
             // was Modus 8 nach [Kamera+0x208]+0x30/+0x34 legt: wie jetzt
             if (uint8_t* proj = *reinterpret_cast<uint8_t**>(cam + hf2::kCamProj))
                 std::memcpy(img.va<uint8_t>(hf2::kFreecamExtra), proj + 0x30, 8);
             on = true;
             input_set_freecam(true);
-            log("Freie Kamera an bei %.2f %.2f %.2f (Kameramodus %d)\n", pos[0], pos[1], pos[2], saved_mode);
+            {
+                const float* pp = reinterpret_cast<const float*>(p1 + hf2::kPlayerPos);
+                log("Freie Kamera an bei %.2f %.2f %.2f, Gier %.1f Nick %.1f (Kameramodus %d); Spieler %.2f %.2f %.2f, "
+                    "Auge %.2f, Gier %.1f Nick %.1f, Raum %d\n", pos[0], pos[1], pos[2], yaw * 57.29578f,
+                    pitch * 57.29578f, saved_mode, pp[0], pp[1], pp[2], *reinterpret_cast<const float*>(p1 + 0x10C),
+                    *reinterpret_cast<const float*>(p1 + 0x154), *reinterpret_cast<const float*>(p1 + 0x158),
+                    *reinterpret_cast<const int32_t*>(p1 + 0xD78));
+            }
         } else if (toggle && on) {
             stop("Taste");
         } else if (on && (!cam || !p1)) {
             stop("Level zu Ende");
         }
         if (on) {
+            // TS2_FCPOS=x,y,z,gier,nick[;...] (Grad), TS2_FCSCHRITT=<takte> (60):
+            // Lagen der freien Kamera nacheinander, ab dem Einschalten (Tests)
+            {
+                static wchar_t list[1024] = {};
+                static const bool have = GetEnvironmentVariableW(L"TS2_FCPOS", list, 1024) > 0;
+                static const int step = [] {
+                    wchar_t v[16] = {};
+                    return GetEnvironmentVariableW(L"TS2_FCSCHRITT", v, 16) > 0 ? std::max(1, _wtoi(v)) : 60;
+                }();
+                if (have && fc_ticks % step == 0) {
+                    const wchar_t* p = list;
+                    for (int k = fc_ticks / step; k > 0 && p; --k)
+                        if ((p = wcschr(p, L';'))) ++p;
+                    float q[5];
+                    if (p && swscanf(p, L"%f,%f,%f,%f,%f", &q[0], &q[1], &q[2], &q[3], &q[4]) == 5) {
+                        std::memcpy(pos, q, sizeof pos);
+                        yaw = q[3] / 57.29578f;
+                        pitch = q[4] / 57.29578f;
+                    }
+                }
+                ++fc_ticks;
+            }
             const FreecamInput in = input_freecam();
             const float dt = 1.0f / float(s.tick_rate);
             constexpr float kRadPerCount = 0.0025f;
@@ -341,7 +535,77 @@ void features_tick(const Ts2Image& img, const Settings& s, void* window) {
             const auto find_room = reinterpret_cast<FindRoomFn>(img.va<uint8_t>(hf2::kFindRoom));
             const int32_t room = find_room(pos, 1.0f, *reinterpret_cast<float*>(p1 + hf2::kPlayerRoomArg));
             if (room) g_fc_room = room;
+            fc_outside = room == 0;
+            // TS2_FCPROBE=1: Lage, Räume und sichtbare Räume alle 30 Takte
+            static const bool probe = GetEnvironmentVariableW(L"TS2_FCPROBE", nullptr, 0) > 0;
+            static int pn = 0;
+            if (probe && ++pn % 30 == 0) {
+                float fl = 0.0f;
+                const int32_t fr = floor_below(img, pos, *reinterpret_cast<float*>(p1 + hf2::kPlayerRoomArg), &fl);
+                log("[freecam] %.2f %.2f %.2f Gier %.1f Nick %.1f | Raum gefunden %d, Kamera %d | sichtbar Spiel %d, "
+                    "gezeichnet %d von %d | Boden %d %.2f\n", pos[0], pos[1], pos[2], yaw * 57.29578f,
+                    pitch * 57.29578f, room, cam ? *reinterpret_cast<int32_t*>(cam + hf2::kCamRoom) : -1, g_vis_game,
+                    g_vis_after, *img.va<int32_t>(hf2::kRoomCount), fr, fr ? fl : 0.0f);
+            }
+            if (probe && pn == 30)
+                if (const uint8_t* rooms = *img.va<uint8_t*>(hf2::kRoomTable))
+                    for (int r = 1, n = *img.va<int32_t>(hf2::kRoomCount); r <= n && r < 0xDE; ++r) {
+                        const auto* b = reinterpret_cast<const float*>(rooms + size_t(r) * 0xC0 + 0x78);
+                        log("[freecam] Raum %d: %.1f %.1f %.1f bis %.1f %.1f %.1f\n", r, b[0], b[1], b[2], b[3], b[4], b[5]);
+                    }
+            // Spieler an die Kamera: Taste (F7) oder Benutzen (Pad A, Skript 0x40000), je Flanke
+            const bool tkey = fg && s.teleport_key > 0 && (GetAsyncKeyState(s.teleport_key) & 0x8000) != 0;
+            const bool tpress = (tkey && !was_tkey) || (in.use && !was_use);
+            was_tkey = tkey;
+            was_use = in.use;
+            if (tpress) {
+                const int32_t mv = *reinterpret_cast<int32_t*>(p1 + hf2::kPlayerMoveMode);
+                float floor = 0.0f;
+                const int32_t troom = floor_below(img, pos, *reinterpret_cast<float*>(p1 + hf2::kPlayerRoomArg), &floor);
+                if (troom <= 0 || mv != 0) {
+                    log("Teleport abgelehnt bei %.2f %.2f %.2f: %s\n", pos[0], pos[1], pos[2],
+                        mv != 0 ? "Spieler geht nicht (Bewegungsmodus)" : "kein Raum mit Boden unter der Kamera");
+                    MessageBeep(MB_ICONWARNING);
+                } else {
+                    // Rückweg merken, falls er dort nicht steht (unten geprüft)
+                    std::memcpy(tp_back.pos, p1 + hf2::kPlayerPos, 12);
+                    tp_back.yaw = *reinterpret_cast<float*>(p1 + hf2::kPlayerYaw);
+                    tp_back.pitch = *reinterpret_cast<float*>(p1 + hf2::kPlayerPitch);
+                    const float lim = std::max(*img.va<float>(hf2::kPitchLimit), 1.0f);
+                    float deg = std::fmod(yaw * 57.29578f, 360.0f);
+                    if (deg < 0.0f) deg += 360.0f;
+                    const Placement to{{pos[0], floor + 0.01f, pos[2]}, deg, std::clamp(pitch * 57.29578f, -lim, lim)};
+                    const int32_t got = place_player(img, p1, to);
+                    tp_floor = floor;
+                    tp_watch = 1;
+                    log("Teleport nach %.2f %.2f %.2f (Kamera %.2f, Boden %.2f), Raum %d/%d, Gier %.1f Nick %.1f\n",
+                        to.pos[0], to.pos[1], to.pos[2], pos[1], floor, troom, got, to.yaw, to.pitch);
+                    stop("Teleport");
+                }
+            }
         }
+        // Nach dem Teleport 3 s beobachten: fällt der Spieler weiter (kein
+        // Boden) oder hat er keinen Raum, zurück an die alte Stelle
+        if (tp_watch > 0 && p1) {
+            const int32_t mv = *reinterpret_cast<int32_t*>(p1 + hf2::kPlayerMoveMode);
+            const float y = reinterpret_cast<const float*>(p1 + hf2::kPlayerPos)[1];
+            const int32_t proom = *reinterpret_cast<int32_t*>(p1 + hf2::kPlayerRoom);
+            if (*img.va<float>(hf2::kFrameTicks) > 0.0f) tp_fall = mv == 2 ? tp_fall + 1 : 0;  // nicht in der Pause
+            if (tp_fall > s.tick_rate || y < tp_floor - 3.0f || proom <= 0) {
+                place_player(img, p1, tp_back);
+                log("Teleport zurückgenommen (Modus %d, Höhe %.2f, Raum %d): zurück nach %.2f %.2f %.2f\n", mv, y, proom,
+                    tp_back.pos[0], tp_back.pos[1], tp_back.pos[2]);
+                MessageBeep(MB_ICONWARNING);
+                tp_watch = 0;
+            } else if (*img.va<float>(hf2::kFrameTicks) > 0.0f && ++tp_watch > 3 * s.tick_rate) {
+                const float* pp = reinterpret_cast<const float*>(p1 + hf2::kPlayerPos);
+                log("Teleport: Spieler steht bei %.2f %.2f %.2f, Raum %d, Modus %d\n", pp[0], pp[1], pp[2], proom, mv);
+                tp_watch = 0;
+            }
+        } else if (!p1) {
+            tp_watch = 0;
+        }
+        g_fc_all_rooms = on && (s.freecam_rooms == 2 || (s.freecam_rooms == 1 && fc_outside));
     }
     // Nickgrenze (Xbox-Fork: ts2_pitch_limit). Die Globale 0x143F1A390 (Xbox
     // 0x497344, gleich hinter dem aktuellen Spieler) setzt die Spieler-

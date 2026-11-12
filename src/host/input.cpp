@@ -141,6 +141,66 @@ std::vector<PadStep> g_pad_script;
 bool g_pad_scripted = false;
 uint32_t g_pad_raw = 0;
 
+// ---- Testskript für die Maus (Umgebung TS2_MAUSSKRIPT, nur für Messungen):
+// "bild:dx,dy;…": ab diesem Bild kommen je Bild dx/dy Zählschritte dazu
+// (wie Raw Input, auch Bruchteile) bis zum nächsten Eintrag.
+struct MouseStep {
+    uint32_t frame;
+    float dx, dy;
+};
+std::vector<MouseStep> g_mouse_script;
+float g_last_look[2] = {};  // zuletzt an TS2 gegebene Mausbewegung (Proben)
+
+// ---- Maus 1:1 (Mausmodus, Port 6)
+// TS2 summiert die Mausbewegung (vtable +0x78/+0x80) in 0x143F0F4A8 (x) und
+// 0x143F0F4A4 (y); scePadRead (0x141225898) gibt je Lesung die Differenz zur
+// vorigen Lesung (0x143F0F4AC/0x143F0F4B4) × 0,2 (0x14259CF44) als Pad
+// +0x34/+0x3C. Gemessen (TS2_MAUSSKRIPT/TS2_MAUSPROBE, Siberia):
+// - linear, ohne Glättung, Kappung oder Beschleunigung, wirkt im selben Bild;
+// - Gier 0,5333° je Zählschritt, Nick nur 0,2667° (halb so empfindlich);
+// - beides mal Bildzeit (0x14259CBE4): bei takt=120 (0,5) halb so viel
+//   Drehung je Zählschritt wie bei 60, in einem Bild mit zwei Takten doppelt.
+// ts2.exe teilt deshalb durch die Bildzeit und gibt Nick doppelt: dann dreht
+// ein Zählschritt immer 0,5333° × empfindlichkeit, waagerecht wie senkrecht
+// und bei jedem Takt (wie Gier bei 60 Hz bisher). Die Summen setzt ts2.exe
+// je Bild auf den noch nicht gelesenen Rest zurück; sonst wüchsen sie
+// unbegrenzt, und float verlöre Nachkommastellen.
+constexpr uint64_t kMouseAccX = 0x143F0F4A8, kMouseLastX = 0x143F0F4AC;
+constexpr uint64_t kMouseAccY = 0x143F0F4A4, kMouseLastY = 0x143F0F4B4;
+constexpr uint64_t kFrameTicksRun = 0x14259CBE4;  // float, Bildzeit in Takten (Pause 0)
+constexpr float kPitchMatch = 2.0f;
+const Ts2Image* g_img = nullptr;
+
+// Faktor für die Mausbewegung dieses Bildes: 1 / Bildzeit
+float mouse_time_scale() {
+    if (!g_img) return 1.0f;
+    const float dt = *g_img->va<float>(kFrameTicksRun);
+    return dt > 0.01f ? 1.0f / dt : 1.0f;  // Pause: Bildzeit 0, Blick steht ohnehin
+}
+
+void mouse_rebase() {
+    if (!g_img) return;
+    for (auto [acc, last] : {std::pair{kMouseAccX, kMouseLastX}, std::pair{kMouseAccY, kMouseLastY}}) {
+        float* a = g_img->va<float>(acc);
+        float* l = g_img->va<float>(last);
+        *a -= *l;
+        *l = 0.0f;
+    }
+}
+
+void mouse_script_load() {
+    wchar_t buf[8192] = {};
+    if (!GetEnvironmentVariableW(L"TS2_MAUSSKRIPT", buf, 8192)) return;
+    for (const wchar_t* p = buf; *p;) {
+        MouseStep st{};
+        if (swscanf(p, L"%u:%f,%f", &st.frame, &st.dx, &st.dy) == 3) g_mouse_script.push_back(st);
+        p = wcschr(p, L';');
+        if (!p) break;
+        ++p;
+    }
+    log("Maus-Skript: %zu Einträge\n", g_mouse_script.size());
+}
+
 void pad_script_load() {
     wchar_t buf[4096] = {};
     if (!GetEnvironmentVariableW(L"TS2_PADSKRIPT", buf, 4096)) return;
@@ -475,6 +535,7 @@ void input_init(HWND wnd, void* obj, const std::filesystem::path& ini) {
     call(kConnect);
     pad_load(p);
     pad_script_load();
+    mouse_script_load();
     std::atexit(motors_off_at_exit);
     log("Pad: %s, Vibration %s, Totzone %.0f %%, Blick %.2f%s\n", g_pad.on ? "an" : "aus", g_pad.vibration ? "an" : "aus",
         g_pad.deadzone * 100.0f, g_pad.look_sens, g_pad.invert ? ", umgekehrt" : "");
@@ -523,6 +584,13 @@ void input_script(const wchar_t* spec) {
 
 void input_frame() {
     ++g_frame;
+    if (!g_mouse_script.empty()) {
+        const MouseStep* cur = nullptr;
+        for (auto& st : g_mouse_script)
+            if (st.frame <= g_frame) cur = &st;
+        if (cur) g_mdx += cur->dx, g_mdy += cur->dy, g_use_pad = false;
+    }
+    g_last_look[0] = g_last_look[1] = 0;
     uint32_t bits = 0, pad_host = 0;
     float lx = 0, ly = 0, rx = 0, ry = 0;
 
@@ -572,6 +640,7 @@ void input_frame() {
                              (float(g.bRightTrigger) - float(g.bLeftTrigger)) / 255.0f;
             g_fc = {lx, ly, rx * std::fabs(rx) * 25.0f, -ry * std::fabs(ry) * 25.0f, std::clamp(up, -1.0f, 1.0f),
                     (g.wButtons & (XINPUT_GAMEPAD_LEFT_SHOULDER | XINPUT_GAMEPAD_RIGHT_SHOULDER)) != 0};
+            g_fc.use = (bits & kActivate) != 0;  // Benutzen: Spieler an die Kamera (features.cpp)
             lx = ly = rx = ry = 0;
             pad_host &= kHostFreecam;
         }
@@ -625,8 +694,13 @@ void input_frame() {
         }
         call(kSetLeftX, lx);
         call(kSetLeftY, ly);
-        call(kLookX, g_mdx * s);
-        call(kLookY, -(g_mdy * s) * (g_mouse_invert ? -1.0f : 1.0f));
+        // Maus 1:1 (oben): durch die Bildzeit, Nick wie Gier
+        mouse_rebase();
+        const float k = mouse_time_scale();
+        call(kLookX, g_mdx * s * k);
+        call(kLookY, -(g_mdy * s * kPitchMatch * k) * (g_mouse_invert ? -1.0f : 1.0f));
+        g_last_look[0] = g_mdx * s;
+        g_last_look[1] = g_mdy * s;
     }
     g_mdx = g_mdy = 0;
 
@@ -638,11 +712,15 @@ void input_frame() {
         // Skript: vorwärts und nach rechts drehen bewegen die Kamera
         if (g_host_bits & kScriptForward) g_fc.move_y = 1.0f;
         if (g_host_bits & kHostMouseRight) g_fc.look_x += 20.0f * g_mouse_sens;
+        if (scripted & kActivate) g_fc.use = true;  // Skript: Benutzen wie am Pad
         g_host_bits &= kHostFreecam;  // kein Sprung, kein Rennen für den Spieler
         bits &= kStart;               // Pause bleibt erreichbar
     } else {
         if (g_host_bits & kScriptForward) call(kSetLeftY, 1.0f);
-        if ((g_host_bits & kHostMouseRight) && g_mode == 1) call(kLookX, 20.0f * g_mouse_sens);
+        if ((g_host_bits & kHostMouseRight) && g_mode == 1) {
+            call(kLookX, 20.0f * g_mouse_sens * mouse_time_scale());
+            g_last_look[0] += 20.0f * g_mouse_sens;
+        }
         bits |= scripted & ~kHostBits;
         // Skript-Mausrad: wie das echte (beim Zielen Zoomstufen)
         if (g_mode == 1 && (g_host_bits & (kHostWheelUp | kHostWheelDown))) {
@@ -710,5 +788,10 @@ bool input_pad1_present() { return g_pad.on && g_pad_present; }
 bool input_pad_scripted() { return g_pad_scripted; }
 bool input_focused() { return focused(); }
 uint32_t input_frame_number() { return g_frame; }
+void input_attach_image(const Ts2Image& img) { g_img = &img; }
+void input_last_mouse(float* dx, float* dy) {
+    *dx = g_last_look[0];
+    *dy = g_last_look[1];
+}
 
 }  // namespace host

@@ -16,11 +16,15 @@
 #include <utility>
 #include <vector>
 
+#include "ts2bin.h"
+
 namespace host {
 
 struct InputConfig;
 
 void input_init(HWND wnd, void* ts2_object, const std::filesystem::path& ini);
+// Mauszielen braucht TS2s Bildzeit und Mauszähler (input.cpp, "Maus 1:1")
+void input_attach_image(const Ts2Image& img);
 // Fensternachrichten (Raw Input, Mausrad, Fokus); true, wenn verarbeitet.
 bool input_message(const MSG& m);
 // Einmal je Takt vor Tick: Zustand an TS2 geben.
@@ -44,6 +48,7 @@ struct FreecamInput {
     float look_x = 0, look_y = 0;  // Maus-Zählschritte (Pad: umgerechnet), y nach unten positiv
     float up = 0;                  // +1 steigen (Leertaste), -1 sinken (C)
     bool fast = false;             // Umschalttaste / LB oder RB
+    bool use = false;              // Benutzen (Pad, Skript 0x40000): Spieler an die Kamera (features.cpp)
 };
 void input_set_freecam(bool on);
 FreecamInput input_freecam();
@@ -77,6 +82,8 @@ bool input_pad1_present();                  // Pad 1 da (echt oder TS2_PADSKRIPT
 bool input_pad_scripted();                  // TS2_PADSKRIPT gesetzt
 bool input_focused();
 uint32_t input_frame_number();              // Takte seit dem Start (wie die Skripte zählen)
+// Proben: in diesem Bild an TS2 gegebene Mausbewegung (Zählschritte × Empfindlichkeit, y nach unten +)
+void input_last_mouse(float* dx, float* dy);
 
 
 }  // namespace host

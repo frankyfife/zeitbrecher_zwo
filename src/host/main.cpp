@@ -22,6 +22,7 @@
 #include <timeapi.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -681,11 +682,26 @@ struct Gfx {
     ID3D11DeviceContext* ctx = nullptr;
     IDXGISwapChain1* swap = nullptr;
     bool hdr = false;  // Ausgabe scRGB (FP16, linear), weil der Monitor im HDR-Modus läuft
+    UINT swap_flags = 0;
+    HANDLE waitable = nullptr;  // Monitor-Kopplung: Bildpuffer frei (Waitable Object)
+    int interval = 0;           // Present-Intervall; > 0 = Monitor-Kopplung
 };
+
+// Bildwechsel des Monitors, auf dem das Fenster liegt (ganze Hz; 119 = 119,88)
+int monitor_hz(HWND w) {
+    MONITORINFOEXW mi{};
+    mi.cbSize = sizeof mi;
+    if (!GetMonitorInfoW(MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST), &mi)) return 0;
+    DEVMODEW dm{};
+    dm.dmSize = sizeof dm;
+    if (!EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm)) return 0;
+    return int(dm.dmDisplayFrequency);
+}
 
 // window_sized: Bildpuffer in Fenstergröße (Supersampling; er wächst mit dem
 // Fenster, siehe resize_output), sonst in der Render-Auflösung
-bool make_gfx(Gfx* g, int width, int height, bool want_hdr, bool window_sized) {
+// vsync: [grafik] bildsync; tick_hz: Takt (60/120)
+bool make_gfx(Gfx* g, int width, int height, bool want_hdr, bool window_sized, bool vsync, int tick_hz) {
     WNDCLASSW wc{};
     wc.lpfnWndProc = wndproc;
     wc.hInstance = GetModuleHandleW(nullptr);
@@ -805,6 +821,28 @@ bool make_gfx(Gfx* g, int width, int height, bool want_hdr, bool window_sized) {
     sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sd.BufferCount = 2;
     sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    // bildsync: das Bild an den Monitor koppeln, aber nur, wenn sein
+    // Bildwechsel zum Takt passt (120 Hz bei takt=120, 60 Hz bei takt=60).
+    // Dann wartet ts2.exe je Bild auf einen freien Bildpuffer (Waitable
+    // Object, höchstens ein Bild in der Warteschlange) und zählt die Takte aus
+    // der vergangenen Zeit (timing.cpp): genau ein Bild je Bildwechsel, ohne
+    // Schwebung zwischen TS2s Uhr und dem Monitor. Passt der Bildwechsel nicht
+    // (z. B. 144 Hz, oder 120 Hz bei takt=60: gemessen 24,8 ms Latenz mit
+    // Present(2)), brächte das Warten nur Ruckeln und Latenz; dann gilt
+    // bildsync=0.
+    if (vsync) {
+        const int hz = monitor_hz(g->wnd);
+        if (hz > 0 && std::abs(hz - tick_hz) <= 1) g->interval = 1;
+        log("Bildsync: Monitor %d Hz, Takt %d: %s\n", hz, tick_hz,
+            g->interval ? "an den Monitor gekoppelt (ein Bild je Bildwechsel)"
+                        : "passt nicht zum Takt, ohne Kopplung (wie bildsync=0)");
+    }
+    // immer mit Waitable Object: ts2.exe wartet am Anfang des Bildes auf einen
+    // freien Bildpuffer, nicht erst in Present nach dem Einlesen der Eingabe
+    // (zeigt Windows das Fenster langsamer an als der Takt, z. B. mit 60 Hz,
+    // läge sonst jedes Warten zwischen Eingabe und Bild)
+    sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+    g->swap_flags = sd.Flags;
     HRESULT hr = fa->CreateSwapChainForHwnd(g->dev, g->wnd, &sd, nullptr, nullptr, &g->swap);
     if (SUCCEEDED(hr) && g->hdr) {
         IDXGISwapChain3* s3 = nullptr;
@@ -822,6 +860,24 @@ bool make_gfx(Gfx* g, int width, int height, bool want_hdr, bool window_sized) {
             hr = fa->CreateSwapChainForHwnd(g->dev, g->wnd, &sd, nullptr, nullptr, &g->swap);
         }
         if (s3) s3->Release();
+    }
+    // Höchstens ein Bild darf auf die Grafikkarte warten (Vorgabe 3): sonst
+    // kann die CPU Bilder vorausrechnen, und jedes zeigt ältere Eingaben.
+    if (SUCCEEDED(hr)) {
+        IDXGISwapChain2* s2 = nullptr;
+        if (SUCCEEDED(g->swap->QueryInterface(__uuidof(IDXGISwapChain2), reinterpret_cast<void**>(&s2)))) {
+            s2->SetMaximumFrameLatency(1);
+            g->waitable = s2->GetFrameLatencyWaitableObject();
+            s2->Release();
+        }
+        if (!g->waitable) g->interval = 0;
+    }
+    {
+        IDXGIDevice1* d1 = nullptr;
+        if (SUCCEEDED(g->dev->QueryInterface(__uuidof(IDXGIDevice1), reinterpret_cast<void**>(&d1)))) {
+            d1->SetMaximumFrameLatency(1);
+            d1->Release();
+        }
     }
     // Alt+Enter übernimmt ts2.exe selbst (randlos, set_fullscreen)
     fa->MakeWindowAssociation(g->wnd, DXGI_MWA_NO_ALT_ENTER);
@@ -1017,11 +1073,13 @@ int wmain(int argc, wchar_t** argv) {
 
     Gfx gfx;
     if (!make_gfx(&gfx, settings.width, settings.height,
-                  GetPrivateProfileIntW(L"grafik", L"hdr", 1, (self_dir() / L"ts2.ini").c_str()) != 0, ss_on())) {
+                  GetPrivateProfileIntW(L"grafik", L"hdr", 1, (self_dir() / L"ts2.ini").c_str()) != 0, ss_on(),
+                  settings.vsync, settings.tick_rate)) {
         log("D3D11 nicht verfügbar\n");
         return 1;
     }
     if (settings.fullscreen) set_fullscreen(gfx.wnd, true);
+    timing_set_display_interval(gfx.interval);
     static DeviceHolder devh{gfx.dev, {}};
     // TS2 bekommt die Kontext-Hülle (ctxproxy.h) statt des Kontexts: für die
     // Schattenkorrektur ([grafik] schatten, shadowfix.h), Transparenz der
@@ -1091,6 +1149,7 @@ int wmain(int argc, wchar_t** argv) {
 
     // Bildpuffer: Render bekommt sein Render-Target-View und die Textur
     // (TS2 kopiert daraus für Bildschirmeffekte).
+    input_attach_image(g_img);
     input_init(gfx.wnd, obj, self_dir() / L"ts2.ini");
     if (!input_spec.empty()) input_script(input_spec.c_str());
     if (!menu_mouse_spec.empty()) menumouse_script(menu_mouse_spec.c_str());
@@ -1141,7 +1200,7 @@ int wmain(int argc, wchar_t** argv) {
         back->Release();
         rtv = nullptr;
         back = nullptr;
-        const HRESULT hr = gfx.swap->ResizeBuffers(0, UINT(cr.right), UINT(cr.bottom), DXGI_FORMAT_UNKNOWN, 0);
+        const HRESULT hr = gfx.swap->ResizeBuffers(0, UINT(cr.right), UINT(cr.bottom), DXGI_FORMAT_UNKNOWN, gfx.swap_flags);
         if (FAILED(hr)) log("[supersampling] Bildpuffer nicht anpassbar (%08lX)\n", hr);
         gfx.swap->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back));
         gfx.dev->CreateRenderTargetView(back, nullptr, &rtv);
@@ -1194,10 +1253,33 @@ int wmain(int argc, wchar_t** argv) {
         }
     };
 
+    // TS2_MAUSPROBE=von-bis (Bilder): je Bild die Zeitpunkte (ms) Schleifenanfang,
+    // nach der Eingabe, nach Tick, nach Render, nach Present; die an TS2
+    // gegebene Mausbewegung; Gier/Nick von Spieler 1 (+0x154/+0x158), den
+    // Blickwert nach TS2s Begrenzung (+0xE18/+0xE1C), die Blickrichtung der
+    // Kamera und die Takte des Bildes
+    int mprobe_from = -1, mprobe_to = -1;
+    {
+        wchar_t v[32] = {};
+        if (GetEnvironmentVariableW(L"TS2_MAUSPROBE", v, 32) > 0) swscanf(v, L"%d-%d", &mprobe_from, &mprobe_to);
+    }
+    auto qms = [&] {
+        LARGE_INTEGER q;
+        QueryPerformanceCounter(&q);
+        return double(q.QuadPart) * 1000.0 / double(qf.QuadPart);
+    };
+    double mp_t[5] = {};
+
     bool running = true;
     int t = 0;
     for (; running && (ticks == 0 || t < ticks); ++t) {
         g_tick_now = t;
+        const bool mprobe = t >= mprobe_from && t <= mprobe_to;
+        // Erst warten (Monitor bzw. nächste Periode, timing.h), dann die
+        // Eingabe lesen: so geht sie frisch in Takt und Bild
+        if (gfx.waitable) WaitForSingleObjectEx(gfx.waitable, 1000, TRUE);
+        timing_wait();
+        if (mprobe) mp_t[0] = qms();
         MSG m;
         while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
             if (m.message == WM_QUIT) running = false;
@@ -1206,12 +1288,14 @@ int wmain(int argc, wchar_t** argv) {
             DispatchMessageW(&m);
         }
         input_frame();
+        if (mprobe) mp_t[1] = qms();
         features_tick(g_img, settings, gfx.wnd);
         cheats_tick(g_img);
         if (!call_vfunc(obj, hf2::kTick, &devh)) {
             log("Takt %d ist abgestürzt\n", t);
             return 4;
         }
+        if (mprobe) mp_t[2] = qms();
         timing_frame();
         // TS2_ALPHALOESCHEN=<0..1>: Ziel vor jedem Bild auf (0,0,0,a) löschen
         // (Glasfehler: TS2 mischt mit dem Ziel-Alpha und löscht selbst nicht)
@@ -1230,6 +1314,7 @@ int wmain(int argc, wchar_t** argv) {
             log("Bild %d ist abgestürzt\n", t);
             return 5;
         }
+        if (mprobe) mp_t[3] = qms();
         postfx_apply(gfx.ctx, rtv, out_w, out_h);
         ss_probe_frame_end();
         if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, shot_tex(), shot);
@@ -1246,11 +1331,39 @@ int wmain(int argc, wchar_t** argv) {
         // prüfen, ob sich das Bild in jedem Takt ändert
         if (t + 2 == ticks && !shot.empty() && GetEnvironmentVariableW(L"TS2_BILDPAAR", nullptr, 0) > 0)
             save_bmp(gfx, shot_tex(), fs::path(shot).replace_extension(L".vorher.bmp"));
-        // TS2 hält seine 60 Takte selbst ein (Sleep, dann Warteschleife,
-        // 0x14107CC64); ein zusätzliches Warten auf den Monitor liefe gegen
-        // diesen Takt. Ohne bildsync zeigt das Flip-Modell jedes Bild ab dem
-        // nächsten Bildwechsel, ohne Zerreißen und ohne zu blockieren.
-        gfx.swap->Present(settings.vsync ? 1 : 0, 0);
+        // Das Flip-Modell zeigt jedes Bild ab dem nächsten Bildwechsel, ohne
+        // Zerreißen und ohne zu blockieren; den Takt hält timing_wait. Mit
+        // Monitor-Kopplung (bildsync, passender Bildwechsel) Present(1 bzw. 2)
+        // und Warten auf den freien Bildpuffer am Anfang des Bildes.
+        gfx.swap->Present(UINT(gfx.interval), 0);
+        if (mprobe) {
+            mp_t[4] = qms();
+            float dx = 0, dy = 0;
+            input_last_mouse(&dx, &dy);
+            uint8_t* p1 = *g_img.va<uint8_t*>(hf2::kPlayerTablePtr);
+            if (*g_img.va<int32_t>(hf2::kPlayerCount) <= 0) p1 = nullptr;
+            const uint8_t* cam = *g_img.va<uint8_t*>(hf2::kCamera);
+            float cy = 0, cp = 0;
+            if (cam) {
+                const float* cd = reinterpret_cast<const float*>(cam + hf2::kCamDir);
+                cy = std::atan2(cd[0], cd[2]) * 57.29578f;
+                cp = std::atan2(cd[1], std::sqrt(cd[0] * cd[0] + cd[2] * cd[2])) * 57.29578f;
+            }
+            auto f = [&](uint32_t off) { return p1 ? *reinterpret_cast<const float*>(p1 + off) : 0.0f; };
+            // Anzeige (DXGI-Statistik): Nummer dieses Present und das zuletzt
+            // angezeigte Present mit dem Zeitpunkt seines Bildwechsels
+            DXGI_FRAME_STATISTICS st{};
+            UINT pc = 0;
+            gfx.swap->GetLastPresentCount(&pc);
+            const bool have_st = SUCCEEDED(gfx.swap->GetFrameStatistics(&st));
+            log("[maus] Bild %d: %.3f +%.3f +%.3f +%.3f +%.3f ms | Maus %.2f %.2f | Gier %.4f Nick %.4f | "
+                "Blick %.4f %.4f | Kamera %.4f %.4f | Takte %d %.2f | Present %u, angezeigt %d bei %.3f (Wechsel %u)\n",
+                t, mp_t[0], mp_t[1] - mp_t[0], mp_t[2] - mp_t[0], mp_t[3] - mp_t[0], mp_t[4] - mp_t[0], dx, dy,
+                f(0x154), f(0x158), f(0xE18), f(0xE1C), cy, cp, *g_img.va<int32_t>(0x14259CBE8),
+                *g_img.va<float>(hf2::kFrameTicks), pc, have_st ? int(st.PresentCount) : -1,
+                have_st ? double(st.SyncQPCTime.QuadPart) * 1000.0 / double(qf.QuadPart) : 0.0,
+                have_st ? st.SyncRefreshCount : 0u);
+        }
         frame_stats();
         d3d_messages(false);
     }

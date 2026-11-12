@@ -72,7 +72,9 @@ const std::vector<IniOption>& ini_options() {
         }
         o.push_back({"tasten", "belegung", std::to_string(kBindingVersion), "", true});
         const std::vector<IniOption> rest = {
-            {"maus", "empfindlichkeit", "1.0", "Mausempfindlichkeit (1.0 = wie das Spiel)"},
+            {"maus", "empfindlichkeit", "1.0",
+             "Mausempfindlichkeit: 1.0 = 0,53 Grad je Zaehlschritt, waagerecht und senkrecht gleich, bei 60 und 120 Hz\n"
+             "(wie das Spiel waagerecht bei 60 Hz; frueher drehte sie bei takt=120 und senkrecht nur halb so schnell)"},
             {"maus", "umkehren", "0", "1: oben und unten vertauscht"},
             {"maus", "nickgrenze", "85", "Nickgrenze in Grad, solange die Maus zielt (Spiel: 40)"},
             {"maus", "menue", "1", "Menues mit der Maus (Zeiger, Linksklick OK, Rechtsklick zurueck)"},
@@ -138,13 +140,23 @@ const std::vector<IniOption>& ini_options() {
             {"kamera", "freecam", "1", "Freie Kamera: Taste loest die Kamera vom Spieler (WASD, Maus, Leertaste/C, Umschalt schneller;\n"
              "Pad: [pad] freecam, Sticks, Steuerkreuz hoch/runter oder RT/LT, LB/RB schneller)"},
             {"kamera", "freecam_taste", "117", "virtueller Tastencode, 117 = F6"},
+            {"kamera", "freecam_raeume", "1",
+             "Raeume in der freien Kamera: 0 = wie das Spiel (nur was die Portale ab dem Raum der Kamera zeigen;\n"
+             "ueber oder ausserhalb des Levels fehlen dann ganze Teile), 1 = dort alle Raeume, sonst wie das Spiel,\n"
+             "2 = immer alle Raeume (zeigt auch Raeume hinter der Kulisse, z. B. Eiswaende durch den Schnee)"},
+            {"kamera", "teleport_taste", "118",
+             "freie Kamera: Taste setzt den Spieler auf den Boden unter der Kamera und beendet sie (118 = F7, 0 = aus;\n"
+             "Pad: Benutzen). Ohne Boden unter der Kamera wird abgelehnt"},
             {"grafik", "breite", "1920", "Render-Aufloesung"},
             {"grafik", "hoehe", "1080", ""},
             {"grafik", "supersampling", "2",
              "Supersampling: k-fach so gross zeichnen und gefiltert auf Fenster bzw. Monitor bringen (glattere Kanten);\n"
              "das Spiel rechnet weiter in der Render-Aufloesung. 1 = aus, 1.5, 2, 3 (2 auf einem 4K-Monitor: 1:1)"},
             {"grafik", "takt", "60", "Bildtakt: 60 oder 120 (120: Spieler und Kamera nativ, Gegner in 60er-Schritten)"},
-            {"grafik", "bildsync", "0", "1: zusaetzlich auf den Bildwechsel des Monitors warten (TS2 taktet selbst)"},
+            {"grafik", "bildsync", "0",
+             "1: Bild an den Monitor koppeln (gleichmaessig, ein Bild je Bildwechsel, etwa ein Bildwechsel Latenz);\n"
+             "nur wenn der Bildwechsel zum Takt passt (120 Hz bei takt=120, 60 Hz bei takt=60), sonst wie 0.\n"
+             "0: ts2.exe taktet selbst (kuerzeste Latenz; ohne G-Sync/FreeSync kann es selten ruckeln)"},
             {"grafik", "vollbild", "0", "1: randloses Vollbild beim Start (Alt+Enter schaltet um)"},
             {"grafik", "hdr", "1", "1: HDR-Ausgabe (scRGB), wenn der Monitor im HDR-Modus laeuft; 0: immer SDR"},
             {"grafik", "hdr_weiss", "200", "HDR: Helligkeit von Weiss im Spiel in Nits (80-1000)"},

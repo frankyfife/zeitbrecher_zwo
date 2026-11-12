@@ -70,6 +70,35 @@ constexpr uint64_t kFreecamExtra = 0x143F3A8B8;   // 2 Werte -> [Kamera+0x208]+0
 constexpr uint64_t kCamMode8Room = 0x1410828EE;
 constexpr uint64_t kFindRoom = 0x1411BFA08;
 constexpr uint32_t kCamPos = 0x2A0, kCamDir = 0x310, kCamProj = 0x208, kPlayerRoomArg = 0xF4;
+// Raum-Sichtbarkeit je Bild (Xbox: Portale ab dem Kameraraum): 0x141078598
+// geht vom Kameraraum (Kamera +0x2B8, sonst +0x2BC) über die Portale und
+// legt je Raum r bei Kamera +0x384 + 12·r die Portaltiefe (int, −1 = nicht
+// sichtbar) und das Bildrechteck (int16 x0, y0, x1, y1 ab +4) ab, +0xCF0 die
+// größte Tiefe. Der Raumzeichner 0x141076C18 zeichnet nur Räume mit Tiefe
+// 0…0x4F und nicht leerem Rechteck. Aufrufe als Endsprung (E9) nach der
+// Kamera-Aktualisierung.
+constexpr uint64_t kRoomVis = 0x141078598;
+constexpr uint64_t kRoomVisJmp1 = 0x14114C82F;      // in 0x14114C7F4
+constexpr uint64_t kRoomVisJmp2 = 0x14114CA1A;      // in 0x14114C990
+constexpr uint64_t kRoomCount = 0x143F417C4;        // int, Räume 1…n
+constexpr uint64_t kRoomTable = 0x142EC3138;        // -> Räume à 0xC0 (Index = Nummer); +8 Portalliste, +0x78 Kasten
+constexpr uint64_t kViewport = 0x143F0F508;         // -> int x0 [0], x1 [1], y0 [5], y1 [6]
+constexpr uint32_t kCamRoom = 0x2B8, kCamRoomVis = 0x384, kCamMaxDepth = 0xCF0;
+// Spieler versetzen wie die Startplatzierung 0x1411D6E70 (ohne deren
+// Startwaffe 0x1411D4818): Die Raumsuche kFindRoom nimmt unter den Räumen am
+// Punkt den mit dem höchsten Boden der Raumgeometrie darunter und legt dessen
+// Höhe in 0x14257D7F4 ab (Startpunkte: Boden + 0,01); ohne Boden ist das die
+// Auffangfläche unter dem Level. 0x1411D6DB8(Spieler, x, y, z) setzt die
+// Augenlage +0x108 (y = Fuß + Augenhöhe +0xE4).
+// Bodenhöhe 0x1411BFB64(pos, auf, radius, aus1, aus2, nur_raum): höchster
+// Boden unter pos (Räume am Punkt, mit Objekten wenn nur_raum = 0), sonst −2e38
+constexpr uint64_t kGroundHeight = 0x1411BFB64;
+constexpr uint64_t kSetEye = 0x1411D6DB8;
+constexpr uint32_t kPlayerEye = 0x108, kPlayerEyeHeight = 0xE4, kPlayerPrevPos = 0x1A0, kPlayerPrevEye = 0x1AC,
+                   kPlayerYaw = 0x154, kPlayerYaw2 = 0xE70, kPlayerPitch = 0x158, kPlayerRoom = 0xD78,
+                   kPlayerRoom2 = 0xD7C, kPlayerStandOn = 0xDB8;
+constexpr uint32_t kSubPos = 0x6C, kSubYaw = 0x88, kSubPrevPos = 0xB4, kSubRoom = 0x18;  // Objekt kPlayerSub
+constexpr float kNoFall = 2e38f;                    // kCharFallStartY: kein Fall (kein Fallschaden)
 constexpr uint64_t kWalk = 0x1411D9748;             // Bewegungsmodus 0, Gehen
 constexpr uint64_t kWalkCall = 0x1411DBE73;         // sein einziger Aufruf (im Dispatcher 0x1411DAF8C)
 constexpr uint32_t kPlayerFallSpeedX = 0xDF8;       // Quergeschwindigkeit im Fall, je Takt

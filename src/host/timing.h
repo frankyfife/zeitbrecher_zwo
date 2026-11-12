@@ -22,5 +22,14 @@ namespace host {
 void timing_install(const Ts2Image& img, int hz);
 // je Bild vor Render
 void timing_frame();
+// je Bild ganz am Anfang, vor dem Einlesen der Eingabe: bis zur nächsten
+// Periode warten (statt wie TS2 erst nach dem Zeichnen), damit Maus und
+// Tasten frisch in den Takt gehen. TS2s Begrenzer sieht dieselbe Uhr und
+// zählt die Takte wie bisher (TS2_TAKTALT=1: altes Verhalten).
+void timing_wait();
+// Monitor-Kopplung ([grafik] bildsync, wenn der Bildwechsel zum Takt passt):
+// n > 0 = main.cpp wartet je Bild auf den Monitor (Waitable Object, Present(n)),
+// timing_wait zählt dann die Takte aus der vergangenen Zeit statt selbst zu warten
+void timing_set_display_interval(int n);
 
 }  // namespace host

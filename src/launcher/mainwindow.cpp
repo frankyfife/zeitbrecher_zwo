@@ -539,7 +539,10 @@ QWidget* MainWindow::page_graphics() {
             [this, rate](int) { ini_.set_int("grafik", "takt", rate->currentData().toInt()); });
     f.add(QStringLiteral("Bildtakt"), rate);
     f.add(QString(), check(QStringLiteral("Randloses Vollbild (Alt+Enter schaltet um)"), "grafik", "vollbild"));
-    f.add(QString(), check(QStringLiteral("Zusätzlich auf den Monitor warten (Bildsync)"), "grafik", "bildsync"));
+    f.add(QString(), check(QStringLiteral("An den Monitor koppeln (Bildsync)"), "grafik", "bildsync"));
+    f.add(QString(), hint(QStringLiteral("Ein Bild je Bildwechsel, gleichmäßig; wirkt nur, wenn der Monitor zum "
+                                             "Bildtakt passt (120 Hz bei 120, 60 Hz bei 60). Aus: kürzeste "
+                                             "Latenz, ohne G-Sync/FreeSync kann es selten ruckeln.")));
     f.add(QStringLiteral("Sichtfeld"), spin("grafik", "sichtfeld", 70, 150, QStringLiteral(" %")));
     f.add(QString(), hint(QStringLiteral("In Prozent des Spiels; das Zielfernrohr zoomt im selben Verhältnis.")));
     f.add(QStringLiteral("Schatten"), dspin("grafik", "schatten", 0.0, 1.0, 0.05, 2));
@@ -634,6 +637,25 @@ QWidget* MainWindow::page_controls() {
                                   "LB/RB schneller.")));
     f.add(QString(), check(QStringLiteral("Freie Kamera"), "kamera", "freecam"));
     f.add(QStringLiteral("Taste"), single_key("kamera", "freecam_taste"));
+    {
+        // [kamera] freecam_raeume: 0 wie das Spiel, 1 außerhalb des Levels alle, 2 immer alle
+        track("kamera", "freecam_raeume");
+        auto* rooms = new QComboBox;
+        rooms->addItem(QStringLiteral("Wie das Spiel"), 0);
+        rooms->addItem(QStringLiteral("Außerhalb des Levels alle"), 1);
+        rooms->addItem(QStringLiteral("Immer alle"), 2);
+        rooms->setCurrentIndex(std::clamp(ini_.get_int("kamera", "freecam_raeume"), 0, 2));
+        connect(rooms, &QComboBox::currentIndexChanged, this,
+                [this, rooms](int) { ini_.set_int("kamera", "freecam_raeume", rooms->currentData().toInt()); });
+        f.add(QStringLiteral("Räume zeichnen"), rooms);
+        f.span(hint(QStringLiteral("Das Spiel zeichnet nur, was die Türen und Durchgänge vom Raum der Kamera aus "
+                                   "zeigen. Über oder außerhalb des Levels fehlen dann ganze Teile; „Außerhalb des "
+                                   "Levels alle“ zeichnet dort alles. „Immer alle“ zeigt auch Räume hinter der "
+                                   "Kulisse (z. B. Eiswände durch den Schnee).")));
+    }
+    f.span(hint(QStringLiteral("Spieler hierher: setzt den Spieler auf den Boden unter der Kamera und beendet die "
+                               "freie Kamera (Controller: Benutzen). Ohne Boden darunter wird abgelehnt.")));
+    f.add(QStringLiteral("Spieler hierher"), single_key("kamera", "teleport_taste"));
     v->addWidget(box);
 
     f = form_group(QStringLiteral("Bewegung"), &box);

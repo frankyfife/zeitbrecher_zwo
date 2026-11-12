@@ -25,6 +25,8 @@ struct Settings {
     int fov_percent = 100;            // Sichtfeld in Prozent des Spiels (70–150)
     bool freecam = true;              // freie Kamera (Xbox-Fork: ts2_freecam)
     int freecam_key = 0x75;           // virtueller Tastencode (F6)
+    int freecam_rooms = 1;            // freie Kamera: 0 Räume wie das Spiel, 1 alle außerhalb des Levels, 2 immer alle
+    int teleport_key = 0x76;          // freie Kamera: Spieler an die Kamera setzen (F7; 0 = aus)
 };
 
 // Liest ts2.ini (neben ts2.exe); fehlt sie, wird sie mit Vorgaben angelegt.

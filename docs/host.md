@@ -1201,6 +1201,42 @@ geprüft.
   Skript-Bit `0x08000000` schaltet um (Tests). Geprüft: im Glass-Smash-Start
   über die Mauer geflogen, Level vollständig; danach steht der Spieler wie
   vorher.
+- **Räume in der freien Kamera** (`[kamera] freecam_raeume`, Vorgabe 1).
+  TS2 zeichnet nur, was die Portale ab dem Kameraraum zeigen: `0x141078598`
+  (je Bild, Endsprünge `0x14114C82F`/`0x14114CA1A` nach der
+  Kamera-Aktualisierung) flutet über die Portale (`0x141077938`, Seitentest
+  `0x1410778DC`, Tiefen `0x141077A08`, Bildrechtecke `0x141077B10`/
+  `0x141077EE0`) und legt je Raum r bei Kamera `+0x384+12·r` Tiefe (−1 =
+  unsichtbar) und Rechteck ab, `+0xCF0` die größte Tiefe. Der Raumzeichner
+  `0x141076C18` (Xbox `FUN_0001DA30`) zeichnet erst die Kulisse (Raum 0xDE,
+  ohne Tiefe), dann die Räume mit Tiefe 0…0x4F von vorn nach hinten und
+  durchsichtig zurück; Objekte und Figuren hängen über „Raum sichtbar“
+  (Kamera `+0xCF4[r]`, `0x141074C80`) daran. Sichtkegel und Far-Plane (1000)
+  blenden in der freien Kamera nichts falsch aus. Findet die Raumsuche an
+  der Kamera keinen Raum (über oder außerhalb des Levels), bleibt der alte
+  Raum, und ganze Teile fehlen. Stufe 1 gibt dann nach jeder Rechnung jedem
+  Raum das volle Bild und eine Tiefe nach dem Abstand zu seinem Kasten
+  (Räume `*0x142EC3138` à 0xC0, `+0x78` Kasten); Stufe 2 immer, Stufe 0 nie.
+  Immer alle Räume zeigt Räume hinter der Kulisse (Siberia: Eiswände durch
+  den Schnee), deshalb nur außerhalb. Gemessen (Siberia, 60 Hz): alle Räume
+  0,9–1,0 statt 0,3–0,5 ms Zeichenzeit (CPU), 2,4–3,7× Zeichnungen. Geprüft:
+  normales Spiel pixelgleich, innen Stufe 1 = Spiel, außen vollständig.
+- **Spieler hierher** (`[kamera] teleport_taste`, F7; Pad: Benutzen während
+  der freien Kamera; Skript: Bit 0x40000 während der freien Kamera). Sucht von
+  der Kamera abwärts den ersten Punkt im Kasten eines nicht flachen Raums mit
+  Boden (`0x1411BFB64`, mit Objekten) im Kasten; die Raumsuche allein liefert
+  über Schluchten die Auffangfläche unter dem Level (Siberia Raum 9,
+  y −51,8). Setzt wie die Startplatzierung `0x1411D6E70` (ohne Startwaffe
+  `0x1411D4818`): Fuß auf Boden + 0,01, Auge `0x1411D6DB8`, Vorlagen
+  `+0x1A0/+0x1AC`, Gier `+0x154/+0xE70`, Nick `+0x158`, Objekt `+0x1C8`
+  (`+0x6C/+0xB4/+0x88/+0x18`), Raum `+0xD78/+0xD7C`, Gehmodus, Fallstart
+  `+0x1A20` = 2e38 (kein Fallschaden), und beendet die freie Kamera. Ohne
+  Boden: abgelehnt (Log, Signalton). Fällt der Spieler danach über 1 s oder
+  hat keinen Raum, kommt er an die alte Stelle zurück. Geprüft: Siberia
+  (läuft, Zaun hält ihn auf, Scanner zeigt die Wachen an der neuen Stelle),
+  Challenge Pane in the Neck; außerhalb abgelehnt. Proben:
+  `TS2_FCPOS=x,y,z,gier,nick[;…]` + `TS2_FCSCHRITT`, `TS2_FCPROBE=1`,
+  `TS2_TPPROBE=1`.
 - **Zurückkippen beim Gehen:** Der Fork hält dafür +0x150 fest. Gemessen
   (`TS2_BLICKPROBE`): Der PC-Port kippt mit der Maus nicht zurück (Nick
   bleibt 30°, Zustand 1), also nichts zu tun.
@@ -1305,8 +1341,8 @@ auf einmal (`0x14259CBE8`).
 - **Zeitgeber:** `timeBeginPeriod(1)`, und `Sleep` ist durch einen
   hochauflösenden Wartezeitgeber ersetzt.
 - **Kein Warten auf den Monitor:** Das Flip-Modell zeigt jedes Bild ab dem
-  nächsten Bildwechsel (`Present(0)`). Mit `[grafik] bildsync=1` wartet
-  `ts2.exe` zusätzlich auf den Monitor (wie bisher).
+  nächsten Bildwechsel (`Present(0)`). Mit `[grafik] bildsync=1` koppelt
+  `ts2.exe` an den Monitor (siehe „Mausgefühl und Latenz“).
 - **Grafikkarte:** `ts2.exe` nimmt die leistungsstärkste GPU (DXGI
   "high performance").
 
@@ -1315,6 +1351,48 @@ Level auf einem 120-Hz-Monitor: 16,67 ms im Mittel, 16,1–17,2 ms Spanne,
 keine Ausreißer; Spitzen nur bei Ladebildschirmen. Vorher lief das Warten
 auf den Monitor gegen TS2s eigenen Takt. Mehr als 60 Bilder pro Sekunde
 brauchen die Entkopplung von Takt und Bild (Roadmap).
+
+## Mausgefühl und Latenz (`input.cpp`, `timing.cpp`)
+
+**Maus 1:1.** TS2 summiert die Mausbewegung (vtable +0x78/+0x80) in
+`0x143F0F4A8`/`0x143F0F4A4`; scePadRead gibt je Lesung die Differenz zur
+vorigen (`0x143F0F4AC`/`0x143F0F4B4`) × 0,2 (`0x14259CF44`) weiter. Gemessen
+(`TS2_MAUSSKRIPT`, `TS2_MAUSPROBE`): linear, ohne Glättung, Kappung oder
+Beschleunigung, Drehung im selben Bild. Aber Gier 0,5333°, Nick nur 0,2667°
+je Zählschritt, beides × Bildzeit (`0x14259CBE4`): bei `takt=120` halb so
+viel Drehung je Zählschritt, in Bildern mit zwei Takten doppelt. `ts2.exe`
+teilt durch die Bildzeit, gibt Nick doppelt und setzt die Summen je Bild auf
+den ungelesenen Rest zurück (sonst wachsen sie unbegrenzt, float verliert
+Stellen). Jetzt dreht ein Zählschritt immer 0,5333° × `[maus]
+empfindlichkeit`, waagerecht wie senkrecht, bei 60 und 120 Hz (geprüft,
+auch 0,3 Zählschritte je Bild). Wer bei `takt=120` dasselbe waagerechte
+Tempo wie vorher will, setzt `empfindlichkeit` auf 0,5.
+
+**Takt vor der Eingabe.** TS2s Begrenzer (`0x14107CC64`, aus Render) wartete
+nach dem Zeichnen bis zur nächsten Periode; zwischen dem Einlesen der Maus
+und Present lag so fast eine ganze Periode. Jetzt wartet `ts2.exe` am
+Bildanfang (`timing_wait`) und liest danach die Eingabe. Der Begrenzer
+bekommt an seinen QPC-Aufrufen (`0x14107CC8C`, `0x14107CDE8`) die
+Periodengrenze, sieht ganze Perioden und zählt die Takte wie bisher, ohne
+selbst zu warten (`TS2_TAKTALT=1`: altes Verhalten). Die Swapchain hat ein
+Waitable Object mit höchstens einem Bild in der Warteschlange; auch auf einen
+freien Bildpuffer wird vor der Eingabe gewartet.
+
+| Eingabe bis Present | vorher | nachher |
+| --- | --- | --- |
+| 60 Hz | 16,6 ms | 0,5 ms |
+| 120 Hz | 8,3 ms | 0,7 ms |
+
+**Bildsync** (`[grafik] bildsync=1`): koppelt das Bild an den Monitor, wenn
+sein Bildwechsel zum Takt passt (120 Hz bei `takt=120`, 60 Hz bei
+`takt=60`): Warten auf den freien Bildpuffer, Present(1), die Takte aus der
+vergangenen Zeit gerundet. Ein Bild je Bildwechsel, gemessen 8,25 ms von der
+Eingabe bis zur Anzeige, Bildabstand σ 0,001 ms. Passt der Bildwechsel nicht,
+wirkt es wie 0. Ohne Bildsync taktet `ts2.exe` nach der Uhr: kürzeste
+Latenz; ohne G-Sync/FreeSync kann die Schwebung zwischen Uhr und Monitor
+selten ruckeln. Siberia-Skript bei `takt=120`: Bildnummern verdoppeln
+(`640:40:10,1200:40:10,1400:100:10,1800:40:10,2200:40:10,2900:40:10,3400:40:10,3800:40:10`,
+Level ab Bild ~8600).
 
 ## 120 Hz nativ, Stufe 1: Spieler und Kamera
 
