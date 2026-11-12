@@ -87,6 +87,37 @@ float distance_gain(const Voice& v) {
     return v.min_dist / ((dc - v.min_dist) * v.rolloff + v.min_dist);
 }
 
+// --- Lautstärken wie auf der Xbox (PAL-XBE) ---
+// Die Xbox spielt dieselben Stimmen über DirectSound: Lautstärke
+// 2000 · log10(Wert · Gesamt/16) hundertstel dB (0x1C6600, linear also gleich).
+// Sie unterscheidet zwei Arten von Puffern (0x1C6640, Pools 0x46A748/0x451EA0):
+// - Ohne Position (Musik, Sprache, Menü, HUD; auf dem PC unpositioniert oder
+//   "positioniert" am Hörer mit min = max = 1): 2D-Puffer, je Seite die volle
+//   Lautstärke, aber mit der Vorgabe-Headroom von DirectSound für 2D-Stimmen,
+//   600 hundertstel dB (DSOUND 0x2000FF; SetVolume zieht sie ab, 0x1FEE42).
+// - Mit Position: 3D-Puffer (Headroom 0), Mindestabstand 1, Höchstabstand wie
+//   auf dem PC, Abfallkurve {0,5; 0,25; 0,125; 0} (0x34A2B4, SetRolloffCurve):
+//   zwischen Mindest- und Höchstabstand stückweise linear in vier gleichen
+//   Abschnitten (DSOUND 0x201A92). Der PC-Port nähert das mit min = max/4 und
+//   Abfall 4 an, ist damit aber in der Nähe (unter ~17 m) bis 5,5 dB lauter.
+constexpr float kXbox2dGain = 0.50118723f;  // −6 dB
+bool xbox_2d(const Voice& v) {
+    return !v.positional || (v.max_dist == 1.0f && v.x == 0.0f && v.y == 0.0f && v.z == 0.0f);
+}
+float xbox_distance_gain(const Voice& v) {
+    static const float kCurve[5] = {1.0f, 0.5f, 0.25f, 0.125f, 0.0f};
+    constexpr float kMin = 1.0f;
+    const float d = std::sqrt(v.y * v.y + v.x * v.x + v.z * v.z);
+    if (d <= kMin) return 1.0f;
+    const float max = v.max_dist > kMin ? v.max_dist : kMin + 1.0f;
+    const float t = (std::min(d, max) - kMin) * 4.0f / (max - kMin);
+    int i = int(t);
+    if (i > 3) i = 3;
+    return kCurve[i] + (kCurve[i + 1] - kCurve[i]) * (t - float(i));
+}
+bool g_xbox = true;  // false: genau wie TS2s Mixer (TS2_TONPRUEFUNG)
+float dist_gain(const Voice& v) { return g_xbox ? xbox_distance_gain(v) : distance_gain(v); }
+
 // waagerechte Richtung (nx rechts, nz vorn), wie das Original
 void direction(const Voice& v, float* nx, float* nz) {
     const float h2 = v.z * v.z + v.x * v.x;
@@ -114,7 +145,7 @@ struct Gains {
 // und ohne 0x4 (Menügeräusche: am Hörer, min = max = 1).
 // Unpositionierte Stimmen (Zwischensequenz-Ton in Blöcken zu vier Puffern,
 // Menü) bleiben trocken. Gemessen mit TS2_HALLPROBE in Menü und Siberia.
-bool in_world(const Voice& v) { return v.positional && (v.flags & 0x1004) == 0; }
+bool in_world(const Voice& v) { return v.positional && (v.flags & 0x1004) == 0 && !(g_xbox && xbox_2d(v)); }
 
 // Original-Stereopanning (0x141227D99…0x141227F17): Faktor links/rechts
 void stereo_pan(const Voice& v, float* pl, float* pr) {
@@ -133,6 +164,10 @@ Gains voice_gains(const Voice& v, int channels, bool hall) {
     const float cat = (v.flags & 0x1000) ? *g_music : *g_effects;
     float gl = *g_master * v.vol_left;
     float gr = *g_master * v.vol_right;
+    // Xbox: Stimmen ohne Position als 2D-Puffer (volle Lautstärke je Seite,
+    // −6 dB Headroom), die übrigen als 3D-Puffer mit der Xbox-Abfallkurve
+    const bool placed = v.positional && !(g_xbox && xbox_2d(v));
+    if (g_xbox && !placed) gl *= kXbox2dGain, gr *= kXbox2dGain;
     if (hall && in_world(v)) {
         // Hall-Anteil: wie Stereo, aber nur mit der Wurzel der
         // Abstandsdämpfung (ferne Quellen klingen halliger, verstummen aber
@@ -140,15 +175,15 @@ Gains voice_gains(const Voice& v, int channels, bool hall) {
         out.hall = true;
         float pl, pr;
         stereo_pan(v, &pl, &pr);
-        const float dg = std::sqrt(distance_gain(v));
+        const float dg = std::sqrt(dist_gain(v));
         out.send_mono[0] = out.send_st[0] = gl * pl * dg * cat;
         out.send_mono[1] = out.send_st[1] = gr * pr * dg * cat;
     }
-    if (v.positional && channels == 6) {
+    if (placed && channels == 6) {
         float nx, nz;
         direction(v, &nx, &nz);
         // gleiche Lautheit wie Stereo von vorn: 2 · 0,75² = 1,125
-        const float g = 0.5f * (gl + gr) * distance_gain(v) * cat * 1.0606602f;
+        const float g = 0.5f * (gl + gr) * dist_gain(v) * cat * 1.0606602f;
         float deg = std::atan2(nx, nz) * 57.29578f;
         if (deg < 0) deg += 360.0f;
         for (int i = 0; i < 5; ++i) {
@@ -165,11 +200,11 @@ Gains voice_gains(const Voice& v, int channels, bool hall) {
         for (int c = 0; c < 6; ++c) out.st[0][c] = out.st[1][c] = 0.5f * out.mono[c];
         return out;
     }
-    if (v.positional) {
+    if (placed) {
         // Original (0x141227D99…0x141227F17)
         float pl, pr;
         stereo_pan(v, &pl, &pr);
-        const float dg = distance_gain(v);
+        const float dg = dist_gain(v);
         gl *= pl * dg;
         gr *= pr * dg;
     }
@@ -271,19 +306,38 @@ void mixer_init(const Ts2Image& img) {
     g_listener = img.va<float>(hf2::kSoundListenerDir);
 }
 
-void mixer_mix(float* out, uint32_t frames, int rate, int channels, float* send) {
+void mixer_mix(float* out, uint32_t frames, int rate, int channels, float* send, bool xbox) {
+    g_xbox = xbox;
     std::memset(out, 0, size_t(frames) * channels * sizeof(float));
     if (send) std::memset(send, 0, size_t(frames) * 2 * sizeof(float));
     const float dt = 1.0f / float(rate);
+    int playing = 0, same_max = 0, same_id = 0;
+    int ids[kVoices];
     for (int k = 0; k < kVoices; ++k) {
         Voice& v = g_voices[k];
         if (!v.lock) continue;
         EnterCriticalSection(v.lock);
         if (v.active && v.state == 2) {
-            if (g_probe) probe_voice(k, v);
+            if (g_probe) {
+                probe_voice(k, v);
+                ids[playing] = v.queue[v.current & 31];
+                int same = 1;
+                for (int j = 0; j < playing; ++j) same += ids[j] == ids[playing];
+                if (same > same_max) same_max = same, same_id = ids[playing];
+                ++playing;
+            }
             mix_voice(v, out, send, frames, channels, dt, voice_gains(v, channels, send != nullptr));
         }
         LeaveCriticalSection(v.lock);
+    }
+    if (g_probe) {
+        static int blocks = 0, pmax = 0, smax = 0, sid = 0;
+        if (playing > pmax) pmax = playing;
+        if (same_max > smax) smax = same_max, sid = same_id;
+        if (++blocks % 470 == 0) {
+            log("[ton] Stimmen: höchstens %d gleichzeitig, derselbe Puffer höchstens %d× (Puffer %d)\n", pmax, smax, sid);
+            pmax = smax = sid = 0;
+        }
     }
 }
 
@@ -304,7 +358,7 @@ float mixer_compare(void* ts2_mixer, uint32_t frames, int rate) {
     std::vector<uint8_t> after_ts2(snap.size());
     std::memcpy(after_ts2.data(), g_voices, snap.size());
     std::memcpy(g_voices, snap.data(), snap.size());
-    mixer_mix(b.data(), frames, rate, 2, nullptr);
+    mixer_mix(b.data(), frames, rate, 2, nullptr, false);  // genau wie TS2s Mixer
     float diff = 0.0f;
     for (size_t i = 0; i < a.size(); ++i) diff = std::max(diff, std::fabs(a[i] - b[i]));
     if (std::memcmp(after_ts2.data(), g_voices, snap.size()) != 0) diff = std::max(diff, 1000.0f);  // Zustand weicht ab

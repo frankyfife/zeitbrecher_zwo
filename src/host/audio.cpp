@@ -8,11 +8,13 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <thread>
 #include <vector>
 
 #include "hf2.h"
+#include "hooks.h"
 #include "log.h"
 #include "mixer.h"
 #include "reverb.h"
@@ -161,6 +163,195 @@ private:
     std::vector<float> data_;
 };
 
+// --- Geräusche starten wie auf der Xbox ---
+// Auf der Xbox gehen alle Geräusch-Starts nach Nummer (Wrapper 0x1C6CF0,
+// 0x1C6D30, 0x1C6F20, 0x1C78D2) durch 0x1C6890, bevor ein Puffer belegt wird
+// (0x1C6640). Diese Stelle lässt in einem Takt (Spielzeit 0x40BE94) jede
+// Nummer nur einmal und höchstens 30 Starts zu, die Nummern 0x211…0x214 nur
+// alle 6 Takte. Im PC-Port (0x1412279E8, gleiche Aufgabe, 36 Aufrufer) fehlt
+// das; feuern mehrere Gegner im selben Takt, liegen so dieselben Schüsse
+// mehrfach übereinander (gemessen bis 10×). Hier vor dem Original, mit der
+// Spielzeit des PC-Ports (0x142F9A22C, 60-Hz-Takte). Musik und Sprache
+// (ce_music, direkt 0x1412276A0) laufen wie auf der Xbox daran vorbei.
+constexpr uint64_t kPlaySound = 0x1412279E8;  // int (nummer, pos*, reichweite, …), 0 = keine Stimme
+constexpr uint64_t kTicks = 0x142F9A22C;      // Spielzeit in Takten
+using PlaySoundFn = int (*)(int, void*, float, int, uint64_t, uint64_t, uint64_t, uint64_t);
+PlaySoundFn g_play_sound = nullptr;  // Sprungbrett zum Original
+const int32_t* g_ticks = nullptr;
+struct {
+    int32_t tick = INT32_MIN, group_tick = INT32_MIN;
+    int count = 0;
+    int ids[30] = {};
+    uint32_t dropped = 0;  // Protokoll (TS2_HALLPROBE)
+} g_starts;
+
+int play_sound_xbox(int id, void* pos, float range, int a4, uint64_t a5, uint64_t a6, uint64_t a7, uint64_t a8) {
+    auto& s = g_starts;
+    const int32_t t = *g_ticks;
+    if (id >= 0x211 && id <= 0x214) {
+        // (Spielzeit zurückgesetzt, z. B. neues Level: neu beginnen)
+        if (s.group_tick != INT32_MIN && t >= s.group_tick && t - s.group_tick <= 5) return ++s.dropped, 0;
+        s.group_tick = t;
+    }
+    int n = 0;
+    if (t != s.tick) {
+        s.tick = t;
+    } else {
+        n = s.count;
+        for (int i = 0; i < n; ++i)
+            if (s.ids[i] == id) return ++s.dropped, 0;
+        if (n >= 30) return ++s.dropped, 0;
+    }
+    s.ids[n] = id;
+    s.count = n + 1;
+    return g_play_sound(id, pos, range, a4, a5, a6, a7, a8);
+}
+
+bool install_xbox_starts(const Ts2Image& img) {
+    // mov [rsp+8], rbx; push rdi; sub rsp, 50h; xor r8d, r8d
+    static const uint8_t kEntry[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x45, 0x33, 0xC0};
+    uint8_t* at = img.va(kPlaySound);
+    if (std::memcmp(at, kEntry, sizeof kEntry) != 0) return false;
+    // Sprungbrett: die ersten 5 Byte (ortsunabhängig), dann jmp [rip] nach at+5
+    auto* tramp = static_cast<uint8_t*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    uint8_t* stub = static_cast<uint8_t*>(jump_stub(img, reinterpret_cast<const void*>(&play_sound_xbox)));
+    if (!tramp || !stub) return false;
+    std::memcpy(tramp, at, 5);
+    const uint8_t jmp[6] = {0xFF, 0x25, 0, 0, 0, 0};
+    std::memcpy(tramp + 5, jmp, 6);
+    const uint64_t back = reinterpret_cast<uint64_t>(at + 5);
+    std::memcpy(tramp + 11, &back, 8);
+    FlushInstructionCache(GetCurrentProcess(), tramp, 32);
+    g_play_sound = reinterpret_cast<PlaySoundFn>(tramp);
+    g_ticks = img.va<int32_t>(kTicks);
+    uint8_t patch[5] = {0xE9};
+    const int32_t rel = int32_t(int64_t(stub) - int64_t(at + 5));
+    std::memcpy(patch + 1, &rel, 4);
+    DWORD old;
+    VirtualProtect(at, sizeof patch, PAGE_EXECUTE_READWRITE, &old);
+    std::memcpy(at, patch, sizeof patch);
+    VirtualProtect(at, sizeof patch, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, sizeof patch);
+    return true;
+}
+
+// Sicherheitsnetz am Master (vor der Aufnahme): Begrenzer mit Vorausschau.
+// Unterhalb von −1 dBFS bleibt das Signal unverändert (nur 64 Frames, 1,3 ms,
+// verzögert); darüber wird die Verstärkung aller Kanäle gemeinsam so weit
+// gesenkt, dass keine Spitze die Schwelle überschreitet: Minimum der nötigen
+// Verstärkung über die Vorausschau, darüber ein gleitender Mittelwert (weicher
+// Einsatz, trotzdem nie zu spät), Rückkehr mit 80 ms Zeitkonstante.
+class Limiter : public IXAPO {
+public:
+    STDMETHODIMP QueryInterface(REFIID riid, void** p) override {
+        if (riid == __uuidof(IXAPO) || riid == __uuidof(IUnknown)) {
+            *p = static_cast<IXAPO*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *p = nullptr;
+        return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return ULONG(InterlockedIncrement(&ref_)); }
+    STDMETHODIMP_(ULONG) Release() override {
+        const LONG r = InterlockedDecrement(&ref_);
+        if (r == 0) delete this;
+        return ULONG(r);
+    }
+    STDMETHODIMP GetRegistrationProperties(XAPO_REGISTRATION_PROPERTIES** pp) override {
+        auto* r = static_cast<XAPO_REGISTRATION_PROPERTIES*>(XAPOAlloc(sizeof(XAPO_REGISTRATION_PROPERTIES)));
+        if (!r) return E_OUTOFMEMORY;
+        *r = {};
+        wcscpy_s(r->FriendlyName, L"TS2 Begrenzer");
+        r->MajorVersion = 1;
+        r->Flags = XAPO_FLAG_CHANNELS_MUST_MATCH | XAPO_FLAG_FRAMERATE_MUST_MATCH | XAPO_FLAG_BITSPERSAMPLE_MUST_MATCH |
+                   XAPO_FLAG_BUFFERCOUNT_MUST_MATCH | XAPO_FLAG_INPLACE_SUPPORTED | XAPO_FLAG_INPLACE_REQUIRED;
+        r->MinInputBufferCount = r->MaxInputBufferCount = r->MinOutputBufferCount = r->MaxOutputBufferCount = 1;
+        *pp = r;
+        return S_OK;
+    }
+    STDMETHODIMP IsInputFormatSupported(const WAVEFORMATEX*, const WAVEFORMATEX*, WAVEFORMATEX** sup) override {
+        if (sup) *sup = nullptr;
+        return S_OK;
+    }
+    STDMETHODIMP IsOutputFormatSupported(const WAVEFORMATEX*, const WAVEFORMATEX*, WAVEFORMATEX** sup) override {
+        if (sup) *sup = nullptr;
+        return S_OK;
+    }
+    STDMETHODIMP Initialize(const void*, UINT32) override { return S_OK; }
+    STDMETHODIMP_(void) Reset() override { reset(); }
+    STDMETHODIMP LockForProcess(UINT32 n, const XAPO_LOCKFORPROCESS_PARAMETERS* in, UINT32,
+                                const XAPO_LOCKFORPROCESS_PARAMETERS*) override {
+        if (n && in && in[0].pFormat) {
+            channels_ = in[0].pFormat->nChannels;
+            release_ = 1.0f - std::exp(-1.0f / (0.08f * float(in[0].pFormat->nSamplesPerSec)));
+        }
+        reset();
+        return S_OK;
+    }
+    STDMETHODIMP_(void) UnlockForProcess() override {}
+    STDMETHODIMP_(void) Process(UINT32 n, const XAPO_PROCESS_BUFFER_PARAMETERS* in, UINT32 m,
+                                XAPO_PROCESS_BUFFER_PARAMETERS* out, BOOL) override {
+        if (!n || !in) return;
+        float* x = static_cast<float*>(in[0].pBuffer);
+        const UINT32 frames = in[0].ValidFrameCount, ch = channels_;
+        if (in[0].BufferFlags != XAPO_BUFFER_VALID) std::fill(x, x + size_t(frames) * ch, 0.0f);
+        for (UINT32 f = 0; f < frames; ++f) {
+            float* s = x + size_t(f) * ch;
+            float peak = 0.0f;
+            for (UINT32 c = 0; c < ch; ++c) peak = std::max(peak, std::fabs(s[c]));
+            need_[pos_ % (kLook + 1)] = peak > kThreshold ? kThreshold / peak : 1.0f;
+            float gmin = 1.0f;
+            for (float v : need_) gmin = std::min(gmin, v);
+            const int b = pos_ % kLook;
+            sum_ += double(gmin) - double(box_[b]);
+            box_[b] = gmin;
+            const float gs = float(sum_ / kLook);
+            gain_ = gs < gain_ ? gs : gain_ + (gs - gain_) * release_;
+            if (gain_ < min_gain_) min_gain_ = gain_;
+            float* d = delay_.data() + size_t(b) * ch;
+            for (UINT32 c = 0; c < ch; ++c) {
+                const float y = d[c] * gain_;
+                d[c] = s[c];
+                s[c] = y;
+            }
+            ++pos_;
+        }
+        if (m && out) {
+            out[0].BufferFlags = XAPO_BUFFER_VALID;
+            out[0].ValidFrameCount = frames;
+        }
+    }
+    STDMETHODIMP_(UINT32) CalcInputFrames(UINT32 f) override { return f; }
+    STDMETHODIMP_(UINT32) CalcOutputFrames(UINT32 f) override { return f; }
+
+    // kleinste Verstärkung seit dem letzten Aufruf (Protokoll)
+    float take_min_gain() {
+        const float g = min_gain_;
+        min_gain_ = 1.0f;
+        return g;
+    }
+
+private:
+    static constexpr int kLook = 64;
+    static constexpr float kThreshold = 0.8912509f;  // −1 dBFS
+    void reset() {
+        need_.assign(kLook + 1, 1.0f);
+        box_.assign(kLook, 1.0f);
+        delay_.assign(size_t(kLook) * channels_, 0.0f);
+        sum_ = kLook;
+        gain_ = 1.0f;
+        pos_ = 0;
+    }
+    LONG ref_ = 1;
+    UINT32 channels_ = 2;
+    float release_ = 0.00026f, gain_ = 1.0f;
+    volatile float min_gain_ = 1.0f;
+    double sum_ = kLook;
+    int pos_ = 0;
+    std::vector<float> need_, box_, delay_;
+};
+
 wchar_t g_record_path[MAX_PATH] = {};  // Umgebungsvariable TS2_TONAUFNAHME
 
 class Output : public IXAudio2VoiceCallback {
@@ -176,19 +367,24 @@ public:
         DWORD mask = 0;
         master_->GetChannelMask(&mask);
         out_channels_ = md.InputChannels;
-        // 5.1 mit dem eigenen Mixer, wenn das Gerät mindestens sechs Kanäle
-        // hat (FL FR FC LFE + zwei hintere/seitliche); sonst Stereo mit TS2s
-        // eigenem Mixer, genau wie im Original.
+        // 5.1, wenn das Gerät mindestens sechs Kanäle hat (FL FR FC LFE +
+        // zwei hintere/seitliche), sonst Stereo; beides mit dem eigenen Mixer
+        // (Lautstärken wie auf der Xbox, mixer.cpp). TS2s Mixer rechnet nur
+        // noch zur Prüfung (TS2_TONPRUEFUNG).
         channels_ = (g_cfg.surround && out_channels_ >= 6) ? 6 : 2;
 
-        if (g_record_path[0]) {
-            tap_ = new Tap();
-            XAUDIO2_EFFECT_DESCRIPTOR ed{static_cast<IXAPO*>(tap_), TRUE, out_channels_};
-            XAUDIO2_EFFECT_CHAIN chain{1, &ed};
+        // Begrenzer am Master (nach dem Hall), dahinter ggf. die Aufnahme
+        {
+            limiter_ = new Limiter();
+            if (g_record_path[0]) tap_ = new Tap();
+            XAUDIO2_EFFECT_DESCRIPTOR ed[2] = {{static_cast<IXAPO*>(limiter_), TRUE, out_channels_},
+                                               {static_cast<IXAPO*>(tap_), TRUE, out_channels_}};
+            XAUDIO2_EFFECT_CHAIN chain{tap_ ? 2u : 1u, ed};
             if (FAILED(master_->SetEffectChain(&chain))) {
-                log("[ton] Aufnahme: SetEffectChain fehlgeschlagen\n");
-                tap_->Release();
-                tap_ = nullptr;
+                log("[ton] Begrenzer/Aufnahme: SetEffectChain fehlgeschlagen\n");
+                limiter_->Release();
+                limiter_ = nullptr;
+                if (tap_) tap_->Release(), tap_ = nullptr;
             }
         }
 
@@ -231,7 +427,7 @@ public:
         thread_ = std::thread([this] { run(); });
         src_->Start();
         log("[ton] XAudio2: Gerät %u Kanäle (Maske 0x%X), Ausgabe %s, %d Hz, Puffer %d Frames, Hall %s\n", out_channels_,
-            mask, channels_ == 6 ? "5.1 (eigener Mixer)" : (hall_on_ ? "Stereo (eigener Mixer)" : "Stereo (TS2-Mixer)"),
+            mask, channels_ == 6 ? "5.1 (eigener Mixer)" : "Stereo (eigener Mixer)",
             rate_, kFrames, hall_on_ ? "an" : "aus");
         return true;
     }
@@ -249,6 +445,7 @@ public:
             tap_->Release();
             tap_ = nullptr;
         }
+        if (limiter_) limiter_->Release(), limiter_ = nullptr;
     }
 
     // IXAudio2VoiceCallback
@@ -298,7 +495,7 @@ private:
                     mixer_mix(b.data(), kFrames, rate_, 6);
                     for (float& x : b) x *= v;
                 } else {
-                    g_ts2_mixer(b.data(), kFrames, rate_, 2);
+                    mixer_mix(b.data(), kFrames, rate_, 2);
                     for (float& x : b) x *= v;
                 }
                 for (size_t i = 0; i < b.size(); ++i) energy[i % src_channels_] += double(b[i]) * b[i];
@@ -321,7 +518,9 @@ private:
                                       std::sqrt(energy[c] / (470.0 * kFrames)));
                         energy[c] = 0.0;
                     }
-                    log("[ton] Pegel (RMS je Kanal%s)%s\n", channels_ == 6 ? " FL FR FC LFE SL SR" : " L R", line);
+                    log("[ton] Pegel (RMS je Kanal%s)%s | Begrenzer %.2f, Starts verworfen %u\n",
+                        channels_ == 6 ? " FL FR FC LFE SL SR" : " L R", line,
+                        limiter_ ? limiter_->take_min_gain() : 1.0f, unsigned(g_starts.dropped));
                 }
             }
             WaitForSingleObject(event_, 50);
@@ -334,6 +533,7 @@ private:
     bool hall_on_ = false;
     Hall hall_;
     Tap* tap_ = nullptr;
+    Limiter* limiter_ = nullptr;
     std::vector<float> mix_, send_;
     IXAudio2* xa_ = nullptr;
     IXAudio2MasteringVoice* master_ = nullptr;
@@ -384,6 +584,8 @@ void audio_install(const Ts2Image& img, const AudioConfig& c) {
         wcsncpy_s(g_record_path, p.c_str(), _TRUNCATE);
     }
     if (c.hall) reverb_init(img);
+    if (c.enabled && !install_xbox_starts(img))
+        log("[ton] Geräusch-Starts: 0x%llX unerwartet, nicht umgelenkt\n", static_cast<unsigned long long>(kPlaySound));
     // Ohne Engine-CVars (s_MusicVolume, s_SFXVolume; 0x141226070) bleiben
     // TS2s Lautstärken auf ihren Vorgaben 1,0; hier aus ts2.ini.
     *img.va<float>(hf2::kMusicVolume) = c.music;

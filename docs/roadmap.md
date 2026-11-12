@@ -78,6 +78,7 @@ Funktionen von außen erreicht. Daraus:
 | Brennendes Logo im ersten Bildschirm kaum sichtbar | behoben: Teilchengröße × Bildhöhe/480, Alpha-Test wie Xbox; FREE RADICAL/EIDOS-Logos (im PC-Code entfernt) nicht übernommen |
 | Schriftzug im Hauptmenü erneuern | Werkzeug `tools/hd/logo.py` (Export, Einspielen mit Schein) |
 | Supersampling: intern 2fach (wählbar) rendern, TS2 rechnet weiter in 1920×1080; auf 4K-Monitor 1:1, sonst geglättet | erledigt: `[grafik] supersampling` (Vorgabe 2), Launcher Grafik; k=1 pixelgleich, k=2 auf 4K 1:1 |
+| Ton in Gefechten übersteuert (Spitzen bis 6×) | behoben: Lautstärken wie Xbox (2D-Puffer −6 dB Headroom, Xbox-Abfallkurve, Startfilter je Takt), Begrenzer am Master; nicht gegen xemu gemessen |
 | Absturz einmal im Siberia-Start (mit Redux) | einmal gesehen, in drei weiteren Läufen nicht |
 
 ## Nächste Schritte, konkret

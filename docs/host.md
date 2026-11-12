@@ -587,7 +587,7 @@ Puffer: `0x142F9B240`, je 0x28 Byte, mit +8 Daten (int16), +0x18 Frames,
 - **Übrige Stimmen** (Musik, Menü): wie im Original auf FL/FR.
 - **LFE:** bleibt leer.
 
-Auf Stereo-Geräten läuft TS2s eigener Mixer.
+Auch auf Stereo-Geräten mischt `ts2.exe` selbst (TS2s Mixer rechnet nur noch zur Prüfung).
 
 **Prüfung** mit der Umgebungsvariable `TS2_TONPRUEFUNG=1`: Etwa jeder 47.
 Block wird von beiden Mixern auf demselben Stimmenzustand gerechnet, der
@@ -601,6 +601,36 @@ eigene dabei im Stereomodus.
 `0x141226070`) bleiben TS2s Werte bei 1,0. `ts2.exe` setzt sie aus
 `ts2.ini` [ton] (`gesamt`, `musik`, `effekte`; `surround=0` erzwingt Stereo).
 `ts2.log` protokolliert alle ~5 s den Pegel je Kanal.
+
+**Lautstärken wie auf der Xbox** (PAL-XBE): Die Xbox rechnet dieselben Werte
+(2000·log10(Wert·0,01·Gesamt/16) hundertstel dB, 0x1C6600; der PC linear
+dasselbe, 0x1412279E8), unterscheidet aber 2D- und 3D-Puffer (0x1C6640, Pools
+0x451EA0/0x46A748):
+- Ohne Position (Musik, Sprache, Zwischensequenzen, Menü, HUD; im PC-Port
+  unpositioniert oder am Hörer mit min = max = 1): 2D-Puffer mit der
+  DirectSound-Vorgabe 600 hundertstel dB Headroom (DSOUND 0x2000FF, SetVolume
+  zieht sie ab, 0x1FEE42), also −6 dB, auf Front links/rechts.
+- Mit Position: 3D-Puffer ohne Headroom, Mindestabstand 1, Höchstabstand =
+  Reichweite (50), Abfallkurve {0,5; 0,25; 0,125; 0} (0x34A2B4), stückweise
+  linear in vier gleichen Abschnitten (DSOUND 0x201A92). Der PC-Port nähert
+  das mit min = max/4 und Abfall 4 an und ist bis ~17 m bis 5,5 dB lauter.
+- Starts nach Nummer gehen durch 0x1C6890: je Spieltakt (0x40BE94) jede
+  Nummer einmal, höchstens 30 Starts, Nummern 0x211–0x214 nur alle 6 Takte.
+  Im PC-Port fehlt das (gemessen: derselbe Schuss bis 10× gleichzeitig).
+
+`ts2.exe` mischt deshalb immer selbst (auch Stereo) mit Headroom und
+Abfallkurve der Xbox und filtert die Starts vor 0x1412279E8 (Spielzeit
+0x142F9A22C). Dahinter liegt am Master ein Begrenzer (−1 dBFS, 1,3 ms
+Vorausschau, 80 ms Rückkehr); darunter bleibt das Signal unverändert.
+`ts2.log` zeigt in der Pegelzeile die kleinste Verstärkung des Begrenzers und
+die verworfenen Starts. TS2_TONPRUEFUNG vergleicht den eigenen Mixer ohne die
+Xbox-Anpassung (größte Abweichung 2,4·10⁻⁷).
+
+Gemessen (TS2_TONAUFNAHME): Roboterfabrik im Gefecht vorher Spitzen 6,4×,
+1,8 % der Werte über 1,0, danach höchstens −1 dBFS und keine. Menümusik und
+Siberia-Tunnel sind 6 dB leiser (RMS 0,090 → 0,048 bzw. 0,065 → 0,033), wie das
+Verhältnis auf der Xbox. In dichten Gefechten senkt der Begrenzer kurz bis
+−10…−13 dB. Nicht gegen xemu gemessen.
 
 ### Raum-Hall (`src/host/reverb.cpp`, `[ton] hall`)
 
