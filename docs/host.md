@@ -656,7 +656,7 @@ Geprüft per Menümaus-Skript (`--menuemaus`, Koordinaten aus `TS2_MENUSPUR`):
   2 Min., Bots) bis zur Ergebnisseite (Rang, PUNKTE, BELOHNUNGEN),
   „Hauptmenü“ führt zu den Arcade-Optionen, mit Zurück ins Hauptmenü. Im
   Einzelspieler ist „Wiederholen“ die Überschrift (PC-Layout) und nicht
-  wählbar. Challenge „Tod den lebenden Toten“ bis GAME OVER/VERSAGT und
+  wählbar (behoben, siehe „Ergebnisseiten allein“). Challenge „Tod den lebenden Toten“ bis GAME OVER/VERSAGT und
   STATUS (Medaillengrenzen), zurück zur Liste und ins Hauptmenü. Story
   Siberia mit erzwungenem Levelende (Flag 0x8000 in 0x143F2F95C, 0x14110BB60):
   SIEG, `profil.bin` Story 1/1/0, „Neues Feature freigeschaltet“, Chicago
@@ -780,7 +780,26 @@ dem Aufbau stellt ts2.exe Überschrift und Einträge wie auf der Xbox her
 `0x1410DEEBC`), und das Rangfenster (vor `0x1412230DC`, Aufruf
 `0x1411B5B05`) liegt bei Seite y + (47 + oben·0,5)·2,25 mit Höhe 75·2,25.
 Geprüft mit 2 und 3 Spielern (Arcade): wie Xbox, die Schrift ist größer
-(wie allein). Einzelspieler unverändert (Redux-Werte, Seite unverändert).
+(wie allein).
+
+**Ergebnisseiten allein.** Dieselbe Ursache galt auch für einen Spieler: Im
+PC-Aufbau (`0x1411B60A0`) überschreibt „Wiederholen“ Text und Aktion der
+Überschrift („GAME OVER“ fehlt, „Wiederholen“ nicht wählbar), und in
+Herausforderung/Sonderfällen (Zweig `0x1411B6315`) fehlt „Level erneut
+versuchen“, das die Xbox (`0xD6B56`) vor „Beenden“ anlegt. ts2.exe baut die
+Seite für alle Spielerzahlen wie auf der Xbox um (Überschrift ohne Aktion,
+Einträge mit Xbox-Balken, allein Stil 11; fehlendes „Wiederholen“ mit Text
+2131/2133 und Aktion `0x1411B02A8`). Allein gelten an den Redux-Stellen des
+Rangfensters die Originalbytes; das Fenster liegt bei Seite y + 65·2,25
+(Höhe 118·2,25), und 2D bleibt vom Fenster (`0x1411B5B05`, BELOHNUNGEN
+`0x1411B56C0`) bis zum Menü (`0x1411B605C`, `0x1411B5982`) unverstaucht,
+sonst staucht der PC-Port die Texte in den Fensterausschnitt. Die
+Seitenstriche (`0x1411AC9CC`) der Ergebnisseiten liegen allein 104 Zeilen
+höher (Xbox: unter der Überschrift). PUNKTE und STATUS bleiben gestaucht
+(unverstaucht zu groß bzw. Spalten überlappen). Geprüft gegen
+Xbox-Aufnahmen (Arcade Eigen Deathmatch, Herausforderung „Scherben bringen
+Glück“); „Wiederholen“ startet das Match neu; Pausenmenü und Spiel allein
+unverändert.
 
 Soll (Xbox-PAL in xemu, 2 Spieler Story Co-op, eigene Aufnahme): Das Menü des
 pausierenden Spielers füllt dessen ganze Ansicht ohne Randbalken; Überschrift

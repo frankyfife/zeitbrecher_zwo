@@ -633,8 +633,10 @@ void set_viewport_hook(int x, int y, int w, int h, float zmin, float zmax) {
     g_vp_full = false;
 }
 
+bool g_2d_full_once = false;  // Ergebnisseite allein: Rangtexte unverstaucht (unten bei go_window_hook)
+
 void draw_state_hook(uint32_t spec) {
-    if (g_players > 1 && !g_2d_alt && g_game_vp.w > 0) {
+    if ((g_players > 1 || g_2d_full_once) && !g_2d_alt && g_game_vp.w > 0) {
         const bool want_full = (spec & 0x20) != 0;
         if (want_full != g_vp_full) {
             const GameViewport& v = g_game_vp;
@@ -861,29 +863,35 @@ bool pause_install(const Ts2Image& img) {
     return a && b && c && d;
 }
 
-// ---- Ergebnisseite "GAME OVER" im Mehrspieler
+// ---- Ergebnisseite "GAME OVER" (allein und im Mehrspieler)
 // Seite 0x14257C6E8 (+8 Zeichnen 0x1411B59C4, +0x20 Aufbau 0x1411B60A0; Xbox
 // 0xD6170/0xD6880). Xbox (Soll): je Ansicht ein 3D-Menü mit Überschrift
 // "GAME OVER" (Balken v 0,52..0,4), darunter der Rang in einem Textfenster,
-// beim ersten Menüspieler zusätzlich die Einträge (Balken −0,02..−0,14 und
-// −0,17..−0,29). Der PC-Port hat den Aufbau verändert: Überschriftbalken aus
-// einer Tabelle (0x14257BFD4/0x14257C084: 0,25..0,13), die Einträge ohne
-// Balken (0x14257BFDC/0x14257C08C: 0..0), und beim ersten Menüspieler
-// überschreibt der erste Eintrag ("Rematch", Aktion) Text und Aktion der
-// Überschrift – "GAME OVER" fehlt. Das Textfenster des Rangs (Zeichnen,
-// page +0x2C..: y0 = Seite y + 47, Höhe 75) rechnet senkrecht in Xbox-Pixeln
-// ohne den halben oberen Randabstand der Xbox (0x1CC000, ·0,5), und TS2
-// Redux (Gruppe "anzeige", 0x1411B5AAF, 0x1411B5AE7, 0x1411B5B77) passt es
-// für einen Spieler an (Rang 464 Pixel tiefer). Im Mehrspieler lag der Rang
-// dadurch über bzw. unter der Ansicht.
-// Mit mehreren Spielern: an den drei Redux-Stellen gelten die Originalbytes;
-// nach dem Aufbau stellt ts2.exe die Xbox-Einträge her (Überschrift mit Text
-// und ohne Aktion, Einträge darunter mit den Xbox-Balken, Balkenobjekte
-// Menü +0x3D0/+0xDE0/+0x17F0, Abstand 0xA10) und rechnet die Textlagen neu
-// (0x1410DEEBC); das Textfenster (vor 0x1412230DC, Aufruf 0x1411B5B05) liegt
-// bei Seite y + (47 + oben·0,5)·2,25 mit Höhe 75·2,25 (oben aus 0x14122AD80).
+// beim ersten Menüspieler die Einträge "Wiederholen"/"Hauptmenü" (Balken
+// −0,02..−0,14 und −0,17..−0,29, "Wiederholen" gewählt). Der PC-Port hat
+// den Aufbau verändert: Überschriftbalken aus einer Tabelle
+// (0x14257BFD4/0x14257C084: 0,25..0,13), die Einträge ohne Balken
+// (0x14257BFDC/0x14257C08C: 0..0), und beim ersten Menüspieler überschreibt
+// der erste Eintrag (Text, Aktion) die Überschrift – "GAME OVER" fehlt,
+// "Wiederholen" ist Überschrift und nicht wählbar, auch allein. Das
+// Textfenster des Rangs (Zeichnen, Seite +0x2C: y0 = Seite y + 65 allein
+// bzw. 47, Höhe 118 bzw. 75) rechnet senkrecht in Xbox-Pixeln ohne den
+// halben oberen Randabstand der Xbox (0x1CC000, ·0,5), und TS2 Redux
+// (Gruppe "anzeige", 0x1411B5AAF, 0x1411B5AE7, 0x1411B5B77) verschiebt es
+// allein (Rang 464 Pixel tiefer, Höhe −1). Allein staucht der PC-Port 2D
+// zudem in den Ausschnitt dieses Fensters.
+// ts2.exe: an den drei Redux-Stellen gelten die Originalbytes; nach dem
+// Aufbau stellt ts2.exe die Xbox-Einträge her (Überschrift mit Text und ohne
+// Aktion, Einträge mit den Xbox-Balken und Stilen, Balkenobjekte Menü
+// +0x3D0/+0xDE0/+0x17F0, Abstand 0xA10) und rechnet die Textlagen neu
+// (0x1410DEEBC). Das Textfenster (vor 0x1412230DC, Aufruf 0x1411B5B05) liegt
+// bei Seite y + (47 + oben·0,5)·2,25 mit Höhe 75·2,25 (oben aus 0x14122AD80)
+// bzw. allein bei Seite y + 65·2,25 mit Höhe 118·2,25; allein gilt dort bis
+// zum Menü (0x1411B1700, Aufruf 0x1411B605C) 2D unverstaucht wie im
+// Mehrspieler. TS2_PAUSE_ALT=1: wie vorher.
 constexpr uint64_t kGameOverPage = 0x14257C6E8, kGameOverDraw = 0x1411B59C4, kGameOverBuild = 0x1411B60A0;
 constexpr uint64_t kGoWindowCall = 0x1411B5B05, kViewDerive = 0x1412230DC;
+constexpr uint64_t kGoMenuCall = 0x1411B605C, kPauseMenuDraw = 0x1411B1700;
 constexpr uint64_t kGoReduxLo = 0x1411B5AA0, kGoReduxHi = 0x1411B5B80;
 constexpr uint64_t kMenuLayoutTexts = 0x1410DEEBC;  // void (menu*): Textlagen aus den Balken
 constexpr uint32_t kStrGameOver = 0x42D8;           // Text 2139 "GAME OVER"
@@ -899,9 +907,15 @@ void set_bar(uint8_t* bar, float top, float bottom) {
     *reinterpret_cast<float*>(bar + 0x438) = -1.1f;
 }
 
+constexpr uint64_t kRematchAction = 0x1411B02A8;  // "Wiederholen" (Xbox 0xD0B40)
+bool menu_player_is_first() {  // Menüspieler *0x143F359D0 = 0x143F359E0 + 0x858 · i, i == 0
+    const uint8_t* mpl = *g_img->va<uint8_t*>(0x143F359D0);
+    return mpl == g_img->va<uint8_t>(0x143F359E0);
+}
+
 void go_build_hook(uint8_t* page) {
     g_go_build(page);
-    if (!pause_scaled()) return;
+    if (g_pause_alt) return;
     uint8_t* menu = *reinterpret_cast<uint8_t**>(page + 0x70);
     if (!menu) return;
     uint8_t* e[8] = {};
@@ -918,7 +932,7 @@ void go_build_hook(uint8_t* page) {
     } items[4] = {};
     int k = 0;
     const int players = local_players();
-    const int32_t entry_style = players == 2 ? 9 : 7;
+    const int32_t entry_style = players == 1 ? 11 : players == 2 ? 9 : 7;  // wie Xbox 0xD69A2
     if (*reinterpret_cast<const char**>(e[0] + 0x38) != title) {
         items[k++] = {*reinterpret_cast<const char**>(e[0] + 0x38), *reinterpret_cast<void**>(e[0] + 0x50), entry_style};
         *reinterpret_cast<const char**>(e[0] + 0x38) = title;
@@ -927,6 +941,19 @@ void go_build_hook(uint8_t* page) {
     for (int i = 1; i < n && k < 2; ++i)
         items[k++] = {*reinterpret_cast<const char**>(e[i] + 0x38), *reinterpret_cast<void**>(e[i] + 0x50),
                       *reinterpret_cast<int32_t*>(e[i] + 0x30)};
+    // Herausforderung/Sonderfälle (Aufbau 0x1411B6315: Modus 4, Merker
+    // 0x143F2F958 & 0x40 oder Bit 27): der PC-Port legt nur einen Eintrag an
+    // (Hauptmenü bzw. Beenden); die Xbox (0xD6B56..0xD6E47) dazu
+    // "Wiederholen" (Modus 4: Text 2131, sonst 2133 "Level erneut", Aktion
+    // wie "Rematch", PC 0x1411B02A8) – vor "Beenden" bzw. nach "Hauptmenü"
+    // (0x143F2F95C & 0x8000).
+    const int32_t mode = *g_img->va<int32_t>(0x143F2F94C);
+    const uint32_t flags = *g_img->va<uint32_t>(0x143F2F958);
+    if (menu_player_is_first() && k == 1 && (mode == 4 || (flags & 0x40) || (flags & 0x8000000))) {
+        const Item retry{text(mode == 4 ? 0x4298 : 0x42A8), g_img->va<void>(kRematchAction), items[0].style};
+        if (*g_img->va<uint32_t>(0x143F2F95C) & 0x8000) items[k++] = retry;
+        else items[1] = items[0], items[0] = retry, k = 2;
+    }
     set_bar(menu + 0x3D0, 0.52f, 0.4f);  // Überschrift
     *reinterpret_cast<uint8_t**>(e[0] + 0x90) = menu + 0x3D0;
     static constexpr float kBars[2][2] = {{-0.02f, -0.14f}, {-0.17f, -0.29f}};
@@ -945,17 +972,74 @@ void go_build_hook(uint8_t* page) {
 }
 
 void go_window_hook(int32_t* view) {  // view = Seite + 0x2C (x0, x1, …, +0x14 y0, +0x18 y1)
-    if (pause_scaled()) {
+    if (!g_pause_alt) {
         const uint8_t* page = reinterpret_cast<const uint8_t*>(view) - 0x2C;
-        float l = 0, t = 0, r = 0, b = 0;
-        edge_offsets(0, &l, &t, &r, &b);
-        view[5] = *reinterpret_cast<const int32_t*>(page + 0x28) + int(std::lround((47.0f + t / 2.25f * 0.5f) * 2.25f));
-        view[6] = view[5] + int(std::lround(75.0f * 2.25f));
+        const int32_t page_y = *reinterpret_cast<const int32_t*>(page + 0x28);
+        if (g_players > 1) {
+            float l = 0, t = 0, r = 0, b = 0;
+            edge_offsets(0, &l, &t, &r, &b);
+            view[5] = page_y + int(std::lround((47.0f + t / 2.25f * 0.5f) * 2.25f));
+            view[6] = view[5] + int(std::lround(75.0f * 2.25f));
+        } else {
+            view[5] = page_y + int(std::lround(65.0f * 2.25f));
+            view[6] = view[5] + int(std::lround(118.0f * 2.25f));
+            g_2d_full_once = true;  // bis zum Aufruf von 0x1411B1700 (go_menu_hook)
+        }
     }
     g_go_window(view);
 }
 
-void set_gameover_layout(bool mp) { fixes_original(kGoReduxLo, kGoReduxHi, mp && !g_pause_alt); }
+// Aufruf 0x1411B605C: Bögen und 3D-Menü der Seite (0x1411B1700); ab hier
+// wieder wie allein (2D im Ausschnitt des Spiels)
+GoPageFn g_go_menu = nullptr;
+void go_menu_hook(uint8_t* page) {
+    if (g_2d_full_once) {
+        g_2d_full_once = false;
+        if (g_vp_full) {
+            const GameViewport& v = g_game_vp;
+            g_set_viewport(v.x, v.y, v.w, v.h, v.zmin, v.zmax);
+            g_vp_full = false;
+        }
+    }
+    g_go_menu(page);
+}
+
+// Folgeseite BELOHNUNGEN (Seite 0x14257C6B8: Zeichnen 0x1411B5448, Aufbau
+// 0x1411B52F4) setzt wie die Ergebnisseite ein Textfenster als Ausschnitt
+// (0x1412230DC bei 0x1411B56C0) und zeichnet die Texte darin; allein
+// staucht der PC-Port 2D dabei in das Fenster (Texte winzig, Xbox groß).
+// Wie auf der Ergebnisseite gilt dort allein 2D unverstaucht bis zum Aufruf
+// von 0x1411B1700 (0x1411B5982). PUNKTE (0x1411B6B70, Liste 0x1411ADB7C)
+// zeichnet ohne Textfenster in der Menüansicht; unverstaucht wäre die Liste
+// zu groß, sie bleibt wie im PC-Port.
+constexpr uint64_t kResWindowCalls[] = {0x1411B56C0};
+constexpr uint64_t kResMenuCalls[] = {0x1411B5982};
+void res_window_hook(int32_t* view) {
+    if (!g_pause_alt && g_players <= 1) g_2d_full_once = true;
+    g_go_window(view);
+}
+
+// Seitenstriche (0x1411AC9CC) der Ergebnisseiten (Aufrufe 0x1411B6064
+// GAME OVER, 0x1411B6BAD PUNKTE, 0x1411B598A BELOHNUNGEN, 0x1411B8BCB
+// STATUS): allein liegen sie
+// im PC-Port bei 0,31 der Bildhöhe und damit auf Rang bzw. erster Zeile
+// (Xbox 0,234, unter der Überschrift). Allein rechnet ts2.exe sie dort
+// 104 Zeilen höher (2D in der Menüansicht gestaucht, ·0,8: 83 Bildzeilen).
+// Das Pausenmenü bleibt unverändert.
+constexpr uint64_t kResDashCalls[] = {0x1411B6064, 0x1411B6BAD, 0x1411B598A, 0x1411B8BCB};
+constexpr int kResDashShift = 104;
+GoPageFn g_res_dash = nullptr;
+void res_dash_hook(uint8_t* page) {
+    if (g_pause_alt || g_players > 1) return g_res_dash(page);
+    auto* y = reinterpret_cast<int32_t*>(page + 0x28);
+    *y -= kResDashShift;
+    g_res_dash(page);
+    *y += kResDashShift;
+}
+
+void set_gameover_layout(bool) {
+    fixes_original(kGoReduxLo, kGoReduxHi, !g_pause_alt);
+}
 
 void gameover_install(const Ts2Image& img) {
     void** desc = img.va<void*>(kGameOverPage);
@@ -969,8 +1053,16 @@ void gameover_install(const Ts2Image& img) {
         log("[mehrspieler] Ergebnisseite: Textfenster (0x1411B5B05) nicht gefunden\n");
         return;
     }
+    g_go_menu = reinterpret_cast<GoPageFn>(
+        hook_call(img, kGoMenuCall, kPauseMenuDraw, reinterpret_cast<const void*>(&go_menu_hook)));
+    for (uint64_t va : kResWindowCalls) hook_call(img, va, kViewDerive, reinterpret_cast<const void*>(&res_window_hook));
+    for (uint64_t va : kResMenuCalls) hook_call(img, va, kPauseMenuDraw, reinterpret_cast<const void*>(&go_menu_hook));
+    for (uint64_t va : kResDashCalls)
+        if (void* o = hook_call(img, va, 0x1411AC9CC, reinterpret_cast<const void*>(&res_dash_hook)))
+            g_res_dash = reinterpret_cast<GoPageFn>(o);
     g_go_build = reinterpret_cast<GoPageFn>(desc[4]);
     desc[4] = reinterpret_cast<void*>(&go_build_hook);
+    set_gameover_layout(true);
 }
 
 }  // namespace
