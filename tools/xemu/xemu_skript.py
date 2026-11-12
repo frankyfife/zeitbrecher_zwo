@@ -196,7 +196,9 @@ def schreibe_konfiguration(arbeit, nutzer, args):
                            "vsync": True},
         "display.ui": {"show_menubar": False, "show_notifications": False, "hide_cursor": True,
                        "fit": "scale", "aspect_ratio": "native", "use_animations": False},
-        "audio": {"volume_limit": 0.0 if args.stumm else 1.0},
+        # use_dsp wie in der Konfiguration des Nutzers: ohne DSP kommen 3D-Geräusche
+        # (Schüsse) etwa 7 dB zu leise und mit anderem Klang (Pegelmessung 11/2026)
+        "audio": {"volume_limit": 0.0 if args.stumm else 1.0, "use_dsp": True},
         "sys": {"mem_limit": nutzer.get("sys", {}).get("mem_limit", "64")},
         "sys.files": {
             "bootrom_path": dateien["bootrom_path"],

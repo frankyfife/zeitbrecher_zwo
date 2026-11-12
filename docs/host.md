@@ -630,7 +630,17 @@ Gemessen (TS2_TONAUFNAHME): Roboterfabrik im Gefecht vorher Spitzen 6,4×,
 1,8 % der Werte über 1,0, danach höchstens −1 dBFS und keine. Menümusik und
 Siberia-Tunnel sind 6 dB leiser (RMS 0,090 → 0,048 bzw. 0,065 → 0,033), wie das
 Verhältnis auf der Xbox. In dichten Gefechten senkt der Begrenzer kurz bis
-−10…−13 dB. Nicht gegen xemu gemessen.
+−10…−13 dB.
+
+**Pegel gegen xemu** (WASAPI-Loopback, auf Spiel-dBFS kalibriert über
+TS2_TONAUFNAHME; xemu mit `use_dsp`, Stereo): Menümusik PC −25,9 / Xbox
+−30,6 dB RMS (+4,7), Siberia-Tunnel +7,2 dB RMS, Scharfschützengewehr in der
+Spitze +0,9 dB (Xbox unter 100 Hz und über 2 kHz leiser: eigene Schüsse dort
+wohl als 3D-Stimme). Gleiche Quelldatei der Menümusik (ADPCM/OGG gleich laut),
+Unterschied über alle Bänder gleich. Offen: ob xemu absolut pegelgenau ist,
+und ob die Xbox eigene Waffengeräusche über den 2D- (0x451EA0) oder den
+3D-Pool (0x46A748) spielt. Bis dahin: Verhältnis Musik zu Effekten wie xemu
+mit `[ton] musik=0.58`.
 
 ### Raum-Hall (`src/host/reverb.cpp`, `[ton] hall`)
 
