@@ -1404,6 +1404,16 @@ auf einmal (`0x14259CBE8`).
 - **Grafikkarte:** `ts2.exe` nimmt die leistungsstärkste GPU (DXGI
   "high performance").
 
+Probe `TS2_RUCKPROBE=<ms>`: meldet jedes Bild über `<ms>` (Ende zu Ende)
+mit seinen Abschnitten (`[ruck] Bild N: … Warten, Eingabe, Extras, Takt,
+Render, Post, Fotos, Present, Ende`). Befund (Rundgang 11/2026): Öffnen und
+Schließen des Pausenmenüs kosten nichts Messbares. Spitzen gibt es beim
+Laden (Ladebild 250–380 ms im Takt, das erste Bild danach 30–48 ms im
+Render, in Story-Levels ~100–150 ms beim Nachladen von Texturen um Bild
+2000). Testfotos (`--serie`) kosten je ~25 ms. Einzelne 70–110-ms-Bilder aus
+einem Rundgang kamen in sieben Wiederholungen nicht wieder (vermutlich von
+außen).
+
 `ts2.log` meldet alle 600 Bilder Mittel, Spanne und Ausreißer. Gemessen im
 Level auf einem 120-Hz-Monitor: 16,67 ms im Mittel, 16,1–17,2 ms Spanne,
 keine Ausreißer; Spitzen nur bei Ladebildschirmen. Vorher lief das Warten

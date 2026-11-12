@@ -1272,13 +1272,24 @@ int wmain(int argc, wchar_t** argv) {
 
     bool running = true;
     int t = 0;
+    // TS2_RUCKPROBE=<ms>: jedes Bild, das länger dauert (Ende zu Ende), mit
+    // den Abschnitten der Schleife melden ([ruck]): Warten auf den Takt,
+    // Eingabe, Extras (features/cheats), Takt, Render, Post (postfx,
+    // Supersampling), Fotos (--bild/--serie), Present, Ende (Statistik)
+    static const double rk_thr = [] {
+        wchar_t v[16] = {};
+        return GetEnvironmentVariableW(L"TS2_RUCKPROBE", v, 16) > 0 ? _wtof(v) : -1.0;
+    }();
+    double rk[10] = {}, rk_prev_end = 0;
     for (; running && (ticks == 0 || t < ticks); ++t) {
         g_tick_now = t;
+        rk[0] = qms();
         const bool mprobe = t >= mprobe_from && t <= mprobe_to;
         // Erst warten (Monitor bzw. nächste Periode, timing.h), dann die
         // Eingabe lesen: so geht sie frisch in Takt und Bild
         if (gfx.waitable) WaitForSingleObjectEx(gfx.waitable, 1000, TRUE);
         timing_wait();
+        rk[1] = qms();
         if (mprobe) mp_t[0] = qms();
         MSG m;
         while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
@@ -1288,13 +1299,16 @@ int wmain(int argc, wchar_t** argv) {
             DispatchMessageW(&m);
         }
         input_frame();
+        rk[2] = qms();
         if (mprobe) mp_t[1] = qms();
         features_tick(g_img, settings, gfx.wnd);
         cheats_tick(g_img);
+        rk[3] = qms();
         if (!call_vfunc(obj, hf2::kTick, &devh)) {
             log("Takt %d ist abgestürzt\n", t);
             return 4;
         }
+        rk[4] = qms();
         if (mprobe) mp_t[2] = qms();
         timing_frame();
         // TS2_ALPHALOESCHEN=<0..1>: Ziel vor jedem Bild auf (0,0,0,a) löschen
@@ -1314,9 +1328,11 @@ int wmain(int argc, wchar_t** argv) {
             log("Bild %d ist abgestürzt\n", t);
             return 5;
         }
+        rk[5] = qms();
         if (mprobe) mp_t[3] = qms();
         postfx_apply(gfx.ctx, rtv, out_w, out_h);
         ss_probe_frame_end();
+        rk[6] = qms();
         if (t + 1 == ticks && !shot.empty()) save_bmp(gfx, shot_tex(), shot);
         // TS2_AUSGABEBILD=1: auch den Bildpuffer, wie er ausgegeben wird
         // (<bild>.ausgabe.bmp; nur SDR, RGBA8)
@@ -1335,7 +1351,9 @@ int wmain(int argc, wchar_t** argv) {
         // Zerreißen und ohne zu blockieren; den Takt hält timing_wait. Mit
         // Monitor-Kopplung (bildsync, passender Bildwechsel) Present(1 bzw. 2)
         // und Warten auf den freien Bildpuffer am Anfang des Bildes.
+        rk[7] = qms();
         gfx.swap->Present(UINT(gfx.interval), 0);
+        rk[8] = qms();
         if (mprobe) {
             mp_t[4] = qms();
             float dx = 0, dy = 0;
@@ -1366,6 +1384,13 @@ int wmain(int argc, wchar_t** argv) {
         }
         frame_stats();
         d3d_messages(false);
+        rk[9] = qms();
+        if (rk_thr >= 0 && rk_prev_end > 0 && rk[9] - rk_prev_end > rk_thr)
+            log("[ruck] Bild %d: %.1f ms | Rest davor %.1f Warten %.1f Eingabe %.1f Extras %.1f Takt %.1f Render %.1f "
+                "Post %.1f Fotos %.1f Present %.1f Ende %.1f\n", t, rk[9] - rk_prev_end, rk[0] - rk_prev_end,
+                rk[1] - rk[0], rk[2] - rk[1], rk[3] - rk[2], rk[4] - rk[3], rk[5] - rk[4], rk[6] - rk[5],
+                rk[7] - rk[6], rk[8] - rk[7], rk[9] - rk[8]);
+        rk_prev_end = rk[9];
     }
     audio_shutdown();
     d3d_messages(true);
