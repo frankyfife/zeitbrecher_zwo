@@ -281,6 +281,48 @@ void ambient_load() {
     log("Raumhelligkeit: Level %d aus .raw (%d Räume, %d anders als die Textfassung)\n", level, n / 12, changed);
 }
 
+// ---- Fotokamera (Redux-Issue #21)
+//
+// Der Sucher der Digitalkamera ist Sichtart 11 (0x14113A6BC, Xbox PAL
+// 0xC3840; Dispatcher 0x141140040). Wie der Feldstecher (Sichtart 7,
+// 0x141139844) zeichnet er den Rand zweimal: einmal abgedunkelt in RGB, dann
+// mit Schreibmaske 0xFFFFFF (nur Alpha) Verläufe und Ecken, und mischt am
+// Ende die Kopie des vorigen Bilds mit DEST_ALPHA über die ganze Ansicht
+// (Unschärfe am Rand). Innen soll das Ziel-Alpha 0 sein, dann bleibt das
+// Bild dort live. Im PC-Port steht im Ziel-Alpha aber 1 (TS2 löscht den
+// Bildpuffer nicht je Bild, die Szene schreibt nur RGB): innen wird das
+// vorige Bild 1:1 übernommen, der Sucher friert ein (Rückkopplung,
+// "verschmiert" beim Zoomen) und bleibt nach dem Blitz des Fotos weiß.
+// Für Sichtart 7 hat der PC-Port selbst ein Rechteck mit Farbe 0 und Art 0
+// in den Alpha-Durchgang gesetzt (0x141139B4F/0x141139B64); Sichtart 11
+// fehlt es. ts2.exe setzt es dort ein: Haken auf das Setzen der Maske
+// 0xFFFFFF (0x14113A977), dann Rechteck 0x14108A334 mit Art 0 über das
+// Innere (Lage wie die Ecken des Suchers: Mitte ± Halbbreite·0,26).
+constexpr uint64_t kSightMaskCall = 0x14113A977;  // in 0x14113A6BC: 0x14122A6A0(0xFFFFFF)
+constexpr uint64_t kSetWriteMask = 0x14122A6A0;
+constexpr uint64_t kSetBlendMode = 0x14122A5BC;   // (Art) -> vorige Art
+constexpr uint64_t kFillRect = 0x14108A334;       // (x0, y0, x1, y1, Farbe)
+constexpr uint64_t kViewInts = 0x143F0F508;       // -> Ansicht (int): +8 Mitte x, +0xC, +0x1C Mitte y, +0x20
+constexpr uint64_t kSightHalf = 0x14210AC88;      // 0,26
+using MaskFn = uint64_t (*)(uint32_t);
+MaskFn g_set_mask = nullptr;
+
+uint64_t camera_alpha_pass(uint32_t mask) {
+    const uint64_t r = g_set_mask(mask);
+    const int32_t* v = *g_img->va<int32_t*>(kViewInts);
+    if (!v || v[8] == 0) return r;
+    // wie 0x14113A6F2–0x14113A7D5
+    const float c = *g_img->va<float>(kSightHalf);
+    const int hx = int(float(v[3]) * c);
+    const int hy = int(float(v[3]) / float(v[8]) * (float(v[8]) * c));
+    const auto art = reinterpret_cast<int (*)(int)>(g_img->va<uint8_t>(kSetBlendMode));
+    const int old = art(0);
+    reinterpret_cast<void (*)(int, int, int, int, uint32_t)>(g_img->va<uint8_t>(kFillRect))(v[2] - hx, v[7] - hy,
+                                                                                         v[2] + hx, v[7] + hy, 0);
+    art(old);
+    return r;
+}
+
 }  // namespace
 
 bool effectfix_install(const Ts2Image& img, ID3D11Device* dev) {
@@ -296,6 +338,12 @@ bool effectfix_install(const Ts2Image& img, ID3D11Device* dev) {
         g_ambient_parse = reinterpret_cast<VoidFn>(
             hook_call(img, kAmbientParseCall, kAmbientParse, reinterpret_cast<const void*>(&ambient_load)));
         if (!g_ambient_parse) log("Raumhelligkeit: Aufruf 0x1410F7A96 unerwartet, aus\n");
+    }
+    // TS2_KAMERAFIX=0: Sucher der Fotokamera wie im PC-Port
+    if (!(GetEnvironmentVariableW(L"TS2_KAMERAFIX", v, 8) > 0 && v[0] == L'0')) {
+        g_set_mask = reinterpret_cast<MaskFn>(
+            hook_call(img, kSightMaskCall, kSetWriteMask, reinterpret_cast<const void*>(&camera_alpha_pass)));
+        if (!g_set_mask) log("Fotokamera: Aufruf 0x14113A977 unerwartet, Sucher wie im PC-Port\n");
     }
     light_init();
     return true;

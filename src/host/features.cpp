@@ -285,6 +285,12 @@ int32_t place_player(const Ts2Image& img, uint8_t* p, const Placement& to) {
     if (uint8_t* c = character_of(p)) {
         *reinterpret_cast<float*>(c + hf2::kCharVerticalSpeed) = 0.0f;
         *reinterpret_cast<float*>(c + hf2::kCharFallStartY) = hf2::kNoFall;
+        // Bodenzustand der Kollision auf die neue Lage, wie TS2 beim Versetzen
+        // (0x1411AA40C): Höhe = Fuß, keine Bodenfläche. Sonst sucht die
+        // Kollision vom alten Boden aus, und der Gehcode setzt den Fuß auf
+        // dessen Höhe (Kiste, Dach: Spieler sank in die Kiste)
+        *reinterpret_cast<float*>(c + hf2::kCharFloorY) = to.pos[1];
+        *reinterpret_cast<uint64_t*>(c + hf2::kCharFloorPoly) = 0;
     }
     return room;
 }

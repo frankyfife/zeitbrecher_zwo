@@ -652,6 +652,15 @@ Geprüft per Menümaus-Skript (`--menuemaus`, Koordinaten aus `TS2_MENUSPUR`):
 - **Challenge:** Hauptmenü → Challenge → „Glass Smash“, erste Challenge
   (`l_35_AR`). Die Spieluhr zeigt nach 35,8 s Spielzeit 00:36,1 bei 60 Hz
   und 00:36,2 bei 120 Hz. Die Spielzeit läuft also auch bei 120 Hz richtig.
+- **Ganze Durchgänge per Skript:** Arcade Eigen Deathmatch (3 Punkte,
+  2 Min., Bots) bis zur Ergebnisseite (Rang, PUNKTE, BELOHNUNGEN),
+  „Hauptmenü“ führt zu den Arcade-Optionen, mit Zurück ins Hauptmenü. Im
+  Einzelspieler ist „Wiederholen“ die Überschrift (PC-Layout) und nicht
+  wählbar. Challenge „Tod den lebenden Toten“ bis GAME OVER/VERSAGT und
+  STATUS (Medaillengrenzen), zurück zur Liste und ins Hauptmenü. Story
+  Siberia mit erzwungenem Levelende (Flag 0x8000 in 0x143F2F95C, 0x14110BB60):
+  SIEG, `profil.bin` Story 1/1/0, „Neues Feature freigeschaltet“, Chicago
+  frei, auch nach Neustart. Kein Absturz.
 
 ## Mehrspieler mit geteiltem Bildschirm (`src/host/multiplayer.cpp`)
 
@@ -1010,13 +1019,21 @@ Aufruf um und legt nach der Textfassung die .raw darüber (wie die Xbox);
 (Waffe vorher rot, jetzt olivgrau wie xemu); Wild West: Mündungsfeuer weiter
 nur örtlich.
 
-**Kamera (Redux-Issue #21, Sichtart 7, 0x141139844).** Der Sucher mischt die
-Kopie des vorigen Bilds (0x14122B74C(3), kopiert von 0x14122B524 am Anfang
-von Render) mit DEST_ALPHA in den Rand (absichtliche Zoom-Unschärfe, Xbox
-gleich). In ts2.exe (erzwungen mit `TS2_SICHTART=7`) bleibt das Innere live;
-das Weißbild nach dem Foto ist ungeprüft (Kamera erst spät in NeoTokyo).
-Proben: `TS2_KOPIEPROBE=1`, TS2_DRAWDUMP zeigt Mischart und Lichter.
-Nebenbefund: 0x14122AA90 (Scissor) begrenzt fest auf 1920×1080.
+**Fotokamera (Redux-Issue #21).** Der Sucher der Digitalkamera ist Sichtart
+11 (0x14113A6BC, Xbox PAL 0xC3840), nicht 7. Wie Sichtart 7 (0x141139844)
+zeichnet er den Rand erst in RGB, dann mit Maske 0xFFFFFF in den Alphakanal
+und mischt zuletzt die Kopie des vorigen Bilds (0x14122B74C(3)) mit
+DEST_ALPHA über die Ansicht. Innen muss das Ziel-Alpha 0 sein; im PC-Port
+steht dort 1 (TS2 löscht den Bildpuffer nicht je Bild, die Szene schreibt nur
+RGB). Dadurch übernahm der Sucher innen das vorige Bild: eingefroren,
+verschmiert beim Zoom, nach dem Blitz dauerhaft weiß. Für Sichtart 7 setzt
+der PC-Port selbst ein Rechteck mit Farbe 0 und Art 0 (0x141139B64), bei 11
+fehlt es. ts2.exe setzt es ein (effectfix.cpp, Haken auf 0x14113A977,
+Rechteck 0x14108A334 über das Innere, Mitte ±0,26·Breite).
+`TS2_KAMERAFIX=0` schaltet das ab. Geprüft (Kamera per Testhilfe gegeben,
+Gegenstand 35): NeoTokyo und Siberia, Sucher live, Blitz, danach live. xemu
+nicht verglichen. Proben: `TS2_KOPIEPROBE=1`, TS2_DRAWDUMP zeigt Mischart und
+Lichter. Nebenbefund: 0x14122AA90 (Scissor) begrenzt fest auf 1920×1080.
 
 ## HUD, Bildschirme und Figurenwahl (`src/host/hudfix.cpp`)
 
@@ -1230,11 +1247,17 @@ geprüft.
   `0x1411D4818`): Fuß auf Boden + 0,01, Auge `0x1411D6DB8`, Vorlagen
   `+0x1A0/+0x1AC`, Gier `+0x154/+0xE70`, Nick `+0x158`, Objekt `+0x1C8`
   (`+0x6C/+0xB4/+0x88/+0x18`), Raum `+0xD78/+0xD7C`, Gehmodus, Fallstart
-  `+0x1A20` = 2e38 (kein Fallschaden), und beendet die freie Kamera. Ohne
+  `+0x1A20` = 2e38 (kein Fallschaden), dazu den Bodenzustand der Kollision
+  (Charakter +0x1ADC Höhe, +0x1AE0 Fläche; gelesen von 0x1411C0E98) wie TS2s
+  eigenes Versetzen 0x1411AA40C auf die neue Lage (sonst setzt der Gehcode
+  den Fuß auf den alten Boden: Spieler sank in Kisten und Dächer), und
+  beendet die freie Kamera. Ohne
   Boden: abgelehnt (Log, Signalton). Fällt der Spieler danach über 1 s oder
   hat keinen Raum, kommt er an die alte Stelle zurück. Geprüft: Siberia
   (läuft, Zaun hält ihn auf, Scanner zeigt die Wachen an der neuen Stelle),
-  Challenge Pane in the Neck; außerhalb abgelehnt. Proben:
+  Challenge Pane in the Neck; außerhalb abgelehnt; Siberia: Wachen greifen
+  an, Schüsse treffen; Kiste (1,22) und Dach (3,68) stehen, herunterlaufen
+  fällt richtig; Chicago Straße, Haus, Treppe, Obergeschoss. Proben:
   `TS2_FCPOS=x,y,z,gier,nick[;…]` + `TS2_FCSCHRITT`, `TS2_FCPROBE=1`,
   `TS2_TPPROBE=1`.
 - **Zurückkippen beim Gehen:** Der Fork hält dafür +0x150 fest. Gemessen

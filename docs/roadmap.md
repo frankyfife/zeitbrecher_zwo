@@ -64,7 +64,7 @@ Funktionen von außen erreicht. Daraus:
 | Hall für Umgebung und Waffen | erledigt: XAudio2-Hall nach Dambusters Raumtabellen, übrige Räume mit der häufigsten Voreinstellung (`[ton] hall`) |
 | Redux-Issue #12/#25: Robot Factory hängt nach dem 2. Energieknoten (Fortschritt blockiert) | in ts2.exe nicht nachstellbar (Pfad wie Xbox, alle Varianten getestet); Watchdog (Launcher: Debug-Optionen) für den Fall, dass es doch hängt |
 | Redux-Issue #3: Regen auf der Kamera (schwarze Quadrate, von Redux nur abgeschaltet) | behoben: Mischart 9 SUBTRACT → REV_SUBTRACT, Regen wieder an |
-| Redux-Issue #21: Fotokamera-Bild weiß/verschmiert | Sucher in ts2.exe richtig (erzwungen geprüft); Weißbild nach dem Foto ungeprüft (Kamera erst spät in NeoTokyo) |
+| Redux-Issue #21: Fotokamera-Bild weiß/verschmiert | behoben: Sucher (Sichtart 11) übernahm innen das vorige Bild, weil das Ziel-Alpha nicht 0 war; Rechteck mit Alpha 0 wie bei Sichtart 7 (effectfix.cpp) |
 | Redux-Issue #4: Lichtflackern bei Mündungsfeuer/Feuer | behoben: Lichtschleifen der Shader mit richtigen Lagen und Dämpfung |
 | Redux-Issue #23: Computeranzeigen abgeschnitten | behoben (Schriften der Bildschirm-Rückrufe auf Konsolengröße), mit Testzeichnung geprüft, echte Anzeige im Level noch nicht |
 | Redux-Issue #20: Boss-Lebensbalken schlecht lesbar | behoben (Farbe halbiert wie Konsole 0x80 = voll) |

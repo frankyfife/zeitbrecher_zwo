@@ -43,6 +43,9 @@ constexpr uint32_t kPlayerSub = 0x1C8;             // -> Objekt, dessen +0x140 d
 constexpr uint32_t kCharSub = 0x140;
 constexpr uint32_t kCharVerticalSpeed = 0x19CC;    // Einheiten je Takt, nach oben positiv
 constexpr uint32_t kCharFallStartY = 0x1A20;       // Höhe zu Beginn des Falls (Fallschaden)
+// Bodenzustand der Kollision (0x1411C0E98 liest, 0x1411C0EF8/0x1411C14C4 schreiben):
+// Bodenhöhe und Bodenfläche des letzten Takts; der Gehcode setzt y auf die neue Höhe
+constexpr uint32_t kCharFloorY = 0x1ADC, kCharFloorPoly = 0x1AE0;
 constexpr uint32_t kPlayerPos = 0xFC;               // float[3] x, y (oben), z
 constexpr uint32_t kPlayerFlags10 = 0x10;           // Bit 0x800000: fällt (Gehcode setzt es)
 constexpr uint32_t kPlayerStance = 0x168;           // Haltung (0 stehen, 1 ducken, …)
