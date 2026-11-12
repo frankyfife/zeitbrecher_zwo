@@ -25,7 +25,12 @@
 // von Spieler 1), dazu TS2_SPRUNG=x,y,z[,raum] (Spieler 3 s nach Levelstart
 // versetzen) und TS2_RAUMSUCHE=<raum> (Lage eines Raums suchen);
 // TS2_KOPIEPROBE=1 (Bildschirmkopien), TS2_SICHTART=<n> (Sichtart
-// erzwingen, 7 = Kamera-Sucher), mit TS2_DRAWDUMP die Mischart und Lichter.
+// erzwingen, 7 = Zielfernrohr, 11 = Fotokamera), TS2_ALPHABILD=<a>[:<b>]
+// (Renderziel mit Alpha vor der DEST_ALPHA-Mischung der Sichtarten 7/11),
+// mit TS2_DRAWDUMP die Mischart und Lichter.
+//
+// Zielfernrohr und Fotokamera (#21): Ziel-Alpha der Ansicht vor ihrem
+// Alpha-Durchgang auf 0 wie auf der Xbox; TS2_KAMERAFIX=0 aus.
 #pragma once
 #include <d3d11.h>
 

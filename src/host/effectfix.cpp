@@ -281,44 +281,66 @@ void ambient_load() {
     log("Raumhelligkeit: Level %d aus .raw (%d Räume, %d anders als die Textfassung)\n", level, n / 12, changed);
 }
 
-// ---- Fotokamera (Redux-Issue #21)
+// ---- Sichtarten mit Unschärferand: Zielfernrohr 7, Fotokamera 11 (Redux-Issue #21)
 //
-// Der Sucher der Digitalkamera ist Sichtart 11 (0x14113A6BC, Xbox PAL
-// 0xC3840; Dispatcher 0x141140040). Wie der Feldstecher (Sichtart 7,
-// 0x141139844) zeichnet er den Rand zweimal: einmal abgedunkelt in RGB, dann
-// mit Schreibmaske 0xFFFFFF (nur Alpha) Verläufe und Ecken, und mischt am
-// Ende die Kopie des vorigen Bilds mit DEST_ALPHA über die ganze Ansicht
-// (Unschärfe am Rand). Innen soll das Ziel-Alpha 0 sein, dann bleibt das
-// Bild dort live. Im PC-Port steht im Ziel-Alpha aber 1 (TS2 löscht den
-// Bildpuffer nicht je Bild, die Szene schreibt nur RGB): innen wird das
-// vorige Bild 1:1 übernommen, der Sucher friert ein (Rückkopplung,
-// "verschmiert" beim Zoomen) und bleibt nach dem Blitz des Fotos weiß.
-// Für Sichtart 7 hat der PC-Port selbst ein Rechteck mit Farbe 0 und Art 0
-// in den Alpha-Durchgang gesetzt (0x141139B4F/0x141139B64); Sichtart 11
-// fehlt es. ts2.exe setzt es dort ein: Haken auf das Setzen der Maske
-// 0xFFFFFF (0x14113A977), dann Rechteck 0x14108A334 mit Art 0 über das
-// Innere (Lage wie die Ecken des Suchers: Mitte ± Halbbreite·0,26).
-constexpr uint64_t kSightMaskCall = 0x14113A977;  // in 0x14113A6BC: 0x14122A6A0(0xFFFFFF)
+// Die Sichtart des Spielers (0x143F28880 + Spieler·0x12D8, je Bild aus
+// Spielerzustand und Fadenkreuz der Waffe gesetzt, 0x1411D63D4 → 0x14113F0DB;
+// gezoomt 4 → 5, 6 → 7) wählt im Dispatcher 0x141140040 (Xbox PAL 0xC8A80)
+// die Überlagerung: 5 0x141139504 (rundes Zielfernrohr), 7 0x141139844
+// (Scharfschützengewehr gezoomt), 8 0x14113F328, 9/10 im Dispatcher
+// (Aufsatz, Balken), 11 0x14113A6BC (Fotokamera); sonst Fadenkreuze
+// (0x14113FA90). Nur 7 und 11 (Xbox 0xC2D20, 0xC3840) zeichnen den Rand
+// zweimal: einmal abgedunkelt in RGB, dann mit Schreibmaske 0xFFFFFF (nur
+// Alpha) Verläufe und Ecken mit Art 2, und mischen am Ende die Kopie des
+// vorigen Bilds (0x14122B74C(3)) mit Art 6 (DEST_ALPHA/INV_DEST_ALPHA) über
+// die ganze Ansicht (Unschärfe am Rand).
+// Der Alpha-Durchgang erwartet ein Ziel-Alpha von 0: Auf der Xbox löscht TS2
+// das Bild auf 0 (0x223A0, alle Kanäle); das Löschen je Kamera (0x333F3)
+// schreibt mit der Maske 0xFF000000 nur RGB (0x1B5650 beachtet die Maske).
+// Der PC-Port löscht je Kamera mit Maske 0 und Farbe | 0xFF (0x14107F589,
+// ClearRenderTargetView schreibt ohnehin alle Kanäle), also Alpha 1. Innen
+// übernahm der Sucher so das vorige Bild 1:1 (eingefroren, verschmiert beim
+// Zoom, nach dem Blitz weiß), am Rand mischte er fast gleichmäßig stark
+// (Alpha v² + (1 − v) statt v² für einen Verlauf mit Alpha v) mit hartem
+// Sprung zum Inneren. Für Sichtart 7 hat der PC-Port selbst ein Rechteck mit
+// Farbe 0 und Art 0 über das Innere gesetzt (0x141139B4F/0x141139B64), bei
+// 11 fehlt es.
+// ts2.exe setzt in beiden zu Beginn des Alpha-Durchgangs das Alpha der ganzen
+// Ansicht auf 0 wie auf der Xbox: Haken auf das Setzen der Maske 0xFFFFFF
+// (0x141139B32, 0x14113A977), dann Rechteck 0x14108A334 mit Art 0 und
+// Farbe 0 (die Maske lässt RGB unverändert). TS2_KAMERAFIX=0 lässt beides
+// wie im PC-Port, TS2_KAMERAFIX=2 nur das Innere der Fotokamera (erste
+// Fassung dieser Korrektur, Mitte ± Halbbreite·0,26).
+constexpr uint64_t kSightMaskCalls[] = {
+    0x141139B32,  // Sichtart 7: in 0x141139844, 0x14122A6A0(0xFFFFFF)
+    0x14113A977,  // Sichtart 11: in 0x14113A6BC
+};
 constexpr uint64_t kSetWriteMask = 0x14122A6A0;
 constexpr uint64_t kSetBlendMode = 0x14122A5BC;   // (Art) -> vorige Art
 constexpr uint64_t kFillRect = 0x14108A334;       // (x0, y0, x1, y1, Farbe)
-constexpr uint64_t kViewInts = 0x143F0F508;       // -> Ansicht (int): +8 Mitte x, +0xC, +0x1C Mitte y, +0x20
+constexpr uint64_t kViewInts = 0x143F0F508;       // -> Ansicht (int): [0] x0, [1] x1, [5] y0, [6] y1,
+                                                  //    [2] Mitte x, [3], [7] Mitte y, [8]
 constexpr uint64_t kSightHalf = 0x14210AC88;      // 0,26
 using MaskFn = uint64_t (*)(uint32_t);
 MaskFn g_set_mask = nullptr;
+bool g_sight_inner_only = false;  // TS2_KAMERAFIX=2
 
-uint64_t camera_alpha_pass(uint32_t mask) {
+uint64_t sight_alpha_pass(uint32_t mask) {
     const uint64_t r = g_set_mask(mask);
     const int32_t* v = *g_img->va<int32_t*>(kViewInts);
-    if (!v || v[8] == 0) return r;
-    // wie 0x14113A6F2–0x14113A7D5
-    const float c = *g_img->va<float>(kSightHalf);
-    const int hx = int(float(v[3]) * c);
-    const int hy = int(float(v[3]) / float(v[8]) * (float(v[8]) * c));
+    if (!v) return r;
+    int x0 = v[0], y0 = v[5], x1 = v[1], y1 = v[6];
+    if (g_sight_inner_only) {
+        if (v[8] == 0) return r;
+        // wie 0x14113A6F2–0x14113A7D5
+        const float c = *g_img->va<float>(kSightHalf);
+        const int hx = int(float(v[3]) * c);
+        const int hy = int(float(v[3]) / float(v[8]) * (float(v[8]) * c));
+        x0 = v[2] - hx, y0 = v[7] - hy, x1 = v[2] + hx, y1 = v[7] + hy;
+    }
     const auto art = reinterpret_cast<int (*)(int)>(g_img->va<uint8_t>(kSetBlendMode));
     const int old = art(0);
-    reinterpret_cast<void (*)(int, int, int, int, uint32_t)>(g_img->va<uint8_t>(kFillRect))(v[2] - hx, v[7] - hy,
-                                                                                         v[2] + hx, v[7] + hy, 0);
+    reinterpret_cast<void (*)(int, int, int, int, uint32_t)>(g_img->va<uint8_t>(kFillRect))(x0, y0, x1, y1, 0);
     art(old);
     return r;
 }
@@ -339,11 +361,17 @@ bool effectfix_install(const Ts2Image& img, ID3D11Device* dev) {
             hook_call(img, kAmbientParseCall, kAmbientParse, reinterpret_cast<const void*>(&ambient_load)));
         if (!g_ambient_parse) log("Raumhelligkeit: Aufruf 0x1410F7A96 unerwartet, aus\n");
     }
-    // TS2_KAMERAFIX=0: Sucher der Fotokamera wie im PC-Port
-    if (!(GetEnvironmentVariableW(L"TS2_KAMERAFIX", v, 8) > 0 && v[0] == L'0')) {
-        g_set_mask = reinterpret_cast<MaskFn>(
-            hook_call(img, kSightMaskCall, kSetWriteMask, reinterpret_cast<const void*>(&camera_alpha_pass)));
-        if (!g_set_mask) log("Fotokamera: Aufruf 0x14113A977 unerwartet, Sucher wie im PC-Port\n");
+    // TS2_KAMERAFIX=0: Zielfernrohr und Fotokamera wie im PC-Port; 2: nur das
+    // Innere der Fotokamera
+    const bool sight_env = GetEnvironmentVariableW(L"TS2_KAMERAFIX", v, 8) > 0;
+    if (!(sight_env && v[0] == L'0')) {
+        g_sight_inner_only = sight_env && v[0] == L'2';
+        for (const uint64_t call : kSightMaskCalls) {
+            if (g_sight_inner_only && call != kSightMaskCalls[1]) continue;
+            void* orig = hook_call(img, call, kSetWriteMask, reinterpret_cast<const void*>(&sight_alpha_pass));
+            if (orig) g_set_mask = reinterpret_cast<MaskFn>(orig);
+            else log("Sichtarten: Aufruf 0x%llX unerwartet, bleibt wie im PC-Port\n", static_cast<unsigned long long>(call));
+        }
     }
     light_init();
     return true;
@@ -461,12 +489,104 @@ static void light_probe() {
     log("\n");
 }
 
+// TS2_ALPHABILD=<a>[:<b>]: vor der a-ten Mischung mit Art 6
+// (DEST_ALPHA/INV_DEST_ALPHA) der Sichtarten 7 und 11 (Spieler 1) und danach jeder b-ten das
+// Renderziel als alphabild_<n>.bmp speichern, links RGB, rechts Alpha (grau)
+static void alpha_dump_probe(ID3D11DeviceContext* c) {
+    static int from = -1, step = 0, count = 0;
+    static const bool on = [] {
+        wchar_t s[32] = {};
+        if (GetEnvironmentVariableW(L"TS2_ALPHABILD", s, 32) <= 0) return false;
+        return swscanf_s(s, L"%d:%d", &from, &step) >= 1;
+    }();
+    if (!on) return;
+    // nur die erste Zeichnung jeder Mischung mit Art 6, solange Spieler 1
+    // Sichtart 7 oder 11 hat (die Menüs mischen ebenfalls mit Art 6)
+    static bool was6 = false;
+    const bool is6 = *g_img->va<int>(kBlendMode) == 6;
+    const bool first = is6 && !was6;
+    was6 = is6;
+    if (!first) return;
+    const int sight = *g_img->va<int32_t>(0x143F28880);
+    if (sight != 7 && sight != 11) return;
+    // Quelle der Bildkopie: vorige Kopie (0x14122B74C(3)), erst ab der ersten Sichtart gesetzt
+    if (*g_img->va<uint64_t>(0x142EE6510) != reinterpret_cast<uint64_t>(g_img->va<uint8_t>(0x142FFD9A8))) return;
+    const int n = ++count;
+    if (n < from || (n > from && (step <= 0 || (n - from) % step != 0))) return;
+    ID3D11RenderTargetView* rtv = nullptr;
+    c->OMGetRenderTargets(1, &rtv, nullptr);
+    if (!rtv) return;
+    ID3D11Resource* res = nullptr;
+    rtv->GetResource(&res);
+    rtv->Release();
+    ID3D11Texture2D* tex = nullptr;
+    if (!res || FAILED(res->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex)))) {
+        if (res) res->Release();
+        return;
+    }
+    res->Release();
+    D3D11_TEXTURE2D_DESC d{};
+    tex->GetDesc(&d);
+    if (d.Format != DXGI_FORMAT_R8G8B8A8_UNORM && d.Format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+        log("[alphabild] Format %d nicht unterstützt\n", int(d.Format));
+        tex->Release();
+        return;
+    }
+    const bool bgra = d.Format == DXGI_FORMAT_B8G8R8A8_UNORM;
+    d.Usage = D3D11_USAGE_STAGING, d.BindFlags = 0, d.CPUAccessFlags = D3D11_CPU_ACCESS_READ, d.MiscFlags = 0;
+    d.MipLevels = 1, d.ArraySize = 1, d.SampleDesc = {1, 0};
+    ID3D11Texture2D* st = nullptr;
+    if (FAILED(g_dev->CreateTexture2D(&d, nullptr, &st))) {
+        tex->Release();
+        return;
+    }
+    c->CopySubresourceRegion(st, 0, 0, 0, 0, tex, 0, nullptr);
+    tex->Release();
+    D3D11_MAPPED_SUBRESOURCE m{};
+    if (SUCCEEDED(c->Map(st, 0, D3D11_MAP_READ, 0, &m))) {
+        const UINT w = d.Width * 2, h = d.Height, row = (w * 3 + 3) & ~3u;
+        std::vector<uint8_t> px(size_t(row) * h);
+        for (UINT y = 0; y < h; ++y) {
+            const uint8_t* s = static_cast<const uint8_t*>(m.pData) + size_t(y) * m.RowPitch;
+            uint8_t* o = px.data() + size_t(h - 1 - y) * row;  // BMP: unten zuerst
+            for (UINT x = 0; x < d.Width; ++x, s += 4) {
+                o[x * 3 + 0] = bgra ? s[0] : s[2];
+                o[x * 3 + 1] = s[1];
+                o[x * 3 + 2] = bgra ? s[2] : s[0];
+                uint8_t* a = o + (d.Width + x) * 3;
+                a[0] = a[1] = a[2] = s[3];
+            }
+        }
+        c->Unmap(st, 0);
+        // neben ts2.exe (das Arbeitsverzeichnis ist game/)
+        wchar_t name[MAX_PATH + 32] = {};
+        DWORD len = GetModuleFileNameW(nullptr, name, MAX_PATH);
+        while (len > 0 && name[len - 1] != L'\\' && name[len - 1] != L'/') --len;
+        swprintf(name + len, 32, L"alphabild_%d.bmp", n);
+        if (FILE* f = _wfopen(name, L"wb")) {
+            const uint32_t size = 54 + uint32_t(px.size());
+            uint8_t hd[54] = {'B', 'M'};
+            memcpy(hd + 2, &size, 4);
+            hd[10] = 54, hd[14] = 40;
+            const int32_t wh[2] = {int32_t(w), int32_t(h)};
+            memcpy(hd + 18, wh, 8);
+            hd[26] = 1, hd[28] = 24;
+            fwrite(hd, 1, 54, f);
+            fwrite(px.data(), 1, px.size(), f);
+            fclose(f);
+            log("[alphabild] alphabild_%d.bmp (%ux%u)\n", n, d.Width, d.Height);
+        }
+    }
+    st->Release();
+}
+
 bool effectfix_before(ID3D11DeviceContext* c) {
     fix_rain_blend();
     copy_probe();
     light_probe();
+    alpha_dump_probe(c);
     // TS2_SICHTART=<n>: Sichtart des Spielers erzwingen (0x143F28880 +
-    // Spieler·0x12D8; 7 = Kamera-Sucher 0x141139844), nur Probe
+    // Spieler·0x12D8; 7 = Zielfernrohr 0x141139844, 11 = Fotokamera), nur Probe
     static const int force_view = [] {
         wchar_t v[16] = {};
         return GetEnvironmentVariableW(L"TS2_SICHTART", v, 16) > 0 ? _wtoi(v) : -1;

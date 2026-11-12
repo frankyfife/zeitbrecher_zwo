@@ -1038,21 +1038,37 @@ Aufruf um und legt nach der Textfassung die .raw darüber (wie die Xbox);
 (Waffe vorher rot, jetzt olivgrau wie xemu); Wild West: Mündungsfeuer weiter
 nur örtlich.
 
-**Fotokamera (Redux-Issue #21).** Der Sucher der Digitalkamera ist Sichtart
-11 (0x14113A6BC, Xbox PAL 0xC3840), nicht 7. Wie Sichtart 7 (0x141139844)
-zeichnet er den Rand erst in RGB, dann mit Maske 0xFFFFFF in den Alphakanal
-und mischt zuletzt die Kopie des vorigen Bilds (0x14122B74C(3)) mit
-DEST_ALPHA über die Ansicht. Innen muss das Ziel-Alpha 0 sein; im PC-Port
-steht dort 1 (TS2 löscht den Bildpuffer nicht je Bild, die Szene schreibt nur
-RGB). Dadurch übernahm der Sucher innen das vorige Bild: eingefroren,
-verschmiert beim Zoom, nach dem Blitz dauerhaft weiß. Für Sichtart 7 setzt
-der PC-Port selbst ein Rechteck mit Farbe 0 und Art 0 (0x141139B64), bei 11
-fehlt es. ts2.exe setzt es ein (effectfix.cpp, Haken auf 0x14113A977,
-Rechteck 0x14108A334 über das Innere, Mitte ±0,26·Breite).
-`TS2_KAMERAFIX=0` schaltet das ab. Geprüft (Kamera per Testhilfe gegeben,
-Gegenstand 35): NeoTokyo und Siberia, Sucher live, Blitz, danach live. xemu
-nicht verglichen. Proben: `TS2_KOPIEPROBE=1`, TS2_DRAWDUMP zeigt Mischart und
-Lichter. Nebenbefund: 0x14122AA90 (Scissor) begrenzt fest auf 1920×1080.
+**Fotokamera und Zielfernrohr (Redux-Issue #21).** Die Sichtart des Spielers
+(0x143F28880 + Spieler·0x12D8) wird je Bild aus dem Spielerzustand und dem
+Fadenkreuz der Waffe gesetzt (0x1411D63D4, gezoomt 4 → 5, 6 → 7). Sie wählt
+im Dispatcher 0x141140040 (Xbox PAL 0xC8A80) die Überlagerung: 5 rundes
+Zielfernrohr (0x141139504), 7 Zielfernrohr des Scharfschützengewehrs
+(0x141139844, Xbox 0xC2D20), 8 Zahlenanzeige (0x14113F328), 9/10 Aufsatz
+und Balken, 11 Fotokamera (0x14113A6BC, Xbox 0xC3840), sonst Fadenkreuze
+(0x14113FA90). Nur 7 und 11 zeichnen den Rand erst in RGB, dann mit Maske
+0xFFFFFF Verläufe ins Alpha (Art 2), und mischen zuletzt die Kopie des
+vorigen Bilds (0x14122B74C(3)) mit Art 6 (DEST_ALPHA) über die Ansicht. Das
+setzt ein Ziel-Alpha von 0 voraus. Auf der Xbox ist das so: Das Bild wird je
+Frame auf 0 gelöscht, und das Löschen je Kamera (0x333F3) schreibt mit der
+Maske 0xFF000000 nur RGB (0x1B5650 beachtet die Maske). Der PC-Port löscht
+je Kamera mit Maske 0 und Farbe | 0xFF (0x14107F589; ClearRenderTargetView
+schreibt ohnehin alle Kanäle), also mit Alpha 1. Bei 11 übernahm der Sucher
+deshalb innen das vorige Bild: eingefroren, verschmiert beim Zoom, nach dem
+Blitz weiß. Bei beiden mischte der Rand fast gleichmäßig stark (v² + (1 − v)
+statt v²), mit hartem Sprung zum Inneren. Für 7 hatte der PC-Port nur das
+Innere selbst auf 0 gesetzt (0x141139B64). ts2.exe setzt in beiden zu Beginn
+des Alpha-Durchgangs das Alpha der ganzen Ansicht auf 0 (effectfix.cpp,
+Haken auf 0x141139B32 und 0x14113A977, Rechteck 0x14108A334 mit Art 0 und
+Farbe 0). `TS2_KAMERAFIX=0` lässt beide wie im PC-Port, `=2` setzt nur das
+Innere der Kamera (erste Fassung). Alle anderen Sichtarten und
+Vollbild-Effekte (0x1410EAF9C) verwenden kein DEST_ALPHA. Geprüft:
+Sichtarten 0–15 erzwungen (`TS2_SICHTART`) mit Drehung; Siberia mit
+Scharfschützengewehr gezoomt: weicher Verlauf wie die Xbox in xemu; Kamera
+(erzwungen 11 und per Testhilfe in NeoTokyo) live; jeweils mit supersampling
+1 und 2 (gleiche Szene, gleiche Helligkeit); Siberia bis 4600 unverändert.
+Proben: `TS2_ALPHABILD=<a>[:<b>]` (Renderziel mit Alpha vor der
+Art-6-Mischung als alphabild_<n>.bmp neben ts2.exe), `TS2_KOPIEPROBE=1`.
+Nebenbefund: 0x14122AA90 (Scissor) begrenzt fest auf 1920×1080.
 
 ## HUD, Bildschirme und Figurenwahl (`src/host/hudfix.cpp`)
 
