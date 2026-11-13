@@ -1,6 +1,7 @@
 #include "timing.h"
 
 #include <windows.h>
+#include <intrin.h>
 
 #include <algorithm>
 #include <cmath>
@@ -43,6 +44,7 @@ T* va(uint64_t a) {
 }
 
 int g_n120 = 1;         // 120-Hz-Takte des letzten Bildes
+int g_cur_n60 = 1;      // 60-Hz-Takte dieses Bildes (bei 120 Hz 0 oder 1)
 bool g_paused = false;
 
 // Pro Spieler und Bild baut 0x1411454EC einen Datensatz aus den Bildzeiten
@@ -289,6 +291,7 @@ void time_hook() {
     *raw = n120;
     const bool paused = *va<float>(kTicksFRun) == 0.0f && *va<int32_t>(kTicksIntRun) == 0;
     g_n120 = n120;
+    g_cur_n60 = n60;
     g_now120 += uint64_t(n120);
     g_paused = paused;
     *va<int32_t>(kTicksInt) = n60;
@@ -296,6 +299,161 @@ void time_hook() {
     *va<float>(kTicksF) = float(n120) * 0.5f;
     *va<float>(kTicksFRun) = paused ? 0.0f : float(n120) * 0.5f;
     *game = game_before + (paused ? 0u : uint32_t(n60));
+}
+
+// ---- Probe TS2_TEILCHENPROBE=1: je halbe Sekunde Teilchen in den Listen
+// 0x142F3A210 (Anzahl, Alter, Anteil am Leben), neue Teilchen und
+// Fortschreibungen (0x14112F090) mit ihrer Bildzeit; beim Beenden je
+// Aufrufstelle des Teilchen-Pools (0x14112E850, 0x14112FADC), wie viele neue
+// Teilchen in Bildern mit und ohne 60-Hz-Takt entstanden sind.
+uint64_t g_pp_spawns = 0, g_pp_updates = 0, g_pp_update_runs = 0;
+double g_pp_ft_sum = 0;
+using AllocFn = uint8_t* (*)(int64_t, int64_t, int64_t, int64_t);
+AllocFn g_pp_alloc = nullptr, g_pp_alloc2 = nullptr;
+struct SiteCount {
+    uint64_t tick = 0, notick = 0;
+};
+std::unordered_map<uint64_t, SiteCount> g_pp_sites;
+void pp_count(void* ret) {
+    const uint64_t at = uint64_t(static_cast<uint8_t*>(ret) - g_img->va<uint8_t>(0x140000000)) + 0x140000000;
+    SiteCount& s = g_pp_sites[at];
+    (g_half_ticks ? g_cur_n60 : 1) ? ++s.tick : ++s.notick;
+}
+uint8_t* pp_alloc_hook(int64_t a, int64_t b, int64_t c, int64_t d) {
+    ++g_pp_spawns;
+    pp_count(_ReturnAddress());
+    {
+        // die ersten neuen Teilchen in Bildern ohne Takt (bei 120 Hz): Aufrufkette,
+        // geraten aus dem Stapel (Werte hinter einem call rel32 im TS2-Code)
+        static int logged = 0;
+        if (logged < 4 && g_half_ticks && g_cur_n60 == 0) {
+            ++logged;
+            char buf[512];
+            int len = 0;
+            const uint64_t* sp = static_cast<const uint64_t*>(_AddressOfReturnAddress());
+            const uint64_t base = uint64_t(g_img->va<uint8_t>(0x140000000));
+            for (int i = 0; i < 200 && len < 480; ++i) {
+                const uint64_t v = sp[i];
+                if (v > base + 0x1000 && v < base + 0x1C00000) {  // Code von ts2.bin
+                    const uint8_t* p = reinterpret_cast<const uint8_t*>(v);
+                    if (p[-5] == 0xE8) len += snprintf(buf + len, 512 - len, " %llX", v - base + 0x140000000);
+                }
+            }
+            log("[teilchen] ohne Takt:%s\n", buf);
+        }
+    }
+    return g_pp_alloc(a, b, c, d);
+}
+uint8_t* pp_alloc2_hook(int64_t a, int64_t b, int64_t c, int64_t d) {
+    pp_count(_ReturnAddress());
+    return g_pp_alloc2(a, b, c, d);
+}
+void pp_report() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    for (auto& [k, v] : g_pp_sites)
+        log("[teilchen] Aufruf 0x%llX: %llu neu in Bildern mit Takt, %llu ohne\n", static_cast<unsigned long long>(k),
+            static_cast<unsigned long long>(v.tick), static_cast<unsigned long long>(v.notick));
+}
+using VoidFn = void (*)();
+VoidFn g_pp_update = nullptr;
+void pp_update_hook() {
+    ++g_pp_updates;
+    if (*va<int32_t>(kTicksIntRun) != 0) ++g_pp_update_runs, g_pp_ft_sum += *va<float>(kTicksFRun);
+    g_pp_update();
+}
+int pp_count_particles(double* nage) {
+    int n = 0;
+    double s = 0;
+    for (int l = 0; l < 0x11; ++l)
+        for (uint8_t* p = va<uint8_t*>(0x142F3A210)[l]; p && n < 100000; p = *reinterpret_cast<uint8_t**>(p + 0x68)) {
+            const float a = *reinterpret_cast<float*>(p + 0x20), life = *reinterpret_cast<float*>(p + 0x24);
+            ++n, s += life > 0 ? a / life : 0;
+        }
+    *nage = n ? s / n : 0;
+    return n;
+}
+// TS2_TEILCHENPROBE=2: dazu je Aufruf des Effekts Typ 13/14 (0x1410FB040)
+// sein Alter (+0x54) und die Teilchen in den Listen
+using EffFn = void (*)(uint8_t*);
+EffFn g_pp_eff = nullptr;
+void pp_eff_hook(uint8_t* e) {
+    double nage;
+    const int n = pp_count_particles(&nage);
+    log("[teilchen] Effekt Typ %d: Alter %.3f, Bildzeit %.2f, %d Teilchen (%.3f des Lebens)\n", *reinterpret_cast<int*>(e + 0x34),
+        *reinterpret_cast<float*>(e + 0x54), *va<float>(kTicksFRun), n, nage);
+    g_pp_eff(e);
+}
+void pp_install(const Ts2Image& img, int level) {
+    int n = 0;
+    if (level >= 2)
+        g_pp_eff = reinterpret_cast<EffFn>(hook_call(img, 0x1410FEB61, 0x1410FB040, reinterpret_cast<const void*>(&pp_eff_hook)));
+    for (uint64_t s : {0x14112FAF1ull, 0x14112FB7Dull, 0x14112FD18ull, 0x14112FE6Dull, 0x14112FFCDull, 0x141130124ull,
+                       0x1411302C9ull, 0x141130437ull})
+        if (void* o = hook_call(img, s, 0x14112E850, reinterpret_cast<const void*>(&pp_alloc_hook)))
+            g_pp_alloc = reinterpret_cast<AllocFn>(o), ++n;
+    // 0x1410B56D5 (Startbild) lenkt der Umweg unten nicht um; dessen Teilchen zählt 0x14112FAF1
+    for (uint64_t s : {0x1410F9E01ull, 0x14111F2BCull, 0x141159067ull})
+        if (void* o = hook_call(img, s, 0x14112FADC, reinterpret_cast<const void*>(&pp_alloc2_hook)))
+            g_pp_alloc2 = reinterpret_cast<AllocFn>(o), ++n;
+    for (uint64_t s : {0x1410CD969ull, 0x14114C5B9ull, 0x14114C5FDull, 0x14114C6CAull})
+        if (void* o = hook_call(img, s, 0x14112F090, reinterpret_cast<const void*>(&pp_update_hook)))
+            g_pp_update = reinterpret_cast<VoidFn>(o), ++n;
+    atexit(pp_report);
+    log("[teilchen] Probe an (%d/15 Umwege)\n", n);
+}
+void pp_frame() {
+    static uint64_t frame = 0;
+    const int hz = g_half_ticks ? 120 : 60;
+    if (++frame % uint64_t(hz / 2)) return;
+    int n = 0;
+    double age = 0, nage = 0;
+    float max_n = 0;
+    for (int l = 0; l < 0x11; ++l)
+        for (uint8_t* p = va<uint8_t*>(0x142F3A210)[l]; p && n < 100000; p = *reinterpret_cast<uint8_t**>(p + 0x68)) {
+            const float a = *reinterpret_cast<float*>(p + 0x20), life = *reinterpret_cast<float*>(p + 0x24);
+            ++n, age += a, nage += life > 0 ? a / life : 0;
+            if (life > 0 && a / life > max_n) max_n = a / life;
+        }
+    log("[teilchen] %.1f s: %d Teilchen, Alter %.3f (%.3f des Lebens, höchstens %.3f), neu %llu, "
+        "Fortschreiben %llu (mit Takt %llu, Bildzeit %.3f), Startbild-Uhr %.3f\n",
+        double(frame) / hz, n, n ? age / n : 0, n ? nage / n : 0, max_n, static_cast<unsigned long long>(g_pp_spawns),
+        static_cast<unsigned long long>(g_pp_updates), static_cast<unsigned long long>(g_pp_update_runs),
+        g_pp_update_runs ? g_pp_ft_sum / double(g_pp_update_runs) : 0.0, *va<float>(0x142F12728));
+    g_pp_spawns = g_pp_updates = g_pp_update_runs = 0;
+    g_pp_ft_sum = 0;
+}
+bool g_pp_on = false;
+// ---- Teilchen und Umgebungseffekte bei 120 Hz: je 60-Hz-Takt statt je Bild
+// Teilchen (0x14112F090) und die meisten Effekte altern nur in Bildern mit
+// Takt (Integer-Takte ≠ 0; dort Float-Bildzeit 1). Zwei Stellen erzeugen aber
+// je Aufruf neue Teilchen, und ihr Aufruf läuft in jedem Bild:
+// - Startbild: 0x1410B5CE0 (aus 0x1410CCFE8, Level 0x65) zählt seine Uhr
+//   0x142F12728 mit der Float-Bildzeit (richtig) und ruft bei jedem Aufruf den
+//   Spawner 0x1410B5688: 7 Feuerteilchen (Zustand 1: 2).
+// - Umgebungseffekte: 0x1410FE87C (Pool 0x142F27A28, Aufrufe 0x14114C694,
+//   0x14114C6DD, 0x14114C765 aus 0x14114C638) verteilt je Effekt nach Typ
+//   (+0x34); Typ 13/14 (0x1410FB040) erzeugt je Aufruf Feuerteilchen
+//   (0x14112FB58), z. B. im Menü beim Start der Story; andere Typen
+//   (0x1410FD90C, 0x1410FD78C) würfeln ebenfalls je Aufruf, ohne Bildzeit.
+// Neue Teilchen nimmt 0x14112E850 reihum aus einem Ring (0x142F39B50, 400
+// Plätze, Index 0x142F3A20C) und wirft dabei das älteste weg. Doppelt so viele
+// neue Teilchen je Sekunde heißen also: jedes wird nur halb so alt. Startbild
+// bei 60 Hz: 420 neue je Sekunde, ein Teilchen wird höchstens 0,39 seines
+// Lebens alt; bei 120 Hz 840 und 0,19: klein, kaum Alpha, vom Logo bleiben
+// Fetzen an den Rändern. ts2.exe ruft beides nur in Bildern mit 60-Hz-Takt
+// (bei 120 Hz jedes zweite Bild); dort sehen sie dieselben Takte und
+// Bildzeiten wie bei 60 Hz. In Bildern ohne Takt hätten die Effekte nichts
+// fortzuschreiben (Bildzeit 0); ihre Listen (0x142F230F0) bleiben vom
+// letzten Takt. TS2_TEILCHEN120=0: aus (Vergleich).
+using VoidCallFn = void (*)();
+VoidCallFn g_intro_spawn = nullptr, g_effects = nullptr;
+void intro_spawn_hook() {
+    if (g_cur_n60 > 0) g_intro_spawn();
+}
+void effects_hook() {
+    if (g_cur_n60 > 0) g_effects();
 }
 
 }  // namespace
@@ -315,6 +473,7 @@ void timing_install(const Ts2Image& img, int hz) {
             log("Takt: %s\n", g_pace ? "Warten vor der Eingabe (kurze Latenz)" : "Umweg fehlgeschlagen, Begrenzer wie bisher");
         }
     }
+    if (wchar_t v[4] = {}; GetEnvironmentVariableW(L"TS2_TEILCHENPROBE", v, 4) > 0) pp_install(img, _wtoi(v)), g_pp_on = true;
     if (hz != 120) {
         // TS2_OBJPROBE bei 60 Hz: nur beobachten (Vergleichswerte)
         if (GetEnvironmentVariableW(L"TS2_OBJPROBE", nullptr, 0) > 0) {
@@ -348,6 +507,16 @@ void timing_install(const Ts2Image& img, int hz) {
             hook_call(img, site, 0x14114C990, reinterpret_cast<const void*>(&player_update_hook)));
         if (f) g_player_update = f;
     }
+    // Startbild-Feuer und Umgebungseffekte nur in Bildern mit 60-Hz-Takt
+    int per_tick = 0;
+    if (wchar_t v[4] = {}; !(GetEnvironmentVariableW(L"TS2_TEILCHEN120", v, 4) > 0 && v[0] == L'0')) {
+        for (uint64_t site : {0x1410B5D1Eull, 0x1410B5D23ull})  // Endaufruf und Aufruf in 0x1410B5CE0
+            if (void* o = hook_call(img, site, 0x1410B5688, reinterpret_cast<const void*>(&intro_spawn_hook)))
+                g_intro_spawn = reinterpret_cast<VoidCallFn>(o), ++per_tick;
+        for (uint64_t site : {0x14114C694ull, 0x14114C6DDull, 0x14114C765ull})
+            if (void* o = hook_call(img, site, 0x1410FE87C, reinterpret_cast<const void*>(&effects_hook)))
+                g_effects = reinterpret_cast<VoidCallFn>(o), ++per_tick;
+    }
     // Teilungen: bei 0 Takten Quotient 0x7FFFFFFF ("kein Ereignis in diesem Bild")
     const uint64_t divisor = reinterpret_cast<uint64_t>(img.va(kTicksIntRun));
     int patched = 0;
@@ -379,8 +548,9 @@ void timing_install(const Ts2Image& img, int hz) {
         patched += patch_with_call(img, site, expected, 6, stub, sizeof stub);
     }
     g_on = true;
-    log("Bildtakt 120 Hz (Spieler und Kamera nativ, Welt in 60-Hz-Takten): Periode %llu QPC-Einheiten, %d/7 Teilungen abgesichert\n",
-        static_cast<unsigned long long>(g_period), patched);
+    log("Bildtakt 120 Hz (Spieler und Kamera nativ, Welt in 60-Hz-Takten): Periode %llu QPC-Einheiten, %d/7 Teilungen abgesichert, "
+        "Teilchen-Erzeuger je Takt %d/5\n",
+        static_cast<unsigned long long>(g_period), patched, per_tick);
 }
 
 void timing_set_display_interval(int n) { g_display_interval = n; }
@@ -426,6 +596,7 @@ void timing_wait() {
 }
 
 void timing_frame() {
+    if (g_pp_on) pp_frame();
     // TS2_TAKTPROBE=1: Spielzeit in Takten je Sekunde Wanduhr (soll 60 sein)
     static const bool probe = [] {
         wchar_t v[4] = {};

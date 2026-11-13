@@ -284,7 +284,9 @@ Bild Ziel-Alpha und Farbe vor/nach dem Schein. Gemessen (Takte 100–200):
 leuchtende Fläche 2,0 % → 4,6 % (Xbox 5,6 %), Rot-Median 36 → 67 (Xbox 65).
 Hauptmenü und Siberia unverändert. Nicht übernommen: die Logos
 FREE RADICAL/EIDOS der Xbox (0x88D8A–0x88E2C, im PC-Code entfernt).
-Vermutlich sind alle Teilchen dieses Systems im Port zu klein (ungeprüft).
+Bei `takt=120` entstanden die Feuerteilchen je Bild statt je Takt und
+verdrängten sich im Ring; behoben in `timing.cpp` (siehe „120 Hz nativ,
+Stufe 1“, Teilchen und Umgebungseffekte).
 
 ### Firmenlogos im Startbild
 
@@ -1555,6 +1557,27 @@ Einschalten mit `[grafik] takt=120` (oder `TS2_TAKT=120`); Vorgabe bleibt
 - Dämpfungen pro Takt im Dispatcher (`0x1411DBEED`, `0x1411DC352`) laufen
   noch im 60-Hz-Raster.
 - Proben: `TS2_GEHPROBE=1`, `TS2_BILDPAAR=1`.
+
+
+**Teilchen und Umgebungseffekte bei 120 Hz.** Teilchen altern in
+`0x14112F090` nur in Bildern mit Takt (Integer-Takte ≠ 0, dort Bildzeit 1).
+Zwei Erzeuger liefen aber in jedem Bild: im Startbild ruft `0x1410B5CE0` je
+Aufruf den Spawner `0x1410B5688` (7 Feuerteilchen), und der Dispatcher der
+Umgebungseffekte `0x1410FE87C` (Pool `0x142F27A28`, aus `0x14114C638`) lässt
+Typ 13/14 (`0x1410FB040`, Portal-Feuer im Story-Menü) je Aufruf Teilchen
+erzeugen. Der Pool `0x14112E850` nimmt die 400 Plätze reihum (`0x142F39B50`,
+Index `0x142F3A20C`) und wirft das älteste weg: bei 120 Hz doppelt so viele
+neue Teilchen, jedes nur halb so alt (Startbild: höchstens 0,19 statt 0,39
+des Lebens), vom brennenden Logo blieben Fetzen an den Rändern. `ts2.exe`
+ruft beide nur in Bildern mit 60-Hz-Takt (`TS2_TEILCHEN120=0`: aus).
+Gemessen: leuchtende Fläche im Startbild 60 Hz 2,9 %, 120 Hz vorher 0,55 %,
+nachher 3,0 %; Teilchenzahl und -alter je Sekunde wie bei 60 Hz;
+Portal-Feuer je Effektalter gleich. Arcade (Raketen, Explosionen, Fackeln)
+und Siberia erzeugen Teilchen nur in Bildern mit Takt. Probe
+`TS2_TEILCHENPROBE=1` (Teilchen je 0,5 s, neue Teilchen je Aufrufstelle
+mit/ohne Takt), `=2` zusätzlich je Aufruf von `0x1410FB040`. Hinweis für
+Tests: `TS2_TAKT=60` in den Skripten überschreibt `[grafik] takt` – Prüfungen
+auch mit 120 Hz laufen lassen.
 
 ## 120 Hz, Stufe 2 (Gegner und Objekte): Forschungsstand
 
