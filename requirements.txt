@@ -1,0 +1,7 @@
+# Python-Pakete für tools/ und scripts/ (geprüft mit Python 3.14.5; immer mit python -I aufrufen)
+#   python -m pip install -r requirements.txt
+# numpy, pillow: Texturen (tools/hd, tools/re/xbox_alpha.py), pefile, capstone: EXE-Analyse (tools/re)
+numpy==2.4.6
+pillow==12.3.0
+pefile==2024.8.26
+capstone==5.0.9

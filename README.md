@@ -31,6 +31,7 @@ Laufzeit aus der eigenen EXE gelesen.
 ```text
 CMakeLists.txt         Build, Abhängigkeiten per FetchContent (zlib, Brotli, stb_vorbis)
 scripts/build.cmd      Build mit den VS 2022 Build Tools (Ninja, Release)
+scripts/einrichten.py  richtet game/ vollständig ein, mit Prüfsummen (scripts/pruefsummen.tsv)
 src/host/              ts2.exe: lädt game/ts2.bin, ersetzt Fremdes, eigenes D3D11
 tools/hfpak/           hfpak: entschlüsselt/entpackt die CryPaks von Homefront
 tools/re/              Python-Helfer für die EXE (Disassembler, Xrefs, Manifest)
@@ -40,12 +41,16 @@ game/                  ts2.bin + ts2/ (aus der eigenen Installation)        (ign
 reference/homefront/   Teilkopie von Homefront nur für die Analyse          (ignoriert)
 re/ghidra_project/     Ghidra-Projekt der EXE                               (ignoriert)
 re/out/                Ghidra-Exporte                                       (ignoriert)
+privat/                private Eingänge (Redux-Texturen, Schriftzug, re/out) (ignoriert)
 ```
 
 ## Bauen
 
 Voraussetzungen: Visual Studio 2022 (oder Build Tools) mit C++, CMake ≥ 3.24,
-Ninja, Git. Python 3 mit `pefile`, `capstone`, `numpy` für `tools/re`.
+Ninja, Git, Python 3.14 mit den Paketen aus `requirements.txt`
+(`python -m pip install -r requirements.txt`). Genaue Versionen des
+geprüften Stands und alle externen Quellen mit Prüfsummen:
+[docs/einrichten.md](docs/einrichten.md).
 
 ```bat
 scripts\build.cmd
@@ -57,10 +62,16 @@ Ergebnis in `build\bin\`: `ts2.exe`, `hfpak.exe` und, wenn Qt 6 gefunden wird
 
 ## Einrichten und Spielen
 
+Vollständig, Schritt für Schritt mit Prüfsummen aller Eingänge und
+Ergebnisse: [docs/einrichten.md](docs/einrichten.md).
+
 ```bat
-build\bin\ts2.exe --einrichten "G:\SteamLibrary\steamapps\common\Homefront_The_Revolution"
+python -I scripts\einrichten.py --homefront "<Steam>\steamapps\common\Homefront_The_Revolution" --xbox "<eigenes TS2-PAL-Image>"
 build\bin\ts2.exe
 ```
+
+Nur das Nötigste (ohne HD-Texturen, Sprachen, Xbox-Alpha):
+`build\bin\ts2.exe --einrichten "<Steam>\steamapps\common\Homefront_The_Revolution"`.
 
 Das Einrichten liest die eigene Homefront-Installation einmal und legt in
 `game/` ab:

@@ -1,6 +1,10 @@
 # Daten des Spiels: nie committen (Urheberrecht von Free Radical / Deep Silver).
 /game/
 /reference/
+# private Eingänge (Redux-Texturen, eigener Schriftzug, Ghidra-Exporte): docs/einrichten.md
+/privat/
+# Git-Ordner des privaten Duplikats (scripts/privat_sichern.py)
+/.git-privat/
 
 # Ghidra-Projekt und Exporte (enthalten Code des Spiels)
 /re/ghidra_project/

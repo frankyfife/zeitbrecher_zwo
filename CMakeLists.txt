@@ -10,30 +10,33 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 include(FetchContent)
 set(FETCHCONTENT_QUIET ON)
 
-# zlib (raw deflate in the paks)
+# Abhängigkeiten: Quellarchiv eines festen Commits, geprüft per SHA-256
+# (docs/einrichten.md). Archive statt Git-Klon: ein Commit lässt sich nicht
+# flach klonen, und der volle Klon von Brotli dauert lange.
+set(_gh https://github.com)
+
+# zlib v1.3.1 (raw deflate in the paks)
 FetchContent_Declare(zlib
-  GIT_REPOSITORY https://github.com/madler/zlib.git
-  GIT_TAG v1.3.1
-  GIT_SHALLOW TRUE)
+  URL ${_gh}/madler/zlib/archive/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf.tar.gz
+  URL_HASH SHA256=d9e270d46252734aa49770fbc544125391617956266f220bd63216c834f3a522)
 set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(zlib)
 target_include_directories(zlibstatic PUBLIC ${zlib_SOURCE_DIR} ${zlib_BINARY_DIR})
 
-# Brotli (pak method 11)
+# Brotli v1.1.0 (pak method 11)
 FetchContent_Declare(brotli
-  GIT_REPOSITORY https://github.com/google/brotli.git
-  GIT_TAG v1.1.0
-  GIT_SHALLOW TRUE)
+  URL ${_gh}/google/brotli/archive/ed738e842d2fbdf2d6459e39267a633c4a9b2f5d.tar.gz
+  URL_HASH SHA256=aaa739962a45b508b2e783b915e6b2b57ed3b12bd4b0feac73acfb144dffa54f)
 set(BROTLI_DISABLE_TESTS ON CACHE BOOL "" FORCE)
 set(BROTLI_BUNDLED_MODE ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(brotli)
 
-# stb (nur stb_vorbis.c, Ogg-Dekoder für Musik und Sprache)
+# stb (nur stb_vorbis.c v1.22, Ogg-Dekoder für Musik und Sprache; Commit vom 2026-10-19)
 FetchContent_Declare(stb
-  GIT_REPOSITORY https://github.com/nothings/stb.git
-  GIT_TAG a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d)
+  URL ${_gh}/nothings/stb/archive/a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d.tar.gz
+  URL_HASH SHA256=ae498e10fadeba0c2e7aa86c71cc9989c4d895201cd26b8b72061c76cfde4edf)
 FetchContent_MakeAvailable(stb)
 
 # Alle Programme und DLLs nach build/bin
