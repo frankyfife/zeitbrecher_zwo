@@ -100,10 +100,27 @@ float distance_gain(const Voice& v) {
 //   zwischen Mindest- und Höchstabstand stückweise linear in vier gleichen
 //   Abschnitten (DSOUND 0x201A92). Der PC-Port nähert das mit min = max/4 und
 //   Abfall 4 an, ist damit aber in der Nähe (unter ~17 m) bis 5,5 dB lauter.
-constexpr float kXbox2dGain = 0.50118723f;  // −6 dB
-bool xbox_2d(const Voice& v) {
-    return !v.positional || (v.max_dist == 1.0f && v.x == 0.0f && v.y == 0.0f && v.z == 0.0f);
+// - Eigene Geräusche des Spielers (Waffen, Flag 0x400): Der PC-Port spielt sie
+//   ohne Lage mit einer Stereo-Fassung "_fp" (0x1412279E8: Flag 0x400 und
+//   Eintrag in 0x14259CFA8 -> Lage nullptr), also am Hörer mit min = max = 1.
+//   Die Xbox kennt das nicht: sie startet sie mit der Lage des Spielers als
+//   3D-Puffer (0x1C6D30 -> 0x1C6890 -> 0x1C6640) und setzt Quellen im Abstand
+//   unter √0,1 von der Kamera auf (0, 0, −0,1) (0x1C64C0): kein Headroom,
+//   keine Abstandsdämpfung (in xemu gemessen: Schuss Nummer 402, 0 mB, alle
+//   Mixbins 0). Hier daher direkt links/rechts wie 2D, aber ohne Headroom.
+// - Danach gehen alle Stimmen durch die Mixbins des Sprachprozessors; DSOUND
+//   setzt deren Headroom bei der Einrichtung auf 1 (Mixbins 0…30, 0x202BC4;
+//   HRTF-Headroom 0, 0x202B85), der VP schiebt die Summe dabei um ein Bit:
+//   −6,02 dB für alle Stimmen (in xemu gemessen: Titelmusik mit −602 mB
+//   und 600 mB Headroom angefordert, −18,05 dB gegen die Quelldatei).
+constexpr float kXbox2dGain = 0.50118723f;      // −6 dB (600 hundertstel dB)
+constexpr float kXboxMixbinGain = 0.5f;         // Mixbin-Headroom 1: ein Bit, −6,02 dB
+constexpr uint32_t kOwnSound = 0x400;           // eigene Geräusche ("_fp"), am Hörer
+// am Hörer: positioniert mit min = max = 1 an der Stelle des Hörers
+bool at_listener(const Voice& v) {
+    return v.positional && v.max_dist == 1.0f && v.x == 0.0f && v.y == 0.0f && v.z == 0.0f;
 }
+bool xbox_2d(const Voice& v) { return !v.positional || (at_listener(v) && !(v.flags & kOwnSound)); }
 float xbox_distance_gain(const Voice& v) {
     static const float kCurve[5] = {1.0f, 0.5f, 0.25f, 0.125f, 0.0f};
     constexpr float kMin = 1.0f;
@@ -142,7 +159,8 @@ struct Gains {
 };
 
 // Stimmen aus der Spielwelt: positionierte Stimmen ohne Flag 0x1000 (Musik)
-// und ohne 0x4 (Menügeräusche: am Hörer, min = max = 1).
+// und ohne 0x4 (Menügeräusche: am Hörer, min = max = 1); eigene Waffen
+// (0x400, am Hörer) gehören dazu.
 // Unpositionierte Stimmen (Zwischensequenz-Ton in Blöcken zu vier Puffern,
 // Menü) bleiben trocken. Gemessen mit TS2_HALLPROBE in Menü und Siberia.
 bool in_world(const Voice& v) { return v.positional && (v.flags & 0x1004) == 0 && !(g_xbox && xbox_2d(v)); }
@@ -165,9 +183,13 @@ Gains voice_gains(const Voice& v, int channels, bool hall) {
     float gl = *g_master * v.vol_left;
     float gr = *g_master * v.vol_right;
     // Xbox: Stimmen ohne Position als 2D-Puffer (volle Lautstärke je Seite,
-    // −6 dB Headroom), die übrigen als 3D-Puffer mit der Xbox-Abfallkurve
-    const bool placed = v.positional && !(g_xbox && xbox_2d(v));
-    if (g_xbox && !placed) gl *= kXbox2dGain, gr *= kXbox2dGain;
+    // −6 dB Headroom), eigene Geräusche am Hörer ohne Headroom und ohne
+    // Richtung, die übrigen als 3D-Puffer mit der Xbox-Abfallkurve; alle
+    // zusätzlich mit dem Mixbin-Headroom (−6,02 dB)
+    const bool two_d = g_xbox && xbox_2d(v);
+    const bool placed = v.positional && !two_d && !(g_xbox && at_listener(v));
+    if (two_d) gl *= kXbox2dGain, gr *= kXbox2dGain;
+    if (g_xbox) gl *= kXboxMixbinGain, gr *= kXboxMixbinGain;
     if (hall && in_world(v)) {
         // Hall-Anteil: wie Stereo, aber nur mit der Wurzel der
         // Abstandsdämpfung (ferne Quellen klingen halliger, verstummen aber

@@ -618,29 +618,38 @@ dasselbe, 0x1412279E8), unterscheidet aber 2D- und 3D-Puffer (0x1C6640, Pools
   Nummer einmal, höchstens 30 Starts, Nummern 0x211–0x214 nur alle 6 Takte.
   Im PC-Port fehlt das (gemessen: derselbe Schuss bis 10× gleichzeitig).
 
-`ts2.exe` mischt deshalb immer selbst (auch Stereo) mit Headroom und
-Abfallkurve der Xbox und filtert die Starts vor 0x1412279E8 (Spielzeit
+- Eigene Geräusche (Flag 0x400): Der PC-Port spielt sie als Stereo-Fassung
+  „_fp“ ohne Lage (0x1412279E8, Eintrag 0x14259CFA8), also am Hörer. Die Xbox
+  startet sie mit der Lage des Spielers als 3D-Puffer und setzt Quellen näher
+  als √0,1 an der Kamera auf (0, 0, −0,1) (0x1C64C0): kein Headroom, keine
+  Abstandsdämpfung (xemu: Schuss Nr. 402 mit 0 mB, Mixbins 0).
+- Mixbins: DSOUND setzt den Headroom der Mixbins 0–30 auf 1 (0x202BC4,
+  HRTF-Headroom 0 bei 0x202B85). Der Sprachprozessor schiebt die Summe um ein
+  Bit, also −6,02 dB für alle Stimmen. In xemu gemessen: Titelmusik (−602 mB,
+  600 mB Headroom) liegt −18,05 dB unter der Quelldatei; eine Dämpfung von
+  −12,04 dB per gdb wurde genau so umgesetzt.
+- Musik: gleiche Rechnung wie auf dem PC (Titeltabelle 0x344160 =
+  0x1425983B0, Strom mit 600 mB Headroom). Nur ruft die Xbox nach dem Laden
+  des Profils 0x1BA810 auf (Musik·16383/16, im Menü halbiert), sodass die
+  Menümusik dort 0,5 statt 0,45 hat (+0,9 dB). Das fehlt im PC-Port und ist
+  nicht nachgebaut.
+
+`ts2.exe` mischt deshalb immer selbst (auch Stereo) mit diesen Lautstärken:
+2D −6 dB, eigene Geräusche ohne Headroom, 3D mit der Abfallkurve der Xbox,
+alles dazu −6,02 dB. Die Starts filtert es vor 0x1412279E8 (Spielzeit
 0x142F9A22C). Dahinter liegt am Master ein Begrenzer (−1 dBFS, 1,3 ms
 Vorausschau, 80 ms Rückkehr); darunter bleibt das Signal unverändert.
 `ts2.log` zeigt in der Pegelzeile die kleinste Verstärkung des Begrenzers und
 die verworfenen Starts. TS2_TONPRUEFUNG vergleicht den eigenen Mixer ohne die
 Xbox-Anpassung (größte Abweichung 2,4·10⁻⁷).
 
-Gemessen (TS2_TONAUFNAHME): Roboterfabrik im Gefecht vorher Spitzen 6,4×,
-1,8 % der Werte über 1,0, danach höchstens −1 dBFS und keine. Menümusik und
-Siberia-Tunnel sind 6 dB leiser (RMS 0,090 → 0,048 bzw. 0,065 → 0,033), wie das
-Verhältnis auf der Xbox. In dichten Gefechten senkt der Begrenzer kurz bis
-−10…−13 dB.
-
-**Pegel gegen xemu** (WASAPI-Loopback, auf Spiel-dBFS kalibriert über
-TS2_TONAUFNAHME; xemu mit `use_dsp`, Stereo): Menümusik PC −25,9 / Xbox
-−30,6 dB RMS (+4,7), Siberia-Tunnel +7,2 dB RMS, Scharfschützengewehr in der
-Spitze +0,9 dB (Xbox unter 100 Hz und über 2 kHz leiser: eigene Schüsse dort
-wohl als 3D-Stimme). Gleiche Quelldatei der Menümusik (ADPCM/OGG gleich laut),
-Unterschied über alle Bänder gleich. Offen: ob xemu absolut pegelgenau ist,
-und ob die Xbox eigene Waffengeräusche über den 2D- (0x451EA0) oder den
-3D-Pool (0x46A748) spielt. Bis dahin: Verhältnis Musik zu Effekten wie xemu
-mit `[ton] musik=0.58`.
+Gegen xemu gemessen (WASAPI-Loopback, kalibriert über TS2_TONAUFNAHME, DSP
+an), PC minus Xbox: Menümusik −1,0 dB RMS (vorher +5,0), Siberia-Tunnel +1,4
+(vorher +7,4), eigener Schuss Spitze +0,3 (Mitten gleich; xemu filtert
+3D-Stimmen mit HRTF, unter 500 Hz −8 dB). Roboterfabrik im Gefecht: der
+Begrenzer arbeitet in 1,8 % der Zeit (vorher 14,8 %), höchstens −5,7 dB.
+Gegen echte Hardware nicht geprüft. Wer es insgesamt lauter will:
+`[ton] gesamt` anheben (dann greift der Begrenzer im Gefecht öfter).
 
 ### Raum-Hall (`src/host/reverb.cpp`, `[ton] hall`)
 

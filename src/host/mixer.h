@@ -20,7 +20,8 @@ void mixer_init(const Ts2Image& img);
 // 6 (FL FR FC LFE SL SR). send: nullptr oder frames × 2 Floats (L R), der
 // Anteil der Stimmen aus der Spielwelt für den Raum-Hall (reverb.h).
 // xbox: Lautstärken wie auf der Xbox (2D-Headroom −6 dB, Abfallkurve der
-// 3D-Puffer, mixer.cpp); false rechnet genau wie TS2s Mixer.
+// 3D-Puffer, eigene Waffen ohne Headroom, Mixbin-Headroom −6,02 dB für alle,
+// mixer.cpp); false rechnet genau wie TS2s Mixer.
 void mixer_mix(float* out, uint32_t frames, int rate, int channels, float* send = nullptr, bool xbox = true);
 // Vergleicht einen Block dieses Mixers (Stereo) mit TS2s Mixer auf
 // demselben Stimmenzustand; liefert die größte Abweichung.
